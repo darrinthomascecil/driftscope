@@ -123,7 +123,25 @@ MUTATIONS = [
      'ref = src.get("commit") or src.get("ref") or "HEAD"',
      'ref = src.get("ref") or "HEAD"',
      "links rot the moment the branch moves"),
+    # --- resolvers: the layer the contract test was added to cover
+    ("resolver: invent latest from the pin", "driftscope/resolvers/packages.py",
+     "        latest_stable=latest_stable(usable) or declared,",
+     "        latest_stable=latest_stable(usable) or declared or c.current,",
+     "a dead registry makes every package look current"),
+    ("resolver: emit unparseable declared version", "driftscope/resolvers/packages.py",
+     "    if declared is not None and not parse(str(declared)).valid:\n        declared = None",
+     "    pass",
+     "junk from the registry lands in the report"),
+    ("resolver: swallow transport errors silently", "driftscope/resolvers/packages.py",
+     "    except HttpError as e:\n        return Resolution(error=str(e))\n    info = body.get",
+     "    except HttpError as e:\n        return Resolution()\n    info = body.get",
+     "a 503 renders as a clean resolution with no error"),
+    ("dispatcher: let resolver bugs escape", "driftscope/resolvers/__init__.py",
+     "    except Exception as e:  # resolver bugs must not abort the run\n        return Resolution(error=f\"{type(e).__name__}: {e}\")",
+     "    except None:\n        pass",
+     "one bad resolver aborts the entire scan"),
 ]
+
 
 
 def run() -> tuple[int, str]:

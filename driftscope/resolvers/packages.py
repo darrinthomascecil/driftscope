@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 from ..http import HttpError
 from ..models import Component, Release, Resolution
-from ..version import latest_stable
+from ..version import latest_stable, parse
 from . import Context, parse_iso
 
 _GITHUB_URL = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+)")
@@ -59,8 +59,15 @@ def resolve_pypi(c: Component, ctx: Context) -> Resolution:
     repo = _github_repo_from_urls(
         info.get("project_urls"), info.get("home_page"), info.get("project_url")
     )
+    # `info.version` backs up an unusable release list, but it is the registry's
+    # free-text field and is not guaranteed to be a version at all. Emitting an
+    # unparseable one puts a value in the report that nothing downstream can
+    # compare against -- reporting no answer is the honest degradation.
+    declared = info.get("version")
+    if declared is not None and not parse(str(declared)).valid:
+        declared = None
     return Resolution(
-        latest_stable=latest_stable(usable) or info.get("version"),
+        latest_stable=latest_stable(usable) or declared,
         releases=releases,
         repo=repo,
         homepage=info.get("home_page") or info.get("package_url"),
