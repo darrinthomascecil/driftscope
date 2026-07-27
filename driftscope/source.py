@@ -150,7 +150,62 @@ def normalize_remote(target: str, *, ado_org: str | None = None) -> str:
     return f"https://github.com/{target}"
 
 
-def _git(args: list[str], cwd: Path | None = None, timeout: int = 300):
+# Azure DevOps' fixed application ID. `az account get-access-token --resource <this>`
+# mints a token scoped to ADO, which is how a private repo is cloned without a PAT.
+ADO_RESOURCE = "499b84ac-1321-427f-aa17-267ca6975798"
+
+_ADO_TOKEN: str | None | bool = False  # False = not yet looked up
+
+
+def ado_token() -> str | None:
+    """An Azure DevOps access token from the already-signed-in `az`, read once.
+
+    Mirrors `http.gh_token()`: the credential already exists on the machine, so
+    there is no PAT to manage and nothing to put in a config file. Returns None
+    when `az` is missing or not logged in, in which case the caller falls back to
+    whatever git credentials the user has configured.
+    """
+    global _ADO_TOKEN
+    if _ADO_TOKEN is not False:
+        return _ADO_TOKEN  # type: ignore[return-value]
+    _ADO_TOKEN = None
+    if shutil.which("az"):
+        try:
+            r = subprocess.run(
+                ["az", "account", "get-access-token", "--resource", ADO_RESOURCE,
+                 "--query", "accessToken", "-o", "tsv"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                _ADO_TOKEN = r.stdout.strip()
+        except (subprocess.SubprocessError, OSError):
+            pass
+    return _ADO_TOKEN  # type: ignore[return-value]
+
+
+def _auth_env_for(remote: str) -> dict[str, str]:
+    """Git config, as environment, that authenticates a clone of `remote`.
+
+    Only Azure DevOps is handled: GitHub clones of public repos need nothing, and
+    private ones already work through the user's credential helper.
+
+    The token travels in `GIT_CONFIG_VALUE_0` rather than a `-c` argument on
+    purpose -- argv is world-readable via `ps`, environment is not.
+    """
+    if not parse_ado_url(remote):
+        return {}
+    token = ado_token()
+    if not token:
+        return {}
+    return {
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "http.extraheader",
+        "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {token}",
+    }
+
+
+def _git(args: list[str], cwd: Path | None = None, timeout: int = 300,
+         extra_env: dict[str, str] | None = None):
     return subprocess.run(
         ["git", *args],
         cwd=str(cwd) if cwd else None,
@@ -165,6 +220,7 @@ def _git(args: list[str], cwd: Path | None = None, timeout: int = 300):
             "GCM_INTERACTIVE": "never",
             "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
             "HOME": str(Path.home()),
+            **(extra_env or {}),
         },
     )
 
@@ -197,14 +253,22 @@ def open_source(
         args += ["--branch", ref]
     args += [remote, str(dest)]
 
+    auth_env = _auth_env_for(remote)
     try:
-        r = _git(args)
+        r = _git(args, extra_env=auth_env)
         if r.returncode != 0:
             err = (r.stderr or r.stdout or "").strip().splitlines()
             detail = err[-1] if err else "git clone failed"
             hint = ""
-            if "Authentication failed" in " ".join(err) or "could not read Username" in " ".join(err):
-                hint = " (private repo? authenticate git, or clone it yourself and scan the path)"
+            joined = " ".join(err)
+            if "Authentication failed" in joined or "could not read Username" in joined:
+                if parse_ado_url(remote) and not auth_env:
+                    # The specific, actionable cause: `az` could have supplied a
+                    # token and did not, so say that rather than the generic hint.
+                    hint = (" (Azure DevOps: run `az login`, or authenticate git "
+                            "for dev.azure.com)")
+                else:
+                    hint = " (private repo? authenticate git, or clone it yourself and scan the path)"
             raise CloneError(f"could not clone {remote}: {detail}{hint}")
 
         head = _git(["rev-parse", "HEAD"], cwd=dest)

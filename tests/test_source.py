@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import pytest
 
+from driftscope import source as src_mod
 from driftscope.source import (
     AdoRef,
+    _auth_env_for,
     looks_remote,
     normalize_remote,
     parse_ado_url,
@@ -130,3 +132,40 @@ def test_full_url_ignores_ado_org():
 
 def test_ado_url_looks_remote():
     assert looks_remote("https://dev.azure.com/contoso/Platform/_git/payments")
+
+
+# ------------------------------------------------------------------ clone auth
+
+
+@pytest.fixture
+def fake_token(monkeypatch):
+    """Stand in for `az account get-access-token` -- tests never shell out."""
+    monkeypatch.setattr(src_mod, "ado_token", lambda: "TOKEN123")
+
+
+def test_ado_clone_gets_a_bearer_header(fake_token):
+    env = _auth_env_for("https://dev.azure.com/contoso/Platform/_git/payments")
+    assert env["GIT_CONFIG_COUNT"] == "1"
+    assert env["GIT_CONFIG_KEY_0"] == "http.extraheader"
+    assert env["GIT_CONFIG_VALUE_0"] == "Authorization: Bearer TOKEN123"
+
+
+def test_token_never_reaches_argv(fake_token):
+    """argv is world-readable via `ps`; environment is not. The token must travel
+    in GIT_CONFIG_VALUE_0, never as a `-c` argument."""
+    env = _auth_env_for("https://dev.azure.com/contoso/Platform/_git/payments")
+    assert not any(k.startswith("-c") or "TOKEN123" in k for k in env)
+    assert "TOKEN123" in env["GIT_CONFIG_VALUE_0"]
+
+
+def test_github_clone_gets_no_injected_auth(fake_token):
+    """Public GitHub needs nothing, and private GitHub already works through the
+    user's credential helper -- injecting an ADO token there would be wrong."""
+    assert _auth_env_for("https://github.com/org/repo") == {}
+
+
+def test_no_token_means_no_auth_env(monkeypatch):
+    """`az` missing or logged out falls back to whatever git is configured with,
+    rather than producing a header with an empty token."""
+    monkeypatch.setattr(src_mod, "ado_token", lambda: None)
+    assert _auth_env_for("https://dev.azure.com/contoso/Platform/_git/payments") == {}
