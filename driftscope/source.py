@@ -25,9 +25,67 @@ _URL_RE = re.compile(
 # Bare "owner/repo" shorthand -- only honoured when no such local path exists.
 _SHORTHAND_RE = re.compile(r"^[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*$")
 
+# Azure DevOps, in the three shapes that turn up in the wild:
+#   https://dev.azure.com/{org}/{project}/_git/{repo}
+#   https://{org}@dev.azure.com/{org}/{project}/_git/{repo}   <- what "Clone" copies
+#   https://{org}.visualstudio.com/{project}/_git/{repo}      <- legacy, still common
+# The project segment is optional on the modern host: ADO permits omitting it when
+# the repository and project share a name.
+_ADO_MODERN_RE = re.compile(
+    r"^(?:https?://)?(?:[^@/]+@)?dev\.azure\.com/(?P<org>[^/]+)"
+    r"(?:/(?P<project>(?!_git/)[^/]+))?/_git/(?P<repo>[^/?#]+)",
+    re.I,
+)
+_ADO_LEGACY_RE = re.compile(
+    r"^(?:https?://)?(?:[^@/]+@)?(?P<org>[^./@]+)\.visualstudio\.com/"
+    r"(?:DefaultCollection/)?(?:(?P<project>(?!_git/)[^/]+)/)?_git/(?P<repo>[^/?#]+)",
+    re.I,
+)
+# A userinfo prefix is how ADO's Clone button formats a URL. Echoing it back in a
+# report would print something credential-shaped, so it is stripped on the way in.
+_USERINFO_RE = re.compile(r"^(https?://)[^@/]+@", re.I)
+
 
 class CloneError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class AdoRef:
+    """An Azure DevOps repository, decomposed into the parts its URLs need."""
+
+    org: str
+    project: str
+    repo: str
+
+    @property
+    def web_base(self) -> str:
+        return f"https://dev.azure.com/{self.org}/{self.project}/_git/{self.repo}"
+
+
+def parse_ado_url(url: str | None) -> AdoRef | None:
+    """An `AdoRef` when `url` addresses an Azure DevOps repo, else None.
+
+    Both live hosts and the legacy `*.visualstudio.com` one are accepted, with or
+    without the `{org}@` userinfo prefix the Clone button emits. When the project
+    segment is omitted -- which ADO permits when repo and project share a name --
+    the repo name stands in for it, which is what the web UI resolves to as well.
+    """
+    if not url:
+        return None
+    s = url.strip().rstrip("/")
+    for pattern in (_ADO_MODERN_RE, _ADO_LEGACY_RE):
+        m = pattern.match(s)
+        if m:
+            repo = m.group("repo").removesuffix(".git")
+            project = m.group("project") or repo
+            return AdoRef(org=m.group("org"), project=project, repo=repo)
+    return None
+
+
+def strip_userinfo(url: str | None) -> str | None:
+    """Drop a `user@` prefix so a report never echoes a credential-shaped string."""
+    return _USERINFO_RE.sub(r"\1", url) if url else url
 
 
 def slug_for(display: str) -> str:
@@ -37,11 +95,17 @@ def slug_for(display: str) -> str:
     never collide; local paths become the directory name.
     """
     s = display.strip().rstrip("/")
-    m = re.search(r"(?:https?://|git@|ssh://|git://)[^/:]+[/:]([^/]+)/([^/]+?)(?:\.git)?$", s)
-    if m:
-        parts = [m.group(1), m.group(2)]
+    ado = parse_ado_url(s)
+    if ado:
+        # The generic pattern below would read an ADO path as `{project}/_git`,
+        # producing `drift-project-_git.html` for every repo in the project.
+        parts = [ado.org, ado.project, ado.repo]
     else:
-        parts = [Path(s).name or "scan"]
+        m = re.search(r"(?:https?://|git@|ssh://|git://)[^/:]+[/:]([^/]+)/([^/]+?)(?:\.git)?$", s)
+        if m:
+            parts = [m.group(1), m.group(2)]
+        else:
+            parts = [Path(s).name or "scan"]
     slug = "-".join(parts)
     slug = re.sub(r"[^A-Za-z0-9._-]+", "-", slug).strip("-.")
     return (slug or "scan")[:80]
@@ -70,9 +134,19 @@ def looks_remote(target: str) -> bool:
     return False
 
 
-def normalize_remote(target: str) -> str:
+def normalize_remote(target: str, *, ado_org: str | None = None) -> str:
+    """Expand a shorthand target to a clone URL.
+
+    Bare `owner/repo` still means GitHub, because that is what it means everywhere
+    else and silently changing it would break existing invocations. `--ado-org`
+    opts a run into reading the same shorthand as `{project}/{repo}` on that
+    organisation.
+    """
     if _URL_RE.match(target):
         return target
+    if ado_org:
+        project, _, repo = target.partition("/")
+        return f"https://dev.azure.com/{ado_org}/{project}/_git/{repo or project}"
     return f"https://github.com/{target}"
 
 
@@ -96,7 +170,13 @@ def _git(args: list[str], cwd: Path | None = None, timeout: int = 300):
 
 
 @contextmanager
-def open_source(target: str, *, ref: str | None = None, keep: bool = False):
+def open_source(
+    target: str,
+    *,
+    ref: str | None = None,
+    keep: bool = False,
+    ado_org: str | None = None,
+):
     """Yield a Source for `target`, cloning it first if it is remote."""
     if not looks_remote(target):
         p = Path(target).expanduser().resolve()
@@ -108,7 +188,7 @@ def open_source(target: str, *, ref: str | None = None, keep: bool = False):
     if shutil.which("git") is None:
         raise CloneError("git is not installed, cannot scan a remote repository")
 
-    remote = normalize_remote(target)
+    remote = normalize_remote(target, ado_org=ado_org)
     tmp = Path(tempfile.mkdtemp(prefix="driftscope-clone-"))
     dest = tmp / "repo"
     args = ["clone", "--depth", "1", "--single-branch", "--no-tags", "-c",
@@ -129,10 +209,12 @@ def open_source(target: str, *, ref: str | None = None, keep: bool = False):
 
         head = _git(["rev-parse", "HEAD"], cwd=dest)
         branch = _git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=dest)
+        # The clone needs any userinfo the user supplied, but the report must not
+        # carry it: an ADO Clone URL embeds `{org}@`, which reads as a credential.
         src = Source(
-            display=remote,
+            display=strip_userinfo(remote),
             path=dest,
-            remote=remote,
+            remote=strip_userinfo(remote),
             ref=(branch.stdout or "").strip() or ref,
             commit=(head.stdout or "").strip()[:40] or None,
             cloned=True,

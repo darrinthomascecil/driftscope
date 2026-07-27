@@ -133,6 +133,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--ref", metavar="REF", help="branch or tag to clone (remote targets only)")
     s.add_argument("--keep-clone", action="store_true", help="do not delete the temporary clone")
     s.add_argument(
+        "--ado-org", metavar="ORG",
+        help="read a bare project/repo target as Azure DevOps on this organisation "
+             "(a full dev.azure.com URL needs no flag)",
+    )
+    s.add_argument(
         "--ecosystem",
         action="append",
         metavar="NAME",
@@ -238,7 +243,8 @@ def cmd_ecosystems() -> int:
 
 def cmd_scan(args: argparse.Namespace) -> int:
     try:
-        with open_source(args.path, ref=args.ref, keep=args.keep_clone) as src:
+        with open_source(args.path, ref=args.ref, keep=args.keep_clone,
+                         ado_org=args.ado_org) as src:
             return _scan_source(args, src)
     except CloneError as e:
         print(f"driftscope: {e}", file=sys.stderr)

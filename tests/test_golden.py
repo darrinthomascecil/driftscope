@@ -22,7 +22,7 @@ import pytest
 from driftscope.report.html import to_html
 from driftscope.report.render import to_json, to_markdown, to_text
 
-from ._report_fixture import build_report
+from ._report_fixture import build_ado_report, build_report
 
 GOLDEN = Path(__file__).parent / "golden"
 UPDATE = os.environ.get("DRIFTSCOPE_UPDATE_GOLDEN") == "1"
@@ -84,6 +84,22 @@ def test_markdown_golden(report):
 
 def test_html_golden(report):
     check("report.html", to_html(report))
+
+
+def test_html_golden_azure_devops():
+    """Same findings, scanned from Azure DevOps: only the permalinks may differ."""
+    check("report-ado.html", to_html(build_ado_report()))
+
+
+def test_ado_permalinks_differ_from_github_only_in_shape():
+    """A guard on the guard: if the two goldens were ever identical, the ADO one
+    would be asserting nothing."""
+    gh, ado = to_html(build_report()), to_html(build_ado_report())
+    assert gh != ado
+    assert "dev.azure.com/contoso/Platform/_git/payments" in ado
+    assert "github.com/darrinthomascecil" not in ado
+    # Anchored to the scanned commit, not a branch, on both forges.
+    assert "version=GC0123456789abcdef0123456789abcdef01234567" in ado
 
 
 def test_text_golden(report):

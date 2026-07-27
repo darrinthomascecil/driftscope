@@ -316,3 +316,20 @@ def build_report() -> Report:
                 "ref": "main", "commit": "0123456789abcdef0123456789abcdef01234567"},
         trend=trend,
     )
+
+
+def build_ado_report() -> Report:
+    """The same findings, scanned from Azure DevOps instead of GitHub.
+
+    Only `source` differs, which is the point: every declaration-site link in the
+    report has to change shape, and nothing else may. Pinning this as its own
+    golden means a regression in the ADO permalink cannot hide behind the GitHub
+    one still being correct.
+    """
+    report = build_report()
+    report.source = {
+        "remote": "https://dev.azure.com/contoso/Platform/_git/payments",
+        "ref": "main",
+        "commit": "0123456789abcdef0123456789abcdef01234567",
+    }
+    return report

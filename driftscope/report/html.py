@@ -18,6 +18,7 @@ import html
 import json
 import re
 from datetime import datetime
+from urllib.parse import urlencode
 
 from ..models import (
     Report,
@@ -29,6 +30,7 @@ from ..models import (
     SEV_UNKNOWN,
     severity_rank,
 )
+from ..source import parse_ado_url
 from .render import ECO_LABEL, _lag_phrase, _plural
 from .summarize import (
     spark_ratios,
@@ -400,7 +402,7 @@ _REMOTE_RE = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
 
 
 def _blob_url(report, source: str | None, line: int | None) -> str | None:
-    """Permalink a declaration site to GitHub.
+    """Permalink a declaration site to whichever forge the scan came from.
 
     Anchored to the scanned commit rather than a branch, so the link keeps
     pointing at the line that was actually scanned even after the branch moves.
@@ -409,10 +411,23 @@ def _blob_url(report, source: str | None, line: int | None) -> str | None:
     src = getattr(report, "source", None)
     if not src or not source or source.startswith("azure://"):
         return None
-    m = _REMOTE_RE.search(src.get("remote") or "")
+    remote = src.get("remote") or ""
+    ref = src.get("commit") or src.get("ref") or "HEAD"
+
+    ado = parse_ado_url(remote)
+    if ado:
+        # ADO addresses a file by query string, not path segments: `GC` marks the
+        # version as a Git Commit, and `path` must carry a leading slash. The
+        # line range is half-open, hence lineEnd = line + 1.
+        q = {"path": f"/{source}", "version": f"GC{ref}"}
+        if line:
+            q |= {"line": str(line), "lineEnd": str(line + 1),
+                  "lineStartColumn": "1", "lineEndColumn": "1"}
+        return f"{ado.web_base}?{urlencode(q)}"
+
+    m = _REMOTE_RE.search(remote)
     if not m:
         return None
-    ref = src.get("commit") or src.get("ref") or "HEAD"
     url = f"https://github.com/{m.group(1)}/{m.group(2)}/blob/{ref}/{source}"
     return f"{url}#L{line}" if line else url
 
