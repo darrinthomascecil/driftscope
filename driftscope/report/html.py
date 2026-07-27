@@ -159,6 +159,14 @@ button.caret{background:none;border:0;padding:2px 4px;cursor:pointer;
   color:var(--text-muted);font-size:11px;line-height:1;border-radius:4px}
 button.caret:hover{color:var(--text-primary);background:var(--surface-2)}
 tr.fdetail>td{border-top:0;padding-top:0;background:var(--surface-1)}
+.cvss{display:inline-block;min-width:30px;padding:1px 6px;margin-right:7px;
+  border-radius:5px;font-size:11.5px;font-weight:600;text-align:center;
+  font-variant-numeric:tabular-nums;border:1px solid var(--rule);
+  color:var(--text-primary);background:var(--surface-2)}
+.cvss.critical{border-color:var(--critical);color:var(--critical)}
+.cvss.warning{border-color:var(--warning)}
+.cvss.low{border-color:var(--good)}
+.cvss.none{color:var(--text-muted);font-weight:400}
 tr.fdetail .detail{padding:2px 0 14px}
 
 /* upstream velocity: sits beneath the finding it qualifies */
@@ -299,8 +307,17 @@ def _vuln_rows(sec) -> str:
         items = []
         for v in sec.shown:
             sev = VSEV_STYLE.get(v.severity, "unknown")
+            # The 0-100 chip is the CVSS v3 base score x10. Advisories with no
+            # usable v3 vector render no chip at all rather than a placeholder --
+            # a number beside a CVE that no source stands behind is worse than a
+            # blank, and "unscored" is a different statement from "harmless".
+            chip = (f"<span class='cvss {sev}' title='CVSS v3 base score "
+                    f"{v.score / 10:.1f} of 10'>{v.score}</span>"
+                    if v.score is not None else
+                    "<span class='cvss none' title='advisory carries no CVSS v3 "
+                    "vector'>&mdash;</span>")
             items.append(
-                f"<div><a href='{e(v.url)}' target='_blank' rel='noopener'>"
+                f"<div>{chip}<a href='{e(v.url)}' target='_blank' rel='noopener'>"
                 f"{e(v.cve)}</a> <span class='badge {sev}'>{e(v.severity or 'unrated')}"
                 f"</span> {e(v.summary[:110])}</div>"
             )

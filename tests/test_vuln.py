@@ -302,3 +302,80 @@ def test_real_osv_finds_the_known_newtonsoft_advisory():
     r = vuln.assess(pairs, ctx.client)["nuget:Newtonsoft.Json"]
     assert r.fixed_count >= 1
     assert any("CVE-2024-21907" in v.cve for v in r.fixed_by_upgrade)
+
+
+# ------------------------------------------------------------- CVSS -> 0..100
+#
+# OSV returns a CVSS *vector string*, not a number, so the score is computed from
+# the published v3.1 formula. Every expected value below is the authoritative NVD
+# base score for that real CVE -- not a plausible-looking figure. An earlier draft
+# of this test invented "1.6" for a near-minimum vector; hand-computing it gave
+# 1.8, and the formula was right. Ground truth or nothing.
+
+
+@pytest.mark.parametrize("vector,expected,cve", [
+    ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H", 7.5, "CVE-2020-36518"),
+    ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H", 10.0, "CVE-2021-44228"),
+    ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", 9.8, "CVE-2022-22965"),
+    ("CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H", 8.8, "CVE-2023-4863"),
+    ("CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N", 6.1, "CVE-2019-11358"),
+])
+def test_base_score_matches_nvd(vector, expected, cve):
+    from driftscope.vuln import cvss_base_score
+
+    assert cvss_base_score(vector) == expected, cve
+
+
+def test_the_spec_rounding_is_used_not_ordinary_rounding():
+    """CVSS rounds *up* to one decimal. Ordinary round() disagrees at the
+    boundaries, which is how a computed 9.8 becomes a 9.7 that matches no
+    advisory anyone can look up."""
+    from driftscope.vuln import _cvss_roundup
+
+    assert _cvss_roundup(4.02) == 4.1
+    assert _cvss_roundup(4.00) == 4.0
+    assert _cvss_roundup(1.745398776) == 1.8
+
+
+def test_score_is_the_base_score_times_ten():
+    from driftscope.vuln import Vuln
+
+    v = Vuln(id="x", cvss="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H")
+    assert v.score == 98
+
+
+@pytest.mark.parametrize("vector", [
+    None, "", "not-a-vector", "7.5",
+    "CVSS:2.0/AV:N/AC:L/Au:N/C:P/I:P/A:P",          # v2: different formula
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H",  # v4: different formula
+    "CVSS:3.1/AV:X/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",  # invalid metric value
+    "CVSS:3.1/AV:N/AC:L",                            # truncated
+])
+def test_unscoreable_vectors_are_none_not_zero(vector):
+    """0.0 is a real score meaning "no impact". A missing measurement must not
+    impersonate one -- the same rule that makes a failed count None rather than 0.
+    v2 and v4 use different formulas; guessing an equivalent would invent a
+    number."""
+    from driftscope.vuln import Vuln, cvss_base_score
+
+    assert cvss_base_score(vector) is None
+    assert Vuln(id="x", cvss=vector or "").score is None
+
+
+def test_a_genuine_zero_is_distinguishable_from_unscored():
+    """The other direction: a vector with no impact really does score 0."""
+    from driftscope.vuln import Vuln, cvss_base_score
+
+    zero = "CVSS:3.1/AV:P/AC:H/PR:H/UI:R/S:U/C:N/I:N/A:N"
+    assert cvss_base_score(zero) == 0.0
+    assert Vuln(id="x", cvss=zero).score == 0
+
+
+def test_scope_change_uses_the_other_privilege_weights():
+    """Scope-changed vectors weight PR differently and apply a 1.08 multiplier.
+    Using one branch for both silently misprices every scope-changed advisory."""
+    from driftscope.vuln import cvss_base_score
+
+    unchanged = cvss_base_score("CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H")
+    changed = cvss_base_score("CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H")
+    assert unchanged == 8.8 and changed == 9.9

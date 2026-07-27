@@ -492,7 +492,7 @@
             ],
             "summary": "Advisory number 1 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "CRITICAL",
-            "cvss": "7.5",
+            "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
             "fixed_in": [
               "3.0.0"
             ],
@@ -505,7 +505,7 @@
             ],
             "summary": "Advisory number 2 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "HIGH",
-            "cvss": "7.5",
+            "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
             "fixed_in": [
               "3.0.0"
             ],
@@ -518,7 +518,7 @@
             ],
             "summary": "Advisory number 3 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "MODERATE",
-            "cvss": "7.5",
+            "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
             "fixed_in": [
               "3.0.0"
             ],
@@ -531,7 +531,7 @@
             ],
             "summary": "Advisory number 4 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "LOW",
-            "cvss": "7.5",
+            "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
             "fixed_in": [
               "3.0.0"
             ],
@@ -544,7 +544,7 @@
             ],
             "summary": "Advisory number 5 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "",
-            "cvss": "7.5",
+            "cvss": "CVSS:2.0/AV:N/AC:L/Au:N/C:P/I:P/A:P",
             "fixed_in": [
               "3.0.0"
             ],
@@ -557,7 +557,7 @@
             ],
             "summary": "Advisory number 6 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "HIGH",
-            "cvss": "7.5",
+            "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
             "fixed_in": [
               "3.0.0"
             ],
@@ -572,7 +572,7 @@
             ],
             "summary": "Advisory number 20 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "HIGH",
-            "cvss": "7.5",
+            "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
             "fixed_in": [
               "3.0.0"
             ],
@@ -585,7 +585,7 @@
             ],
             "summary": "Advisory number 21 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "MODERATE",
-            "cvss": "7.5",
+            "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
             "fixed_in": [
               "3.0.0"
             ],
@@ -600,7 +600,7 @@
             ],
             "summary": "Advisory number 30 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "LOW",
-            "cvss": "7.5",
+            "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
             "fixed_in": [
               "3.0.0"
             ],
@@ -680,7 +680,7 @@
             ],
             "summary": "Advisory number 40 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "HIGH",
-            "cvss": "7.5",
+            "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
             "fixed_in": [
               "3.0.0"
             ],
@@ -693,7 +693,7 @@
             ],
             "summary": "Advisory number 41 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "HIGH",
-            "cvss": "7.5",
+            "cvss": "CVSS:2.0/AV:N/AC:L/Au:N/C:P/I:P/A:P",
             "fixed_in": [
               "3.0.0"
             ],
@@ -706,7 +706,7 @@
             ],
             "summary": "Advisory number 42 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "HIGH",
-            "cvss": "7.5",
+            "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
             "fixed_in": [
               "3.0.0"
             ],
@@ -719,7 +719,7 @@
             ],
             "summary": "Advisory number 43 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
             "severity": "HIGH",
-            "cvss": "7.5",
+            "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
             "fixed_in": [
               "3.0.0"
             ],

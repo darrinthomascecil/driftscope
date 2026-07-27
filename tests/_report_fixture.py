@@ -56,6 +56,20 @@ def _dt(y, m, d):
     return datetime(y, m, d, tzinfo=UTC)
 
 
+# Real CVSS v3.1 vectors with their published NVD base scores, so the golden
+# exercises the scorer rather than a placeholder. The last entry is deliberately
+# not a v3 vector: an advisory with nothing scoreable must render a blank, and
+# that case has to appear in the snapshot or nothing pins it.
+_VECTORS = [
+    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",   # 10.0 -> 100
+    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",   #  9.8 ->  98
+    "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",   #  8.8 ->  88
+    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",   #  7.5 ->  75
+    "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",   #  6.1 ->  61
+    "CVSS:2.0/AV:N/AC:L/Au:N/C:P/I:P/A:P",            #  v2  -> unscored
+]
+
+
 def _vuln(n: int, sev: str, fixed: str = "3.0.0") -> Vuln:
     return Vuln(
         id=f"GHSA-xxxx-{n:04d}",
@@ -63,7 +77,7 @@ def _vuln(n: int, sev: str, fixed: str = "3.0.0") -> Vuln:
         summary=f"Advisory number {n} with a summary long enough to exercise the "
                 f"110- and 120-character truncation in both reporters.",
         severity=sev,
-        cvss="7.5",
+        cvss=_VECTORS[n % len(_VECTORS)],
         fixed_in=[fixed],
         url=f"https://osv.dev/vulnerability/GHSA-xxxx-{n:04d}",
     )
