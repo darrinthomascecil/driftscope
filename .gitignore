@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+tutorials/
+
+# Generated scan reports. Regenerate with `driftscope scan`; the goldens under
+# tests/golden/ are the committed, asserted-against copies.
+drift-*.html
+drift-*.md
+drift-*.json

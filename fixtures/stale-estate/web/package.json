@@ -1,0 +1,13 @@
+{
+  "name": "legacy-web",
+  "version": "1.0.0",
+  "engines": { "node": ">=16" },
+  "dependencies": {
+    "express": "^4.16.0",
+    "react": "16.8.6",
+    "lodash": "4.17.11"
+  },
+  "devDependencies": {
+    "jest": "^26.0.0"
+  }
+}

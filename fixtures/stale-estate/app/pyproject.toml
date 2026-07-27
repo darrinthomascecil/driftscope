@@ -1,0 +1,11 @@
+[project]
+name = "legacy-app"
+version = "0.0.1"
+requires-python = ">=3.9"
+dependencies = [
+  "urllib3<2",
+  "pydantic==1.10.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest==6.2.5"]

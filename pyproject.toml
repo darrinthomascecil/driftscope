@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "driftscope"
+version = "0.1.0"
+description = "Measure how far behind latest stable an estate's IaC, infrastructure and dependency versions are"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+# No runtime dependencies on purpose: this runs in customer CI where adding
+# packages is friction. Standard library only.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+driftscope = "driftscope.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["driftscope*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "network: hits real public registries; deselect with -m 'not network'",
+]

@@ -1,0 +1,3462 @@
+{
+  "schema": "driftscope/1",
+  "root": "/Users/darrincecil/projects/driftscope/fixtures/stale-estate",
+  "generated_at": "2026-07-26T17:35:33.387768-07:00",
+  "stats": {
+    "files_scanned": 15,
+    "components_found": 47,
+    "resolved": 41,
+    "resolve_errors": 0,
+    "github_queries": 125,
+    "cache_hits": 0,
+    "started": "2026-07-27T00:35:18.252991+00:00",
+    "duration_s": 15.13
+  },
+  "summary": {
+    "critical": 22,
+    "medium": 3,
+    "high": 12,
+    "unknown": 8,
+    "current": 2
+  },
+  "errors": [],
+  "findings": [
+    {
+      "component": {
+        "ecosystem": "docker-image",
+        "name": "node",
+        "current": "14-alpine",
+        "source": "docker/web.Dockerfile",
+        "line": 1,
+        "raw": "node:14-alpine",
+        "meta": {
+          "digest": null,
+          "untagged": false,
+          "floating": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "26.5-alpine",
+        "repo": "nodejs/docker-node",
+        "homepage": "https://hub.docker.com/_/node",
+        "deprecated": false,
+        "note": "compared within variant 'alpine'; dates are Docker Hub last-push times, not original release dates; tag listing truncated at 200 tags (Hub pages by recency, not version), so an old pin may be absent and undatable; tag '14-alpine' was not in the fetched listing; age unavailable",
+        "error": null,
+        "extra": {
+          "list_truncated": true,
+          "dates_are_push_times": true
+        },
+        "release_count": 6
+      },
+      "lag": {
+        "behind_major": 12,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 6,
+        "stable_releases_behind": 6,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 14-alpine -> 26.5-alpine in one change; step through 24.18.0-alpine so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Update the FROM tag to 26.5-alpine",
+          "Rebuild and run the image's own test suite; base images change libc, OpenSSL and CA bundles between majors",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "compared within variant 'alpine'; dates are Docker Hub last-push times, not original release dates; tag listing truncated at 200 tags (Hub pages by recency, not version), so an old pin may be absent and undatable; tag '14-alpine' was not in the fetched listing; age unavailable"
+        ],
+        "target_version": "26.5-alpine",
+        "intermediate_versions": [
+          "24.18.0-alpine"
+        ]
+      },
+      "delta": {
+        "repo": "nodejs/docker-node",
+        "from_ref": "14-alpine",
+        "to_ref": "26.5-alpine",
+        "from_date": null,
+        "to_date": "2026-07-08T20:39:44.060014Z",
+        "window_resolved": false,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "could not date both versions on GitHub; issue window not computed. Release notes comparison unavailable."
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "helm-chart",
+        "name": "redis",
+        "current": "16.8.0",
+        "source": "helm/Chart.yaml",
+        "line": null,
+        "raw": "16.8.0",
+        "meta": {
+          "repository": "https://charts.bitnami.com/bitnami",
+          "dependency": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "27.0.17",
+        "repo": "bitnami/charts",
+        "homepage": "https://bitnami.com",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 316
+      },
+      "lag": {
+        "behind_major": 11,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 316,
+        "stable_releases_behind": 316,
+        "days_behind": 1511,
+        "current_age_days": 1514,
+        "age_lower_bound": true,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 16.8.0 -> 27.0.17 in one change; step through 17.17.1, 18.19.4, 19.6.4, 20.13.4, 21.2.14, 22.0.7, 23.2.12, 24.1.8, 25.5.3 so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Bump the dependency to 27.0.17 and run `helm dependency update`",
+          "Run `helm diff upgrade` (helm-diff plugin) before applying",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "Chart majors frequently rename values keys; your values.yaml may silently stop applying"
+        ],
+        "target_version": "27.0.17",
+        "intermediate_versions": [
+          "17.17.1",
+          "18.19.4",
+          "19.6.4",
+          "20.13.4",
+          "21.2.14",
+          "22.0.7",
+          "23.2.12",
+          "24.1.8",
+          "25.5.3"
+        ]
+      },
+      "delta": {
+        "repo": "bitnami/charts",
+        "from_ref": "16.8.0",
+        "to_ref": "27.0.17",
+        "from_date": null,
+        "to_date": "2026-07-24T06:00:45Z",
+        "window_resolved": false,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "could not date both versions on GitHub; issue window not computed. Release notes comparison unavailable."
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "npm",
+        "name": "node",
+        "current": "16",
+        "source": "web/package.json",
+        "line": null,
+        "raw": ">=16",
+        "meta": {
+          "runtime": true,
+          "constraint": ">=16"
+        }
+      },
+      "resolution": {
+        "latest_stable": "24.18.0",
+        "repo": "nodejs/node",
+        "homepage": "https://nodejs.org",
+        "deprecated": false,
+        "note": "latest_stable is the newest LTS line",
+        "error": null,
+        "extra": {},
+        "release_count": 854
+      },
+      "lag": {
+        "behind_major": 8,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 250,
+        "stable_releases_behind": 250,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 16 -> 24.18.0 in one change; step through 17.9.1, 18.20.8, 19.9.0, 20.20.2, 21.7.3, 22.23.1, 23.11.1 so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Update the constraint to 24.18.0 and refresh the lock file (npm)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "Runtime bumps affect every dependency's native modules; rebuild from clean",
+          "latest_stable is the newest LTS line"
+        ],
+        "target_version": "24.18.0",
+        "intermediate_versions": [
+          "17.9.1",
+          "18.20.8",
+          "19.9.0",
+          "20.20.2",
+          "21.7.3",
+          "22.23.1",
+          "23.11.1"
+        ]
+      },
+      "delta": {
+        "repo": "nodejs/node",
+        "from_ref": "16",
+        "to_ref": "24.18.0",
+        "from_date": null,
+        "to_date": "2026-06-23T00:00:00Z",
+        "window_resolved": false,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "could not date both versions on GitHub; issue window not computed. Release notes comparison unavailable."
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "helm-chart",
+        "name": "postgresql",
+        "current": "11.6.12",
+        "source": "helm/Chart.yaml",
+        "line": null,
+        "raw": "11.6.12",
+        "meta": {
+          "repository": "https://charts.bitnami.com/bitnami",
+          "dependency": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "18.8.0",
+        "repo": "bitnami/charts",
+        "homepage": "https://bitnami.com",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 406
+      },
+      "lag": {
+        "behind_major": 7,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 395,
+        "stable_releases_behind": 395,
+        "days_behind": 1476,
+        "current_age_days": 1487,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 11.6.12 -> 18.8.0 in one change; step through 12.12.10, 13.4.4, 14.3.3, 15.5.38, 16.7.27 so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Bump the dependency to 18.8.0 and run `helm dependency update`",
+          "Run `helm diff upgrade` (helm-diff plugin) before applying",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "Chart majors frequently rename values keys; your values.yaml may silently stop applying"
+        ],
+        "target_version": "18.8.0",
+        "intermediate_versions": [
+          "12.12.10",
+          "13.4.4",
+          "14.3.3",
+          "15.5.38",
+          "16.7.27"
+        ]
+      },
+      "delta": {
+        "repo": "bitnami/charts",
+        "from_ref": "11.6.12",
+        "to_ref": "18.8.0",
+        "from_date": "2022-06-30T10:55:02Z",
+        "to_date": "2026-07-15T14:38:29Z",
+        "window_resolved": true,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "no labelled bugs or breaking-change notes found in the window"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "docker-image",
+        "name": "postgres",
+        "current": "11",
+        "source": "docker-compose.yml",
+        "line": 5,
+        "raw": "postgres:11",
+        "meta": {
+          "digest": null,
+          "floating": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "18.4",
+        "repo": "docker-library/postgres",
+        "homepage": "https://hub.docker.com/_/postgres",
+        "deprecated": false,
+        "note": "dates are Docker Hub last-push times, not original release dates; tag listing truncated at 200 tags (Hub pages by recency, not version), so an old pin may be absent and undatable; tag '11' was not in the fetched listing; age unavailable",
+        "error": null,
+        "extra": {
+          "list_truncated": true,
+          "dates_are_push_times": true
+        },
+        "release_count": 42
+      },
+      "lag": {
+        "behind_major": 7,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 42,
+        "stable_releases_behind": 42,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 11 -> 18.4 in one change; step through 13.23-trixie, 14.23-trixie, 15.18-trixie, 16.14-trixie, 17.10-trixie so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Update the FROM tag to 18.4",
+          "Rebuild and run the image's own test suite; base images change libc, OpenSSL and CA bundles between majors",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "dates are Docker Hub last-push times, not original release dates; tag listing truncated at 200 tags (Hub pages by recency, not version), so an old pin may be absent and undatable; tag '11' was not in the fetched listing; age unavailable"
+        ],
+        "target_version": "18.4",
+        "intermediate_versions": [
+          "13.23-trixie",
+          "14.23-trixie",
+          "15.18-trixie",
+          "16.14-trixie",
+          "17.10-trixie"
+        ]
+      },
+      "delta": {
+        "repo": "docker-library/postgres",
+        "from_ref": "11",
+        "to_ref": "18.4",
+        "from_date": null,
+        "to_date": "2026-07-19T22:08:31.476685Z",
+        "window_resolved": false,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "could not date both versions on GitHub; issue window not computed. Release notes comparison unavailable."
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "azure-api-version",
+        "name": "Microsoft.Storage/storageAccounts",
+        "current": "2021-04-01",
+        "source": "azure/template.json",
+        "line": null,
+        "raw": "2021-04-01",
+        "meta": {
+          "format": "arm",
+          "preview": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "2026-04-01",
+        "repo": null,
+        "homepage": "https://learn.microsoft.com/azure/templates/microsoft.storage/storageaccounts",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 31
+      },
+      "lag": {
+        "behind_major": 5,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 14,
+        "stable_releases_behind": 14,
+        "days_behind": 1826,
+        "current_age_days": 1943,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 2021-04-01 -> 2026-04-01 in one change; step through 2022-09-01, 2023-05-01, 2024-01-01, 2025-08-01 so each api-version's breaking changes are isolated and revertible.",
+        "steps": [
+          "Change the api-version on `Microsoft.Storage/storageAccounts` to 2026-04-01",
+          "Run `az deployment group what-if` (or `--confirm-with-what-if`) against a non-production resource group and diff the result",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "Newer api-versions can add required properties or change defaults; what-if is the only reliable way to see it before it applies"
+        ],
+        "target_version": "2026-04-01",
+        "intermediate_versions": [
+          "2022-09-01",
+          "2023-05-01",
+          "2024-01-01",
+          "2025-08-01"
+        ]
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "azure-api-version",
+        "name": "Microsoft.KeyVault/vaults",
+        "current": "2021-10-01",
+        "source": "azure/main.bicep",
+        "line": 10,
+        "raw": "2021-10-01",
+        "meta": {
+          "format": "bicep",
+          "preview": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "2026-02-01",
+        "repo": null,
+        "homepage": "https://learn.microsoft.com/azure/templates/microsoft.keyvault/vaults",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 22
+      },
+      "lag": {
+        "behind_major": 5,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 13,
+        "stable_releases_behind": 7,
+        "days_behind": 1584,
+        "current_age_days": 1760,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 2021-10-01 -> 2026-02-01 in one change; step through 2022-11-01, 2023-07-01, 2024-11-01, 2025-05-01 so each api-version's breaking changes are isolated and revertible.",
+        "steps": [
+          "Change the api-version on `Microsoft.KeyVault/vaults` to 2026-02-01",
+          "Run `az deployment group what-if` (or `--confirm-with-what-if`) against a non-production resource group and diff the result",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "Newer api-versions can add required properties or change defaults; what-if is the only reliable way to see it before it applies"
+        ],
+        "target_version": "2026-02-01",
+        "intermediate_versions": [
+          "2022-11-01",
+          "2023-07-01",
+          "2024-11-01",
+          "2025-05-01"
+        ]
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "github-action",
+        "name": "actions/checkout",
+        "current": "2",
+        "source": ".github/workflows/ci.yml",
+        "line": 7,
+        "raw": "actions/checkout@v2",
+        "meta": {
+          "subpath": null,
+          "sha_pinned": false,
+          "sha": null
+        }
+      },
+      "resolution": {
+        "latest_stable": "7",
+        "repo": "actions/checkout",
+        "homepage": "https://github.com/actions/checkout",
+        "deprecated": false,
+        "note": "comparing major tags; newest full release is 7.0.1",
+        "error": null,
+        "extra": {},
+        "release_count": 57
+      },
+      "lag": {
+        "behind_major": 5,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 38,
+        "stable_releases_behind": 38,
+        "days_behind": 0,
+        "current_age_days": 6,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 2 -> 7 in one change; step through 3, 4, 5, 6 so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Update `uses: actions/checkout@v7`",
+          "Consider pinning to a commit SHA instead of a tag for supply-chain safety",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "comparing major tags; newest full release is 7.0.1"
+        ],
+        "target_version": "7",
+        "intermediate_versions": [
+          "3",
+          "4",
+          "5",
+          "6"
+        ]
+      },
+      "delta": {
+        "repo": "actions/checkout",
+        "from_ref": "2",
+        "to_ref": "7",
+        "from_date": "2026-07-20T15:43:41Z",
+        "to_date": "2026-07-20T15:10:05Z",
+        "window_resolved": false,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "current release is not older than target; nothing to analyse"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "npm",
+        "name": "jest",
+        "current": "26.0.0",
+        "source": "web/package.json",
+        "line": null,
+        "raw": "^26.0.0",
+        "meta": {
+          "constraint": "^26.0.0",
+          "group": "devDependencies",
+          "locked": false,
+          "pinned": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "30.4.2",
+        "repo": "jestjs/jest",
+        "homepage": "https://jestjs.io/",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 380
+      },
+      "lag": {
+        "behind_major": 4,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 136,
+        "stable_releases_behind": 101,
+        "days_behind": 2195,
+        "current_age_days": 2274,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 26.0.0 -> 30.4.2 in one change; step through 27.5.1, 28.1.3, 29.7.0 so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Update the constraint to 30.4.2 and refresh the lock file (npm)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "25 breaking-change note(s) found in release notes between these versions - read them before upgrading"
+        ],
+        "target_version": "30.4.2",
+        "intermediate_versions": [
+          "27.5.1",
+          "28.1.3",
+          "29.7.0"
+        ]
+      },
+      "delta": {
+        "repo": "jestjs/jest",
+        "from_ref": "26.0.0",
+        "to_ref": "30.4.2",
+        "from_date": "2020-05-04T17:54:11.941000Z",
+        "to_date": "2026-05-09T00:31:21.036000Z",
+        "window_resolved": true,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [
+          "v27.0.0: `[jest-circus]` [**BREAKING**] Fail tests when multiple `done()` calls are made ([#10624](https://github.com/facebook/jest/pull/10624))",
+          "v27.0.0: `[jest-circus, jest-jasmine2]` [**BREAKING**] Fail the test instead of just warning when describe returns a value ([#10947](https://github.com/facebook/jest/pull/10947))",
+          "v27.0.0: `[jest-config]` [**BREAKING**] Default to Node testing environment instead of browser (JSDOM) ([#9874](https://github.com/facebook/jest/pull/9874))",
+          "v27.0.0: `[jest-config]` [**BREAKING**] Use `jest-circus` as default test runner ([#10686](https://github.com/facebook/jest/pull/10686))",
+          "v27.0.0: `[jest-config, jest-runtime]` [**BREAKING**] Use \"modern\" implementation as default for fake timers ([#10874](https://github.com/facebook/jest/pull/10874) & [#11197](https://github.com/facebook/jest/pull/11197))",
+          "v27.0.0: `[jest-config, jest-haste-map, jest-resolve, jest-runner, jest-runtime, jest-test-sequencer, jest-transform, jest-types]` [**BREAKING**] Add custom HasteMap class implementation config option ([#11107](https://github.com/facebook/jest/pull/11107))",
+          "v27.0.0: `[jest-repl, jest-runner]` [**BREAKING**] Run transforms over environment ([#8751](https://github.com/facebook/jest/pull/8751))",
+          "v27.0.0: `[jest-runner]` [**BREAKING**] set exit code to 1 if test logs after teardown ([#10728](https://github.com/facebook/jest/pull/10728))",
+          "v27.0.0: `[jest-runner]` [**BREAKING**] Run transforms over `runnner` ([#8823](https://github.com/facebook/jest/pull/8823))",
+          "v27.0.0: `[jest-runner]` [**BREAKING**] Run transforms over `testRunnner` ([#8823](https://github.com/facebook/jest/pull/8823))",
+          "v27.0.0: `[jest-snapshot]` [**BREAKING**] Make prettier optional for inline snapshots - fall back to string replacement ([#7792](https://github.com/facebook/jest/pull/7792) & [#11192](https://github.com/facebook/jest/pull/11192))",
+          "v27.0.0: `[jest-snapshot]` [**BREAKING**] Run transforms over `snapshotResolver` ([#8751](https://github.com/facebook/jest/pull/8829))",
+          "v27.0.0: `[jest-transform]` [**BREAKING**] Do not export `ScriptTransformer` class, instead export the async function `createScriptTransformer` ([#11163](https://github.com/facebook/jest/pull/11163))",
+          "v27.0.0: `[jest-transform]` [**BREAKING**] `requireAndTranspileModule` always return a `Promise`, and the third parameter type is changed to `RequireAndTranspileModuleOptions` which accept `applyInteropRequireDefault` option ([#11232](https://github.com/facebook/jest/pull/11232))",
+          "v27.0.0: `[jest-transform]` [**BREAKING**] `createTranspilingRequire` return function which return a `Promise` now ([#11232](https://github.com/facebook/jest/pull/11232))",
+          "v27.0.0: `[expect]` [**BREAKING**] Revise `expect.not.objectContaining()` to be the inverse of `expect.objectContaining()`, as documented. ([#10708](https://github.com/facebook/jest/pull/10708))",
+          "v27.0.0: `[expect]` [**BREAKING**] Make `toContain` more strict with the received type ([#10119](https://github.com/facebook/jest/pull/10119) & [#10929](https://github.com/facebook/jest/pull/10929))",
+          "v27.0.0: `[expect]` [**BREAKING**] `matcherResult` on `JestAssertionError` are now strings rather than functions ([#10989](https://github.com/facebook/jest/pull/10989))",
+          "v27.0.0: `[jest-config]` [**BREAKING**] Change default file extension order by moving json behind ts and tsx ([10572](https://github.com/facebook/jest/pull/10572))",
+          "v27.0.0: `[jest-diff]` [**BREAKING**] Use only named exports ([#11371](https://github.com/facebook/jest/pull/11371))",
+          "v27.0.0: `[jest-each]` [**BREAKING**] Ignore excess words in headings ([#8766](https://github.com/facebook/jest/pull/8766))",
+          "v27.0.0: `[jest-environment]` [**BREAKING**] Drop support for `runScript` for test environments ([#11155](https://github.com/facebook/jest/pull/11155))",
+          "v27.0.0: `[jest-environment-jsdom]` [**BREAKING**] Remove Node globals `setImmediate` and `clearImmediate` [#11222](https://github.com/facebook/jest/pull/11222)",
+          "v27.0.0: `[jest-get-type]` [**BREAKING**] Convert to ES Module ([#11359](https://github.com/facebook/jest/pull/11359))",
+          "v27.0.0: `[jest-globals]` [**BREAKING**] Disallow return values other than a `Promise` from hooks and tests ([#10512](https://github.com/facebook/jest/pull/10512))"
+        ],
+        "releases_in_window": [
+          "v26.6.1",
+          "v26.6.2",
+          "v26.6.3",
+          "v27.0.0",
+          "v27.0.1",
+          "v27.0.2",
+          "v27.0.3",
+          "v27.0.4",
+          "v27.0.5",
+          "v27.0.6",
+          "v27.1.0",
+          "v27.1.1",
+          "v27.2.0",
+          "v27.2.1",
+          "v27.2.2",
+          "v27.2.3",
+          "v27.2.4",
+          "v27.2.5",
+          "v27.3.0",
+          "v27.3.1",
+          "v27.4.0",
+          "v27.4.1",
+          "v27.4.2",
+          "v27.4.3",
+          "v27.4.4",
+          "v27.4.5",
+          "v27.4.6",
+          "v27.4.7",
+          "v27.5.0",
+          "v27.5.1",
+          "v28.0.0-alpha.0",
+          "v28.0.0-alpha.1",
+          "v28.0.0-alpha.2",
+          "v28.0.0-alpha.3",
+          "v28.0.0-alpha.4",
+          "v28.0.0-alpha.5",
+          "v28.0.0-alpha.6",
+          "v28.0.0-alpha.7",
+          "v28.0.0-alpha.8",
+          "v28.0.0-alpha.9",
+          "v28.0.0-alpha.10",
+          "v28.0.0-alpha.11",
+          "v28.0.0",
+          "v28.0.1",
+          "v28.0.2",
+          "v28.0.3",
+          "v28.1.0",
+          "v28.1.1",
+          "v28.1.2",
+          "v28.1.3",
+          "v29.0.0-alpha.0",
+          "v29.0.0-alpha.1",
+          "v29.0.0-alpha.3",
+          "v29.0.0-alpha.4",
+          "v29.0.0-alpha.5",
+          "v29.0.0-alpha.6",
+          "v29.0.0",
+          "v29.0.1",
+          "v29.0.2",
+          "v29.0.3"
+        ],
+        "error": null,
+        "note": "issues are filed-in-window signals, not proven regressions; breaking-change notes are quoted from release bodies"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "pypi",
+        "name": "Django",
+        "current": "2.2.28",
+        "source": "app/requirements.txt",
+        "line": 3,
+        "raw": "==2.2.28",
+        "meta": {
+          "constraint": "==2.2.28",
+          "pinned": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "6.0.7",
+        "repo": "django/django",
+        "homepage": "https://pypi.org/project/Django/",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 438
+      },
+      "lag": {
+        "behind_major": 4,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 201,
+        "stable_releases_behind": 168,
+        "days_behind": 1548,
+        "current_age_days": 1567,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 2.2.28 -> 6.0.7 in one change; step through 3.2.25, 4.2.30, 5.2.16 so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Update the constraint to 6.0.7 and refresh the lock file (pip)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [],
+        "target_version": "6.0.7",
+        "intermediate_versions": [
+          "3.2.25",
+          "4.2.30",
+          "5.2.16"
+        ]
+      },
+      "delta": {
+        "repo": "django/django",
+        "from_ref": "2.2.28",
+        "to_ref": "6.0.7",
+        "from_date": "2022-04-11T07:52:52.782601Z",
+        "to_date": "2026-07-07T13:51:20.007807Z",
+        "window_resolved": true,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "no labelled bugs or breaking-change notes found in the window"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "github-action",
+        "name": "docker/build-push-action",
+        "current": "3",
+        "source": ".github/workflows/ci.yml",
+        "line": 11,
+        "raw": "docker/build-push-action@v3",
+        "meta": {
+          "subpath": null,
+          "sha_pinned": false,
+          "sha": null
+        }
+      },
+      "resolution": {
+        "latest_stable": "7",
+        "repo": "docker/build-push-action",
+        "homepage": "https://github.com/docker/build-push-action",
+        "deprecated": false,
+        "note": "comparing major tags; newest full release is 7.3.0",
+        "error": null,
+        "extra": {},
+        "release_count": 64
+      },
+      "lag": {
+        "behind_major": 4,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 40,
+        "stable_releases_behind": 40,
+        "days_behind": 1247,
+        "current_age_days": 1273,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 3 -> 7 in one change; step through 4, 5, 6 so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Update `uses: docker/build-push-action@v7`",
+          "Consider pinning to a commit SHA instead of a tag for supply-chain safety",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "2 breaking-change note(s) found in release notes between these versions - read them before upgrading",
+          "comparing major tags; newest full release is 7.3.0"
+        ],
+        "target_version": "7",
+        "intermediate_versions": [
+          "4",
+          "5",
+          "6"
+        ]
+      },
+      "delta": {
+        "repo": "docker/build-push-action",
+        "from_ref": "3",
+        "to_ref": "7",
+        "from_date": "2023-01-30T18:11:50Z",
+        "to_date": "2026-07-01T14:24:45Z",
+        "window_resolved": true,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [
+          "v6.3.0: `DOCKER_BUILD_NO_SUMMARY` has been deprecated. Set `DOCKER_BUILD_SUMMARY` to `false` instead by @crazy-max in https://github.com/docker/build-push-action/pull/1170 https://github.com/docker/build-push-action/pull/1173",
+          "v7.0.0: Remove deprecated `DOCKER_BUILD_NO_SUMMARY` and `DOCKER_BUILD_EXPORT_RETENTION_DAYS` envs by @crazy-max in https://github.com/docker/build-push-action/pull/1473"
+        ],
+        "releases_in_window": [
+          "v4.0.0",
+          "v4.1.0",
+          "v4.1.1",
+          "v4.2.0",
+          "v4.2.1",
+          "v5.0.0",
+          "v5.1.0",
+          "v5.2.0",
+          "v5.3.0",
+          "v5.4.0",
+          "v6.0.0",
+          "v6.0.1",
+          "v6.0.2",
+          "v6.1.0",
+          "v6.2.0",
+          "v6.3.0",
+          "v6.4.0",
+          "v6.4.1",
+          "v6.5.0",
+          "v6.6.0",
+          "v6.6.1",
+          "v6.7.0",
+          "v6.8.0",
+          "v6.9.0",
+          "v6.10.0",
+          "v6.11.0",
+          "v6.12.0",
+          "v6.13.0",
+          "v6.14.0",
+          "v6.15.0",
+          "v6.16.0",
+          "v6.17.0",
+          "v6.18.0",
+          "v6.19.0",
+          "v6.19.1",
+          "v6.19.2",
+          "v7.0.0",
+          "v7.1.0",
+          "v7.2.0",
+          "v7.3.0"
+        ],
+        "error": null,
+        "note": "issues are filed-in-window signals, not proven regressions; breaking-change notes are quoted from release bodies"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "npm",
+        "name": "react",
+        "current": "16.8.6",
+        "source": "web/package.json",
+        "line": null,
+        "raw": "16.8.6",
+        "meta": {
+          "constraint": "16.8.6",
+          "group": "dependencies",
+          "locked": false,
+          "pinned": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "19.2.8",
+        "repo": "react/react",
+        "homepage": "https://react.dev/",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 2884
+      },
+      "lag": {
+        "behind_major": 3,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 57,
+        "stable_releases_behind": 45,
+        "days_behind": 2672,
+        "current_age_days": 2677,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 16.8.6 -> 19.2.8 in one change; step through 17.0.2, 18.3.1 so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Update the constraint to 19.2.8 and refresh the lock file (npm)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "25 breaking-change note(s) found in release notes between these versions - read them before upgrading"
+        ],
+        "target_version": "19.2.8",
+        "intermediate_versions": [
+          "17.0.2",
+          "18.3.1"
+        ]
+      },
+      "delta": {
+        "repo": "react/react",
+        "from_ref": "16.8.6",
+        "to_ref": "19.2.8",
+        "from_date": "2019-03-28T06:23:35.650000Z",
+        "to_date": "2026-07-21T15:41:28.716000Z",
+        "window_resolved": true,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [
+          "v16.9.0: Deprecate old names for the `UNSAFE_*` lifecycle methods. ([@bvaughn](https://github.com/bvaughn) in [#15186](https://github.com/facebook/react/pull/15186) and [@threepointone](https://github.com/threepointone) in [#16103](https://github.com/facebook/react/pull/16103))",
+          "v16.9.0: Deprecate `javascript:` URLs as a common attack surface. ([@sebmarkbage](https://github.com/sebmarkbage) in [#15047](https://github.com/facebook/react/pull/15047))",
+          "v16.9.0: Deprecate uncommon \"module pattern\" (factory) components. ([@sebmarkbage](https://github.com/sebmarkbage) in [#15145](https://github.com/facebook/react/pull/15145))",
+          "v16.13.0: Deprecate `React.createFactory()` ([@trueadm](https://github.com/trueadm) in [#17878](https://github.com/facebook/react/pull/17878))",
+          "v16.13.0: Deprecate `unstable_createPortal` ([@trueadm](https://github.com/trueadm) in [#17880](https://github.com/facebook/react/pull/17880))",
+          "v17.0.0: Deprecate the undocumented and misleading `ReactTestUtils.SimulateNative` API. ([@gaearon](https://github.com/gaearon) in [#13407](https://github.com/facebook/react/pull/13407))",
+          "v18.0.0: Below is a list of all new features, APIs, deprecations, and breaking changes.",
+          "v18.0.0: Read [React 18 release post](https://reactjs.org/blog/2022/03/29/react-v18.html) and [React 18 upgrade guide](https://reactjs.org/blog/2022/03/08/react-18-upgrade-guide.html) for more information.",
+          "v18.0.0: Deprecations",
+          "v18.0.0: `react-dom`: `ReactDOM.render` has been deprecated. Using it will warn and run your app in React 17 mode.",
+          "v18.0.0: `react-dom`: `ReactDOM.hydrate` has been deprecated. Using it will warn and run your app in React 17 mode.",
+          "v18.0.0: `react-dom`: `ReactDOM.unmountComponentAtNode` has been deprecated.",
+          "v18.0.0: `react-dom`: `ReactDOM.renderSubtreeIntoContainer` has been deprecated.",
+          "v18.0.0: `react-dom/server`: `ReactDOMServer.renderToNodeStream` has been deprecated.",
+          "v18.0.0: Breaking Changes",
+          "v18.0.0: Deprecate `renderToNodeStream`. ([#23359](https://github.com/facebook/react/pull/23359) by [@sebmarkbage](https://github.com/sebmarkbage))",
+          "v18.3.0: This release is identical to 18.2 but adds warnings for deprecated APIs and other changes that are needed for React 19.",
+          "v18.3.0: Read the [React 19 Upgrade Guide](https://react.dev/blog/2024/04/25/react-19-upgrade-guide) for more info.",
+          "v18.3.0: Warn for deprecated `findDOMNode` outside StrictMode [c3b283](https://github.com/facebook/react/commit/c3b283964108b0e8dbcf1f9eb2e7e67815e39dfb)",
+          "v18.3.0: Warn for deprecated `test-utils` methods [d4ea75](https://github.com/facebook/react/commit/d4ea75dc4258095593b6ac764289f42bddeb835c)",
+          "v18.3.0: Warn for deprecated Legacy Context outside StrictMode [415ee0](https://github.com/facebook/react/commit/415ee0e6ea0fe3e288e65868df2e3241143d5f7f)",
+          "v18.3.0: Warn for deprecated string refs outside StrictMode [#25383](https://github.com/facebook/react/pull/25383)",
+          "v18.3.0: Warn for deprecated `defaultProps` for function components [#25699](https://github.com/facebook/react/pull/25699)",
+          "v18.3.0: Warn for deprecated `unmountComponentAtNode` [8a015b](https://github.com/facebook/react/commit/8a015b68cc060079878e426610e64e86fb328f8d)",
+          "v18.3.0: Warn for deprecated `renderToStaticNodeStream` [#28874](https://github.com/facebook/react/pull/28874)"
+        ],
+        "releases_in_window": [
+          "v16.8.6",
+          "v16.9.0-alpha.0",
+          "v16.9.0-rc.0",
+          "v16.9.0",
+          "v16.10.0",
+          "v16.10.1",
+          "v16.10.2",
+          "v16.11.0",
+          "v16.12.0",
+          "v16.13.0",
+          "v16.13.1",
+          "v15.7.0",
+          "0.14.10",
+          "v16.14.0",
+          "v17.0.0",
+          "v17.0.1",
+          "v17.0.2",
+          "v18.0.0",
+          "v18.1.0",
+          "v18.2.0",
+          "v18.3.0",
+          "v18.3.1",
+          "eslint-plugin-react-hooks@5.0.0",
+          "v19.0.0",
+          "v19.1.0",
+          "v19.1.1",
+          "v19.2.0",
+          "v19.0.1",
+          "v19.1.2",
+          "v19.2.1",
+          "v19.2.2",
+          "v19.1.3",
+          "v19.0.2",
+          "v19.2.3",
+          "v19.1.4",
+          "v19.0.3",
+          "v19.0.4",
+          "v19.1.5",
+          "v19.2.4",
+          "v19.0.5",
+          "v19.1.6",
+          "v19.2.5",
+          "eslint-plugin-react-hooks@7.1.0",
+          "eslint-plugin-react-hooks@7.1.1",
+          "v19.0.6",
+          "v19.1.7",
+          "v19.2.6",
+          "v19.0.7",
+          "v19.1.8",
+          "v19.2.7"
+        ],
+        "error": null,
+        "note": "issues are filed-in-window signals, not proven regressions; breaking-change notes are quoted from release bodies"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "pypi",
+        "name": "pytest",
+        "current": "6.2.5",
+        "source": "app/pyproject.toml",
+        "line": null,
+        "raw": "==6.2.5",
+        "meta": {
+          "constraint": "==6.2.5",
+          "group": "test",
+          "pinned": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "9.1.1",
+        "repo": "pytest-dev/pytest",
+        "homepage": "https://pypi.org/project/pytest/",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 192
+      },
+      "lag": {
+        "behind_major": 3,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 44,
+        "stable_releases_behind": 41,
+        "days_behind": 1753,
+        "current_age_days": 1791,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 6.2.5 -> 9.1.1 in one change; step through 7.4.4, 8.4.2 so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Update the constraint to 9.1.1 and refresh the lock file (pip)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "25 breaking-change note(s) found in release notes between these versions - read them before upgrading"
+        ],
+        "target_version": "9.1.1",
+        "intermediate_versions": [
+          "7.4.4",
+          "8.4.2"
+        ]
+      },
+      "delta": {
+        "repo": "pytest-dev/pytest",
+        "from_ref": "6.2.5",
+        "to_ref": "9.1.1",
+        "from_date": "2021-08-30T17:39:00.918944Z",
+        "to_date": "2026-06-19T10:58:31.347074Z",
+        "window_resolved": true,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [
+          "7.0.0: Deprecations",
+          "7.0.0: `uncooperative-constructors-deprecated`{.interpreted-text role=\"ref\"} for details.",
+          "7.0.0: arguments pytest expected to pass. This deprecation was already part of pytest",
+          "7.0.0: [\\#9404](https://github.com/pytest-dev/pytest/issues/9404): Added extra documentation on alternatives to common misuses of [pytest.warns(None)]{.title-ref} ahead of its deprecation.",
+          "7.0.0: Breaking Changes",
+          "7.0.0: Note: pytest was not able to provide a deprecation period for this change.",
+          "7.0.0: [\\#9277](https://github.com/pytest-dev/pytest/issues/9277): The `pytest.Instance` collector type has been removed.",
+          "7.0.0: Importing `pytest.Instance` or `_pytest.python.Instance` returns a dummy type and emits a deprecation warning.",
+          "7.0.0: See `instance-collector-deprecation`{.interpreted-text role=\"ref\"} for details.",
+          "7.0.0: [\\#9308](https://github.com/pytest-dev/pytest/issues/9308): **PytestRemovedIn7Warning deprecation warnings are now errors by default.**",
+          "7.0.0: Following our plan to remove deprecated features with as little disruption as",
+          "7.0.0: The affected features will be effectively removed in pytest 7.1**, so please consult the",
+          "7.0.0: `deprecations`{.interpreted-text role=\"ref\"} section in the docs for directions on how to update existing code.",
+          "7.0.0: [\\#7259](https://github.com/pytest-dev/pytest/issues/7259): `py.path.local` arguments for hooks have been deprecated. See `the deprecation note <legacy-path-hooks-deprecated>`{.interpreted-text role=\"ref\"} for full details.",
+          "7.0.0: `py.path.local` arguments to Node constructors have been deprecated. See `the deprecation note <node-ctor-fspath-deprecation>`{.interpreted-text role=\"ref\"} for full details.",
+          "7.0.0: [\\#7469](https://github.com/pytest-dev/pytest/issues/7469): Directly constructing the following classes is now deprecated:",
+          "7.0.0: These constructors have always been considered private, but now issue a deprecation warning, which may become a hard error in pytest 8.",
+          "7.0.0: pytest collection phase is deprecated. Use `pytest.skip`{.interpreted-text role=\"func\"} instead.",
+          "7.0.0: Note: This deprecation only relates to using `unittest.SkipTest`{.interpreted-text role=\"class\"} during test",
+          "7.0.0: scheduled for removal in pytest 8 (deprecated since pytest 2.4.0):",
+          "7.0.0: See `the deprecation note <diamond-inheritance-deprecated>`{.interpreted-text role=\"ref\"} for full details.",
+          "7.0.0: [\\#8592](https://github.com/pytest-dev/pytest/issues/8592): `pytest_cmdline_preparse`{.interpreted-text role=\"hook\"} has been officially deprecated. It will be removed in a future release. Use `pytest_load_initial_conftests`{.interpreted-text role=\"hook\"} instead.",
+          "7.0.0: See `the deprecation note <cmdline-preparse-deprecated>`{.interpreted-text role=\"ref\"} for full details.",
+          "7.0.0: [\\#8645](https://github.com/pytest-dev/pytest/issues/8645): `pytest.warns(None) <pytest.warns>`{.interpreted-text role=\"func\"} is now deprecated because many people used",
+          "7.0.0: signatures now accept a `reason` argument instead of `msg`. Using `msg` still works, but is deprecated and will be removed in a future release."
+        ],
+        "releases_in_window": [
+          "6.2.5",
+          "7.0.0rc1",
+          "7.0.0",
+          "7.0.1",
+          "7.1.0",
+          "7.1.1",
+          "7.1.2",
+          "7.1.3",
+          "7.2.0",
+          "7.2.1",
+          "7.2.2",
+          "7.3.0",
+          "7.3.1",
+          "7.3.2",
+          "7.4.0",
+          "7.4.1",
+          "7.4.2",
+          "v7.4.3",
+          "7.4.4",
+          "8.0.0rc1",
+          "8.0.0rc2",
+          "8.0.0",
+          "8.0.1",
+          "8.0.2",
+          "8.1.0",
+          "8.1.1",
+          "8.1.2",
+          "8.2.0",
+          "8.2.1",
+          "8.2.2",
+          "8.3.0",
+          "8.3.1",
+          "8.3.2",
+          "8.3.3",
+          "8.3.4",
+          "8.3.5",
+          "8.4.0",
+          "8.4.1",
+          "8.4.2",
+          "9.0.0",
+          "9.0.1",
+          "9.0.2",
+          "9.0.3",
+          "9.1.0"
+        ],
+        "error": null,
+        "note": "issues are filed-in-window signals, not proven regressions; breaking-change notes are quoted from release bodies"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "azure-api-version",
+        "name": "Microsoft.CognitiveServices/accounts",
+        "current": "2023-05-01",
+        "source": "azure/main.bicep",
+        "line": 3,
+        "raw": "2023-05-01",
+        "meta": {
+          "format": "bicep",
+          "preview": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "2026-05-01",
+        "repo": null,
+        "homepage": "https://learn.microsoft.com/azure/templates/microsoft.cognitiveservices/accounts",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 24
+      },
+      "lag": {
+        "behind_major": 3,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 16,
+        "stable_releases_behind": 6,
+        "days_behind": 1096,
+        "current_age_days": 1183,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 2023-05-01 -> 2026-05-01 in one change; step through 2024-10-01, 2025-12-01 so each api-version's breaking changes are isolated and revertible.",
+        "steps": [
+          "Change the api-version on `Microsoft.CognitiveServices/accounts` to 2026-05-01",
+          "Run `az deployment group what-if` (or `--confirm-with-what-if`) against a non-production resource group and diff the result",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "Newer api-versions can add required properties or change defaults; what-if is the only reliable way to see it before it applies"
+        ],
+        "target_version": "2026-05-01",
+        "intermediate_versions": [
+          "2024-10-01",
+          "2025-12-01"
+        ]
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "azure-api-version",
+        "name": "Microsoft.App/containerApps",
+        "current": "2023-04-01-preview",
+        "source": "azure/main.bicep",
+        "line": 19,
+        "raw": "2023-04-01-preview",
+        "meta": {
+          "format": "bicep",
+          "preview": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "2026-01-01",
+        "repo": null,
+        "homepage": "https://learn.microsoft.com/azure/templates/microsoft.app/containerapps",
+        "deprecated": false,
+        "note": "currently pinned to a PREVIEW api-version",
+        "error": null,
+        "extra": {},
+        "release_count": 19
+      },
+      "lag": {
+        "behind_major": 3,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 14,
+        "stable_releases_behind": 5,
+        "days_behind": 1006,
+        "current_age_days": 1213,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 2023-04-01-preview -> 2026-01-01 in one change; step through 2024-03-01, 2025-07-01 so each api-version's breaking changes are isolated and revertible.",
+        "steps": [
+          "Change the api-version on `Microsoft.App/containerApps` to 2026-01-01",
+          "Run `az deployment group what-if` (or `--confirm-with-what-if`) against a non-production resource group and diff the result",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "Newer api-versions can add required properties or change defaults; what-if is the only reliable way to see it before it applies",
+          "Currently on a preview api-version: preview APIs can be withdrawn without notice and are not covered by the Azure SLA",
+          "currently pinned to a PREVIEW api-version"
+        ],
+        "target_version": "2026-01-01",
+        "intermediate_versions": [
+          "2024-03-01",
+          "2025-07-01"
+        ]
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "github-action",
+        "name": "actions/setup-python",
+        "current": "4",
+        "source": ".github/workflows/ci.yml",
+        "line": 8,
+        "raw": "actions/setup-python@v4",
+        "meta": {
+          "subpath": null,
+          "sha_pinned": false,
+          "sha": null
+        }
+      },
+      "resolution": {
+        "latest_stable": "7",
+        "repo": "actions/setup-python",
+        "homepage": "https://github.com/actions/setup-python",
+        "deprecated": false,
+        "note": "comparing major tags; newest full release is 7.0.0",
+        "error": null,
+        "extra": {},
+        "release_count": 54
+      },
+      "lag": {
+        "behind_major": 3,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 13,
+        "stable_releases_behind": 13,
+        "days_behind": 458,
+        "current_age_days": 465,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 4 -> 7 in one change; step through 5, 6 so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Update `uses: actions/setup-python@v7`",
+          "Consider pinning to a commit SHA instead of a tag for supply-chain safety",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "2 breaking-change note(s) found in release notes between these versions - read them before upgrading",
+          "1 open bug-labelled issue(s) filed in the window",
+          "comparing major tags; newest full release is 7.0.0"
+        ],
+        "target_version": "7",
+        "intermediate_versions": [
+          "5",
+          "6"
+        ]
+      },
+      "delta": {
+        "repo": "actions/setup-python",
+        "from_ref": "4",
+        "to_ref": "7",
+        "from_date": "2025-04-17T14:40:18Z",
+        "to_date": "2026-07-20T03:15:01Z",
+        "window_resolved": true,
+        "bug_issues": [
+          {
+            "number": 1306,
+            "title": "MacOS self hosted runner using sudo to install Python?",
+            "url": "https://github.com/actions/setup-python/issues/1306",
+            "state": "open",
+            "labels": [
+              "bug"
+            ],
+            "created_at": "2026-04-23T18:59:11Z",
+            "kind": "issue"
+          }
+        ],
+        "open_bug_count": 1,
+        "total_bug_count": 58,
+        "breaking_notes": [
+          "v6.0.0: Breaking Changes",
+          "v6.1.0: Upgrade urllib3 from 1.26.19 to 2.5.0 and document breaking changes in v6 by @dependabot in https://github.com/actions/setup-python/pull/1139"
+        ],
+        "releases_in_window": [
+          "v5.6.0",
+          "v6.0.0",
+          "v6.1.0",
+          "v6.2.0",
+          "v6.3.0",
+          "v7.0.0"
+        ],
+        "error": null,
+        "note": "issues are filed-in-window signals, not proven regressions; breaking-change notes are quoted from release bodies"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "docker-image",
+        "name": "redis",
+        "current": "5",
+        "source": "docker-compose.yml",
+        "line": 3,
+        "raw": "redis:5",
+        "meta": {
+          "digest": null,
+          "floating": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "8.8.1",
+        "repo": "docker-library/redis",
+        "homepage": "https://hub.docker.com/_/redis",
+        "deprecated": false,
+        "note": "dates are Docker Hub last-push times, not original release dates; tag listing truncated at 200 tags (Hub pages by recency, not version), so an old pin may be absent and undatable; tag '5' was not in the fetched listing; age unavailable",
+        "error": null,
+        "extra": {
+          "list_truncated": true,
+          "dates_are_push_times": true
+        },
+        "release_count": 61
+      },
+      "lag": {
+        "behind_major": 3,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 61,
+        "stable_releases_behind": 58,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 5 -> 8.8.1 in one change; step through 6.2.23, 7.4.10 so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Update the FROM tag to 8.8.1",
+          "Rebuild and run the image's own test suite; base images change libc, OpenSSL and CA bundles between majors",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "dates are Docker Hub last-push times, not original release dates; tag listing truncated at 200 tags (Hub pages by recency, not version), so an old pin may be absent and undatable; tag '5' was not in the fetched listing; age unavailable"
+        ],
+        "target_version": "8.8.1",
+        "intermediate_versions": [
+          "6.2.23",
+          "7.4.10"
+        ]
+      },
+      "delta": {
+        "repo": "docker-library/redis",
+        "from_ref": "5",
+        "to_ref": "8.8.1",
+        "from_date": null,
+        "to_date": "2026-07-25T00:05:52.577773Z",
+        "window_resolved": false,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "could not date both versions on GitHub; issue window not computed. Release notes comparison unavailable."
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "pypi",
+        "name": "flask",
+        "current": "1.0.2",
+        "source": "app/requirements.txt",
+        "line": 4,
+        "raw": "==1.0.2",
+        "meta": {
+          "constraint": "==1.0.2",
+          "pinned": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "3.1.3",
+        "repo": "pallets/flask",
+        "homepage": "https://pypi.org/project/Flask/",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 64
+      },
+      "lag": {
+        "behind_major": 2,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 35,
+        "stable_releases_behind": 33,
+        "days_behind": 2849,
+        "current_age_days": 3007,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 1.0.2 -> 3.1.3 in one change; step through 2.3.3 so each major's breaking changes are isolated and revertible.",
+        "steps": [
+          "Update the constraint to 3.1.3 and refresh the lock file (pip)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "5 breaking-change note(s) found in release notes between these versions - read them before upgrading"
+        ],
+        "target_version": "3.1.3",
+        "intermediate_versions": [
+          "2.3.3"
+        ]
+      },
+      "delta": {
+        "repo": "pallets/flask",
+        "from_ref": "1.0.2",
+        "to_ref": "3.1.3",
+        "from_date": "2018-05-02T14:26:26.228390Z",
+        "to_date": "2026-02-19T05:00:56.027585Z",
+        "window_resolved": true,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 8,
+        "breaking_notes": [
+          "1.1.2: 1.1.x is the last version to support Python 2.7 and Python 3.5. It also contains deprecation warnings for code that will be removed in 2.0. Please pay attention to deprecation warnings in your project!",
+          "3.0.2: This is a fix release for the 3.0.x feature release branch. It fixes bugs but does not otherwise change behavior and should not result in breaking changes.",
+          "3.1.0: Drop support for Python 3.8. #5623",
+          "3.1.1: This is the Flask 3.1.1 fix release, which fixes bugs but does not otherwise change behavior and should not result in breaking changes compared to the latest feature release.",
+          "3.1.2: This is the Flask 3.1.2 fix release, which fixes bugs but does not otherwise change behavior and should not result in breaking changes compared to the latest feature release."
+        ],
+        "releases_in_window": [
+          "1.0.2",
+          "1.0.3",
+          "1.0.4",
+          "1.1.0",
+          "1.1.1",
+          "1.1.2",
+          "2.0.0rc1",
+          "2.0.0rc2",
+          "2.0.0",
+          "2.0.1",
+          "2.0.2",
+          "2.0.3",
+          "2.1.0",
+          "2.1.1",
+          "2.1.2",
+          "2.1.3",
+          "2.2.0",
+          "2.2.1",
+          "2.2.2",
+          "2.2.3",
+          "2.2.4",
+          "2.3.0",
+          "2.3.1",
+          "2.3.2",
+          "2.2.5",
+          "2.3.3",
+          "3.0.0",
+          "3.0.1",
+          "3.0.2",
+          "3.0.3",
+          "3.1.0",
+          "3.1.1",
+          "3.1.2"
+        ],
+        "error": null,
+        "note": "issues are filed-in-window signals, not proven regressions; breaking-change notes are quoted from release bodies"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "github-action",
+        "name": "runner/ubuntu-20.04",
+        "current": "ubuntu-20.04",
+        "source": ".github/workflows/ci.yml",
+        "line": 5,
+        "raw": "ubuntu-20.04",
+        "meta": {
+          "runner": true,
+          "successor": "ubuntu-24.04",
+          "latest_label": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "ubuntu-24.04",
+        "repo": "actions/runner-images",
+        "homepage": "https://github.com/actions/runner-images",
+        "deprecated": true,
+        "note": "runner image ubuntu-20.04 is deprecated or retired; move to ubuntu-24.04",
+        "error": null,
+        "extra": {},
+        "release_count": 1
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": false,
+        "reason": "unparseable version ('ubuntu-20.04' vs 'ubuntu-24.04')"
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Patch upgrade ubuntu-20.04 -> ubuntu-24.04. Low risk; batch with other patches.",
+        "steps": [
+          "Change `runs-on` to ubuntu-24.04",
+          "Expect preinstalled tool versions to differ; pin tool versions explicitly",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "Retired runner labels fail the whole workflow, not a single step",
+          "runner image ubuntu-20.04 is deprecated or retired; move to ubuntu-24.04"
+        ],
+        "target_version": "ubuntu-24.04",
+        "intermediate_versions": []
+      },
+      "delta": {
+        "repo": "actions/runner-images",
+        "from_ref": "ubuntu-20.04",
+        "to_ref": "ubuntu-24.04",
+        "from_date": null,
+        "to_date": null,
+        "window_resolved": false,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "could not date both versions on GitHub; issue window not computed. Release notes comparison unavailable."
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "k8s-api",
+        "name": "autoscaling/HorizontalPodAutoscaler",
+        "current": "v2beta2",
+        "source": "k8s/workloads.yaml",
+        "line": 1,
+        "raw": "autoscaling/v2beta2",
+        "meta": {
+          "group": "autoscaling",
+          "kind": "HorizontalPodAutoscaler",
+          "apiVersion": "autoscaling/v2beta2"
+        }
+      },
+      "resolution": {
+        "latest_stable": "v2",
+        "repo": "kubernetes/kubernetes",
+        "homepage": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/",
+        "deprecated": true,
+        "note": "autoscaling/v2beta2 deprecated in k8s 1.23, REMOVED in 1.26; migrate to autoscaling/v2",
+        "error": null,
+        "extra": {},
+        "release_count": 1
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 1,
+        "stable_releases_behind": 1,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Patch upgrade v2beta2 -> v2. Low risk; batch with other patches.",
+        "steps": [
+          "Rewrite the manifest to `autoscaling/v2`",
+          "Run `kubectl apply --dry-run=server` to confirm the new version is served",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "If the cluster has already removed this version, `kubectl get` will not return existing objects; migrate before upgrading the cluster",
+          "autoscaling/v2beta2 deprecated in k8s 1.23, REMOVED in 1.26; migrate to autoscaling/v2"
+        ],
+        "target_version": "v2",
+        "intermediate_versions": []
+      },
+      "delta": {
+        "repo": "kubernetes/kubernetes",
+        "from_ref": "v2beta2",
+        "to_ref": "v2",
+        "from_date": null,
+        "to_date": null,
+        "window_resolved": false,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "could not date both versions on GitHub; issue window not computed. Release notes comparison unavailable."
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "k8s-api",
+        "name": "extensions/Ingress",
+        "current": "v1beta1",
+        "source": "k8s/workloads.yaml",
+        "line": 1,
+        "raw": "extensions/v1beta1",
+        "meta": {
+          "group": "extensions",
+          "kind": "Ingress",
+          "apiVersion": "extensions/v1beta1"
+        }
+      },
+      "resolution": {
+        "latest_stable": "v1",
+        "repo": "kubernetes/kubernetes",
+        "homepage": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/",
+        "deprecated": true,
+        "note": "extensions/v1beta1 deprecated in k8s 1.14, REMOVED in 1.22; migrate to networking.k8s.io/v1",
+        "error": null,
+        "extra": {},
+        "release_count": 1
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 1,
+        "stable_releases_behind": 1,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Patch upgrade v1beta1 -> v1. Low risk; batch with other patches.",
+        "steps": [
+          "Rewrite the manifest to `networking.k8s.io/v1`",
+          "Run `kubectl apply --dry-run=server` to confirm the new version is served",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "If the cluster has already removed this version, `kubectl get` will not return existing objects; migrate before upgrading the cluster",
+          "extensions/v1beta1 deprecated in k8s 1.14, REMOVED in 1.22; migrate to networking.k8s.io/v1"
+        ],
+        "target_version": "v1",
+        "intermediate_versions": []
+      },
+      "delta": {
+        "repo": "kubernetes/kubernetes",
+        "from_ref": "v1beta1",
+        "to_ref": "v1",
+        "from_date": null,
+        "to_date": null,
+        "window_resolved": false,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "could not date both versions on GitHub; issue window not computed. Release notes comparison unavailable."
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "k8s-api",
+        "name": "policy/PodDisruptionBudget",
+        "current": "v1beta1",
+        "source": "k8s/workloads.yaml",
+        "line": 1,
+        "raw": "policy/v1beta1",
+        "meta": {
+          "group": "policy",
+          "kind": "PodDisruptionBudget",
+          "apiVersion": "policy/v1beta1"
+        }
+      },
+      "resolution": {
+        "latest_stable": "v1",
+        "repo": "kubernetes/kubernetes",
+        "homepage": "https://kubernetes.io/docs/reference/using-api/deprecation-guide/",
+        "deprecated": true,
+        "note": "policy/v1beta1 deprecated in k8s 1.21, REMOVED in 1.25; migrate to policy/v1",
+        "error": null,
+        "extra": {},
+        "release_count": 1
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 1,
+        "stable_releases_behind": 1,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Patch upgrade v1beta1 -> v1. Low risk; batch with other patches.",
+        "steps": [
+          "Rewrite the manifest to `policy/v1`",
+          "Run `kubectl apply --dry-run=server` to confirm the new version is served",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "If the cluster has already removed this version, `kubectl get` will not return existing objects; migrate before upgrading the cluster",
+          "policy/v1beta1 deprecated in k8s 1.21, REMOVED in 1.25; migrate to policy/v1"
+        ],
+        "target_version": "v1",
+        "intermediate_versions": []
+      },
+      "delta": {
+        "repo": "kubernetes/kubernetes",
+        "from_ref": "v1beta1",
+        "to_ref": "v1",
+        "from_date": null,
+        "to_date": null,
+        "window_resolved": false,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "could not date both versions on GitHub; issue window not computed. Release notes comparison unavailable."
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "npm",
+        "name": "express",
+        "current": "4.16.0",
+        "source": "web/package.json",
+        "line": null,
+        "raw": "^4.16.0",
+        "meta": {
+          "constraint": "^4.16.0",
+          "group": "dependencies",
+          "locked": false,
+          "pinned": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "5.2.1",
+        "repo": "expressjs/express",
+        "homepage": "https://expressjs.com/",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 288
+      },
+      "lag": {
+        "behind_major": 1,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 38,
+        "stable_releases_behind": 27,
+        "days_behind": 2986,
+        "current_age_days": 3223,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Single major upgrade 4.16.0 -> 5.2.1. Expect breaking changes; read the migration guide before editing anything.",
+        "steps": [
+          "Update the constraint to 5.2.1 and refresh the lock file (npm)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "19 breaking-change note(s) found in release notes between these versions - read them before upgrading",
+          "3 open bug-labelled issue(s) filed in the window"
+        ],
+        "target_version": "5.2.1",
+        "intermediate_versions": []
+      },
+      "delta": {
+        "repo": "expressjs/express",
+        "from_ref": "4.16.0",
+        "to_ref": "5.2.1",
+        "from_date": "2017-09-28T18:22:30.775000Z",
+        "to_date": "2025-12-01T20:49:43.268000Z",
+        "window_resolved": true,
+        "bug_issues": [
+          {
+            "number": 5878,
+            "title": "Query Param Silently Remove param query value if it is over 1000",
+            "url": "https://github.com/expressjs/express/issues/5878",
+            "state": "open",
+            "labels": [
+              "bug"
+            ],
+            "created_at": "2024-08-29T22:45:19Z",
+            "kind": "issue"
+          },
+          {
+            "number": 4944,
+            "title": "response.download does not return /proc/* files",
+            "url": "https://github.com/expressjs/express/issues/4944",
+            "state": "open",
+            "labels": [
+              "bug",
+              "module:send"
+            ],
+            "created_at": "2022-07-01T15:52:12Z",
+            "kind": "issue"
+          },
+          {
+            "number": 4557,
+            "title": "`App.use(path, ...)` Does Not Mount at `'//'`",
+            "url": "https://github.com/expressjs/express/issues/4557",
+            "state": "open",
+            "labels": [
+              "bug",
+              "module:router"
+            ],
+            "created_at": "2021-03-28T16:16:46Z",
+            "kind": "issue"
+          }
+        ],
+        "open_bug_count": 3,
+        "total_bug_count": 63,
+        "breaking_notes": [
+          "4.16.4: Fix deprecation warnings on Node.js 10+",
+          "4.17.2: Fix `res.jsonp(obj, status)` deprecation message",
+          "4.17.2: Use `req.socket` over deprecated `req.connection`",
+          "v5.0.0-beta.1: Special `*` path segment behavior removed",
+          "4.18.0: Deprecate string and non-integer arguments to `res.status`",
+          "4.18.0: Limit the headers removed for 304 response",
+          "4.18.3: Use https: protocol instead of deprecated git: protocol by @vcsjones in https://github.com/expressjs/express/pull/5032",
+          "5.0.0-beta.2: Replace deprecated String.prototype.substr() by @CommanderRoot in https://github.com/expressjs/express/pull/4860",
+          "5.0.0-beta.2: fix: remove deprecated html attribute by @Hashen110 in https://github.com/expressjs/express/pull/4866",
+          "5.0.0-beta.2: Deprecate non integer status codes in v4 by @jonchurch in https://github.com/expressjs/express/pull/4223",
+          "5.0.0-beta.2: Use https: protocol instead of deprecated git: protocol by @vcsjones in https://github.com/expressjs/express/pull/5032",
+          "4.20.0: [v4] Deprecate `res.clearCookie` accepting `options.maxAge` and `options.expires` by @jonchurch in https://github.com/expressjs/express/pull/5672",
+          "v5.0.0: Deprecated API methods removed**: Removed old, deprecated API method signatures from Express v3/v4.",
+          "v5.0.0: For a complete list of breaking changes and API deprecations, see the [migration guide](https://expressjs.com/en/guide/migrating-5.html).",
+          "v5.0.0: Be sure to check out our [migration guide](https://expressjs.com/en/guide/migrating-5.html) for instructions on how to update your applications from Express v4 to v5.",
+          "v5.0.0: [v4] Deprecate `res.clearCookie` accepting `options.maxAge` and `options.expires` by @jonchurch in https://github.com/expressjs/express/pull/5672",
+          "4.21.0: Deprecate `\"back\"` magic string in redirects by @blakeembrey in https://github.com/expressjs/express/pull/5935",
+          "v5.2.0: add deprecation warnings for redirect arguments undefined by @bjohansebas in https://github.com/expressjs/express/pull/6405",
+          "v5.2.0: lib: use req.socket over deprecated req.connection by @bjohansebas in https://github.com/expressjs/express/pull/6705"
+        ],
+        "releases_in_window": [
+          "4.16.0",
+          "4.16.1",
+          "4.16.2",
+          "4.16.3",
+          "4.16.4",
+          "5.0.0-alpha.7",
+          "4.17.0",
+          "4.17.1",
+          "5.0.0-alpha.8",
+          "4.17.2",
+          "v5.0.0-beta.1",
+          "4.17.3",
+          "4.18.0",
+          "4.18.1",
+          "4.18.2",
+          "4.18.3",
+          "4.19.0",
+          "4.19.1",
+          "4.19.2",
+          "5.0.0-beta.2",
+          "v5.0.0-beta.3",
+          "4.20.0",
+          "v5.0.0",
+          "4.21.0",
+          "4.21.1",
+          "v5.0.1",
+          "4.21.2",
+          "v5.1.0",
+          "4.22.0",
+          "v5.2.0"
+        ],
+        "error": null,
+        "note": "issues are filed-in-window signals, not proven regressions; breaking-change notes are quoted from release bodies"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "pypi",
+        "name": "pydantic",
+        "current": "1.10.2",
+        "source": "app/pyproject.toml",
+        "line": null,
+        "raw": "==1.10.2",
+        "meta": {
+          "constraint": "==1.10.2",
+          "group": null,
+          "pinned": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "2.13.4",
+        "repo": "sponsors/samuelcolvin",
+        "homepage": "https://pypi.org/project/pydantic/",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 203
+      },
+      "lag": {
+        "behind_major": 1,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 110,
+        "stable_releases_behind": 85,
+        "days_behind": 1338,
+        "current_age_days": 1420,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Single major upgrade 1.10.2 -> 2.13.4. Expect breaking changes; read the migration guide before editing anything.",
+        "steps": [
+          "Update the constraint to 2.13.4 and refresh the lock file (pip)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [],
+        "target_version": "2.13.4",
+        "intermediate_versions": []
+      },
+      "delta": {
+        "repo": "sponsors/samuelcolvin",
+        "from_ref": "1.10.2",
+        "to_ref": "2.13.4",
+        "from_date": "2022-09-05T18:37:50.309248Z",
+        "to_date": "2026-05-06T13:43:02.641507Z",
+        "window_resolved": true,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "no labelled bugs or breaking-change notes found in the window"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "terraform-provider",
+        "name": "hashicorp/azurerm",
+        "current": "3.75.0",
+        "source": "infra/.terraform.lock.hcl",
+        "line": 1,
+        "raw": "3.75.0",
+        "meta": {
+          "locked": true,
+          "constraint": "3.75.0"
+        }
+      },
+      "resolution": {
+        "latest_stable": "4.81.0",
+        "repo": "hashicorp/terraform-provider-azurerm",
+        "homepage": "https://registry.terraform.io/providers/hashicorp/azurerm",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 399
+      },
+      "lag": {
+        "behind_major": 1,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 135,
+        "stable_releases_behind": 135,
+        "days_behind": 1019,
+        "current_age_days": 1031,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Single major upgrade 3.75.0 -> 4.81.0. Expect breaking changes; read the migration guide before editing anything.",
+        "steps": [
+          "Set version = \"~> 4.81.0\" in required_providers",
+          "Run `terraform init -upgrade` to refresh .terraform.lock.hcl",
+          "Run `terraform plan` and read every diff: provider majors change resource schemas, so a plan may show replacements you did not intend",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "Provider major bumps can force resource replacement. Check the plan for `must be replaced` before applying to production",
+          "Commit the updated lock file so CI resolves identically",
+          "25 breaking-change note(s) found in release notes between these versions - read them before upgrading",
+          "165 open bug-labelled issues were filed in this version window; consider targeting one release below the newest"
+        ],
+        "target_version": "4.81.0",
+        "intermediate_versions": []
+      },
+      "delta": {
+        "repo": "hashicorp/terraform-provider-azurerm",
+        "from_ref": "3.75.0",
+        "to_ref": "4.81.0",
+        "from_date": "2023-09-29T06:19:31Z",
+        "to_date": "2026-07-14T13:45:24Z",
+        "window_resolved": true,
+        "bug_issues": [],
+        "open_bug_count": 165,
+        "total_bug_count": 709,
+        "breaking_notes": [
+          "v3.107.0: DEPRECATIONS:",
+          "v3.107.0: `azurerm_nginx_deployment` - the block `configuration` has been deprecated and superseded by the resource `azurerm_nginx_configuration` ([#25773](https://github.com/hashicorp/terraform-provider-azurerm/issues/25773))",
+          "v3.108.0: DEPRECATIONS:",
+          "v3.108.0: `azurerm_api_management` - the `policy` block has been deprecated is superseded by the `azurerm_api_management_policy` resource ([#26305](https://github.com/hashicorp/terraform-provider-azurerm/issues/26305))",
+          "v3.108.0: `azurerm_kubernetes_cluster` - the `ebpf_data_plane` property has been deprecated and superseded by the `network_data_plane` property ([#26251](https://github.com/hashicorp/terraform-provider-azurerm/issues/26251))",
+          "v3.108.0: `azurerm_network_interface` - the `enable_ip_forwarding` and `enable_accelerated_networking` properties have been deprecated and superseded by the `ip_forwarding_enabled` and `accelerated_networking_enabled` properties ([#26293](https://github.com/hashicorp/terraform-provider-azurerm/issues/26293))",
+          "v3.108.0: `azurerm_synapse_workspace` - the `aad_admin` and `sql_aad_admin` blocks have been deprecated and superseded by the `azurerm_synapse_workspace_aad_admin` and `azurerm_synapse_workspace_sql_aad_admin` resources ([#26317](https://github.com/hashicorp/terraform-provider-azurerm/issues/26317))",
+          "v3.109.0: DEPRECATIONS:",
+          "v3.109.0: Data Source: `azurerm_mariadb_server` - deprecated since the service is retiring. Please use `azurerm_mysql_flexible_server` instead ([#26354](https://github.com/hashicorp/terraform-provider-azurerm/issues/26354))",
+          "v3.109.0: `azurerm_mariadb_configuration` - deprecated since the service is retiring. Please use `azurerm_mysql_flexible_server_configuration` instead ([#26354](https://github.com/hashicorp/terraform-provider-azurerm/issues/26354))",
+          "v3.109.0: `azurerm_mariadb_database` - deprecated since the service is retiring. Please use `azurerm_mysql_flexible_database` instead ([#26354](https://github.com/hashicorp/terraform-provider-azurerm/issues/26354))",
+          "v3.109.0: `azurerm_mariadb_firewall_rule` - deprecated since the service is retiring. Please use `azurerm_mysql_flexible_server_firewall_rule` instead ([#26354](https://github.com/hashicorp/terraform-provider-azurerm/issues/26354))",
+          "v3.109.0: `azurerm_mariadb_server` - deprecated since the service is retiring. Please use `azurerm_mysql_flexible_server` instead ([#26354](https://github.com/hashicorp/terraform-provider-azurerm/issues/26354))",
+          "v3.109.0: `azurerm_mariadb_virtual_network_rule` - deprecated since the service is retiring ([#26354](https://github.com/hashicorp/terraform-provider-azurerm/issues/26354))",
+          "v3.110.0: `azurerm_synapse_workspace` - fix issue where `azure_devops_repo` or `github_repo` configuration could not be removed ([#26421](https://github.com/hashicorp/terraform-provider-azurerm/issues/26421))",
+          "v3.110.0: DEPRECATIONS:",
+          "v3.112.0: DEPRECATIONS:",
+          "v3.113.0: DEPRECATIONS:",
+          "v3.113.0: `azurerm_eventhub_namespace` - deprecate the `zone_redundant` field in v4.0 ([#26611](https://github.com/hashicorp/terraform-provider-azurerm/issues/26611))",
+          "v3.113.0: `azurerm_servicebus_namespace` - deprecate the `zone_redundant` field in v4.0 ([#26611](https://github.com/hashicorp/terraform-provider-azurerm/issues/26611))",
+          "v3.114.0: `azurerm_management_group_policy_remediation` - fix panic in deprecated schema change for 4.0 ([#26767](https://github.com/hashicorp/terraform-provider-azurerm/issues/26767))",
+          "v3.114.0: DEPRECATIONS:",
+          "v3.116.0: DEPRECATIONS:",
+          "v4.0.1: `azurerm_kubernetes_cluster_node_pool` - prevent a panic caused by renamed `enable_*` properties ([#27164](https://github.com/hashicorp/terraform-provider-azurerm/issues/27164))",
+          "v4.0.1: `azurerm_sentinel_data_connector_microsoft_threat_intelligence` - prevent error by removing deprecated property `bing_safety_phishing_url_lookback_date` ([#27171](https://github.com/hashicorp/terraform-provider-azurerm/issues/27171))"
+        ],
+        "releases_in_window": [
+          "v3.106.1",
+          "v3.107.0",
+          "v3.108.0",
+          "v3.109.0",
+          "v3.110.0",
+          "v3.111.0",
+          "v3.112.0",
+          "v3.113.0",
+          "v3.114.0",
+          "v3.115.0",
+          "v3.116.0",
+          "v4.0.0",
+          "v4.0.1",
+          "v4.1.0",
+          "v4.2.0",
+          "v4.3.0",
+          "v4.4.0",
+          "v4.5.0",
+          "v4.6.0",
+          "v4.7.0",
+          "v4.8.0",
+          "v3.117.0",
+          "v4.9.0",
+          "v4.10.0",
+          "v4.11.0",
+          "v4.12.0",
+          "v4.13.0",
+          "v4.14.0",
+          "v4.15.0",
+          "v4.16.0",
+          "v4.17.0",
+          "v4.18.0",
+          "v4.19.0",
+          "v4.20.0",
+          "v4.21.0",
+          "v4.21.1",
+          "v3.117.1",
+          "v4.22.0",
+          "v4.23.0",
+          "v4.24.0",
+          "v4.25.0",
+          "v4.26.0",
+          "v4.27.0",
+          "v4.28.0",
+          "v4.29.0",
+          "v4.30.0",
+          "v4.31.0",
+          "v4.32.0",
+          "v4.33.0",
+          "v4.34.0",
+          "v4.35.0",
+          "v4.36.0",
+          "v4.37.0",
+          "v4.38.0",
+          "v4.38.1",
+          "v4.39.0",
+          "v4.40.0",
+          "v4.41.0",
+          "v4.42.0",
+          "v4.43.0"
+        ],
+        "error": null,
+        "note": "issues are filed-in-window signals, not proven regressions; breaking-change notes are quoted from release bodies"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "terraform-provider",
+        "name": "hashicorp/azurerm",
+        "current": "3.0",
+        "source": "infra/main.tf",
+        "line": 1,
+        "raw": "~> 3.0",
+        "meta": {
+          "alias": "azurerm",
+          "constraint": "~> 3.0"
+        }
+      },
+      "resolution": {
+        "latest_stable": "4.81.0",
+        "repo": "hashicorp/terraform-provider-azurerm",
+        "homepage": "https://registry.terraform.io/providers/hashicorp/azurerm",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 399
+      },
+      "lag": {
+        "behind_major": 1,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 219,
+        "stable_releases_behind": 219,
+        "days_behind": 773,
+        "current_age_days": 786,
+        "age_lower_bound": true,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Single major upgrade 3.0 -> 4.81.0. Expect breaking changes; read the migration guide before editing anything.",
+        "steps": [
+          "Set version = \"~> 4.81.0\" in required_providers",
+          "Run `terraform init -upgrade` to refresh .terraform.lock.hcl",
+          "Run `terraform plan` and read every diff: provider majors change resource schemas, so a plan may show replacements you did not intend",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "Provider major bumps can force resource replacement. Check the plan for `must be replaced` before applying to production",
+          "Commit the updated lock file so CI resolves identically"
+        ],
+        "target_version": "4.81.0",
+        "intermediate_versions": []
+      },
+      "delta": {
+        "repo": "hashicorp/terraform-provider-azurerm",
+        "from_ref": "3.0",
+        "to_ref": "4.81.0",
+        "from_date": null,
+        "to_date": "2026-07-14T13:45:24Z",
+        "window_resolved": false,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [],
+        "error": null,
+        "note": "could not date both versions on GitHub; issue window not computed. Release notes comparison unavailable."
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "go-module",
+        "name": "github.com/inconshreveable/mousetrap",
+        "current": "v1.0.0",
+        "source": "svc/go.mod",
+        "line": null,
+        "raw": "v1.0.0",
+        "meta": {
+          "indirect": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "v1.1.0",
+        "repo": "inconshreveable/mousetrap",
+        "homepage": "https://pkg.go.dev/github.com/inconshreveable/mousetrap",
+        "deprecated": false,
+        "note": "Go proxy exposes dates only for the latest version",
+        "error": null,
+        "extra": {},
+        "release_count": 3
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 1,
+        "behind_patch": 0,
+        "releases_behind": 2,
+        "stable_releases_behind": 2,
+        "days_behind": 2963,
+        "current_age_days": 4300,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Minor upgrade v1.0.0 -> v1.1.0. Additive by convention; verify with tests rather than a full migration review.",
+        "steps": [
+          "Update the constraint to v1.1.0 and refresh the lock file (go)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "Go proxy exposes dates only for the latest version"
+        ],
+        "target_version": "v1.1.0",
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "pypi",
+        "name": "requests",
+        "current": "2.20.0",
+        "source": "app/requirements.txt",
+        "line": 2,
+        "raw": "==2.20.0",
+        "meta": {
+          "constraint": "==2.20.0",
+          "pinned": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "2.34.2",
+        "repo": "psf/requests",
+        "homepage": "https://pypi.org/project/requests/",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 163
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 14,
+        "behind_patch": 0,
+        "releases_behind": 28,
+        "stable_releases_behind": 27,
+        "days_behind": 2765,
+        "current_age_days": 2838,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Minor upgrade 2.20.0 -> 2.34.2. Additive by convention; verify with tests rather than a full migration review.",
+        "steps": [
+          "Update the constraint to 2.34.2 and refresh the lock file (pip)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [],
+        "target_version": "2.34.2",
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "npm",
+        "name": "lodash",
+        "current": "4.17.11",
+        "source": "web/package.json",
+        "line": null,
+        "raw": "4.17.11",
+        "meta": {
+          "constraint": "4.17.11",
+          "group": "dependencies",
+          "locked": false,
+          "pinned": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "4.18.1",
+        "repo": "lodash/lodash",
+        "homepage": "https://lodash.com/",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 117
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 1,
+        "behind_patch": 0,
+        "releases_behind": 13,
+        "stable_releases_behind": 13,
+        "days_behind": 2758,
+        "current_age_days": 2874,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Minor upgrade 4.17.11 -> 4.18.1. Additive by convention; verify with tests rather than a full migration review.",
+        "steps": [
+          "Update the constraint to 4.18.1 and refresh the lock file (npm)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [],
+        "target_version": "4.18.1",
+        "intermediate_versions": []
+      },
+      "delta": {
+        "repo": "lodash/lodash",
+        "from_ref": "4.17.11",
+        "to_ref": "4.18.1",
+        "from_date": "2018-09-12T18:32:16.141000Z",
+        "to_date": "2026-04-01T21:01:20.458000Z",
+        "window_resolved": true,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [],
+        "releases_in_window": [
+          "4.18.0"
+        ],
+        "error": null,
+        "note": "no labelled bugs or breaking-change notes found in the window"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "pypi",
+        "name": "azure-identity",
+        "current": "1.5.0",
+        "source": "app/requirements.txt",
+        "line": 5,
+        "raw": ">=1.5.0",
+        "meta": {
+          "constraint": ">=1.5.0",
+          "pinned": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "1.25.3",
+        "repo": "Azure/azure-sdk-for-python",
+        "homepage": "https://pypi.org/project/azure-identity/",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 83
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 20,
+        "behind_patch": 0,
+        "releases_behind": 61,
+        "stable_releases_behind": 29,
+        "days_behind": 1947,
+        "current_age_days": 2083,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Minor upgrade 1.5.0 -> 1.25.3. Additive by convention; verify with tests rather than a full migration review.",
+        "steps": [
+          "Update the constraint to 1.25.3 and refresh the lock file (pip)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [],
+        "target_version": "1.25.3",
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "go-module",
+        "name": "github.com/stretchr/testify",
+        "current": "v1.7.0",
+        "source": "svc/go.mod",
+        "line": null,
+        "raw": "v1.7.0",
+        "meta": {
+          "indirect": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "v1.11.1",
+        "repo": "stretchr/testify",
+        "homepage": "https://pkg.go.dev/github.com/stretchr/testify",
+        "deprecated": false,
+        "note": "Go proxy exposes dates only for the latest version",
+        "error": null,
+        "extra": {},
+        "release_count": 29
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 4,
+        "behind_patch": 0,
+        "releases_behind": 14,
+        "stable_releases_behind": 14,
+        "days_behind": 1687,
+        "current_age_days": 2020,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Minor upgrade v1.7.0 -> v1.11.1. Additive by convention; verify with tests rather than a full migration review.",
+        "steps": [
+          "Update the constraint to v1.11.1 and refresh the lock file (go)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "7 breaking-change note(s) found in release notes between these versions - read them before upgrading",
+          "Go proxy exposes dates only for the latest version"
+        ],
+        "target_version": "v1.11.1",
+        "intermediate_versions": []
+      },
+      "delta": {
+        "repo": "stretchr/testify",
+        "from_ref": "v1.7.0",
+        "to_ref": "v1.11.1",
+        "from_date": "2021-01-13T09:54:11Z",
+        "to_date": "2025-08-27T10:46:31Z",
+        "window_resolved": true,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [
+          "v1.9.0: mock: deprecate type AnythingOfTypeArgument (#1434) by @dolmen in https://github.com/stretchr/testify/pull/1441",
+          "v1.9.0: assert: Deprecate EqualExportedValues by @HaraldNordgren in https://github.com/stretchr/testify/pull/1488",
+          "v1.9.0: docs: Fix deprecation comments for http package by @alexandear in https://github.com/stretchr/testify/pull/1335",
+          "v1.10.0: assert: deprecate CompareType by @dolmen in https://github.com/stretchr/testify/pull/1566",
+          "v1.10.0: mock: document more alternatives to deprecated AnythingOfTypeArgument by @dolmen in https://github.com/stretchr/testify/pull/1569",
+          "v1.11.0: Replace deprecated io/ioutil with io and os by @alexandear in https://github.com/stretchr/testify/pull/1684",
+          "v1.11.0: assert: remove deprecated build constraints by @alexandear in https://github.com/stretchr/testify/pull/1671"
+        ],
+        "releases_in_window": [
+          "v1.7.0",
+          "v1.8.4",
+          "v1.9.0",
+          "v1.8.3",
+          "v1.8.2",
+          "v1.8.1",
+          "v1.8.0",
+          "v1.7.5",
+          "v1.7.4",
+          "v1.7.3",
+          "v1.7.2",
+          "v1.7.1",
+          "v1.10.0",
+          "v1.11.0"
+        ],
+        "error": null,
+        "note": "issues are filed-in-window signals, not proven regressions; breaking-change notes are quoted from release bodies"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "go-module",
+        "name": "github.com/spf13/cobra",
+        "current": "v1.4.0",
+        "source": "svc/go.mod",
+        "line": null,
+        "raw": "v1.4.0",
+        "meta": {
+          "indirect": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "v1.10.2",
+        "repo": "spf13/cobra",
+        "homepage": "https://pkg.go.dev/github.com/spf13/cobra",
+        "deprecated": false,
+        "note": "Go proxy exposes dates only for the latest version",
+        "error": null,
+        "extra": {},
+        "release_count": 27
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 6,
+        "behind_patch": 0,
+        "releases_behind": 11,
+        "stable_releases_behind": 11,
+        "days_behind": 1364,
+        "current_age_days": 1599,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Minor upgrade v1.4.0 -> v1.10.2. Additive by convention; verify with tests rather than a full migration review.",
+        "steps": [
+          "Update the constraint to v1.10.2 and refresh the lock file (go)",
+          "Run the test suite; for a major, read the changelog for removed APIs first",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "14 breaking-change note(s) found in release notes between these versions - read them before upgrading",
+          "Go proxy exposes dates only for the latest version"
+        ],
+        "target_version": "v1.10.2",
+        "intermediate_versions": []
+      },
+      "delta": {
+        "repo": "spf13/cobra",
+        "from_ref": "v1.4.0",
+        "to_ref": "v1.10.2",
+        "from_date": "2022-03-10T15:19:35Z",
+        "to_date": "2025-12-03T23:51:15Z",
+        "window_resolved": true,
+        "bug_issues": [],
+        "open_bug_count": 0,
+        "total_bug_count": 0,
+        "breaking_notes": [
+          "v1.5.0: Removed `CHANGELOG.md` as it isn't updated - @johnSchnake https://github.com/spf13/cobra/pull/1634",
+          "v1.6.0: Deprecation \ud83d\udc4e\ud83c\udffc",
+          "v1.6.0: Renamed powershell completion tests: @marckhouzam #1803",
+          "v1.7.0: Deprecate Go 1.15 in CI: @umarcor #1866",
+          "v1.7.0: Deprecate Go 1.16 in CI: @umarcor #1926",
+          "v1.7.0: Replace deprecated ExactValidArgs with MatchAll in doc: @doniacld #1836",
+          "v1.8.0: golangci: enable 'unused' and disable deprecated replaced by it by @umarcor in https://github.com/spf13/cobra/pull/1983",
+          "v1.8.0: doc: fix typo, Deperecated -> Deprecated by @callthingsoff in https://github.com/spf13/cobra/pull/2000",
+          "v1.8.1: Address golangci-lint deprecation warnings, enable some more linters by @scop in https://github.com/spf13/cobra/pull/2152",
+          "v1.9.0: Fix deprecation comment for Command.SetOutput by @thaJeztah in https://github.com/spf13/cobra/pull/2172",
+          "v1.9.0: Replace deprecated ioutil usage by @nirs in https://github.com/spf13/cobra/pull/2181",
+          "v1.10.0: This version of `pflag` carried a breaking change: it renamed `ParseErrorsWhitelist` to `ParseErrorsAllowlist` which can break builds if both `pflag` and `cobra` are dependencies in your project.",
+          "v1.10.0: _or_** use the newer, fixed version of `pflag` v1.0.9 which keeps the deprecated `ParseErrorsWhitelist`",
+          "v1.10.1: v1.0.9 of pflags brought back `ParseErrorsWhitelist` and marked it as deprecated"
+        ],
+        "releases_in_window": [
+          "v1.4.0",
+          "v1.5.0",
+          "v1.6.0",
+          "v1.6.1",
+          "v1.7.0",
+          "v1.8.0",
+          "v1.8.1",
+          "v1.9.0",
+          "v1.9.1",
+          "v1.10.0",
+          "v1.10.1"
+        ],
+        "error": null,
+        "note": "issues are filed-in-window signals, not proven regressions; breaking-change notes are quoted from release bodies"
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "terraform-provider",
+        "name": "hashicorp/random",
+        "current": "3.4.3",
+        "source": "infra/.terraform.lock.hcl",
+        "line": 7,
+        "raw": "3.4.3",
+        "meta": {
+          "locked": true,
+          "constraint": "3.4.3",
+          "also_at": [
+            "infra/main.tf:6"
+          ]
+        }
+      },
+      "resolution": {
+        "latest_stable": "3.9.0",
+        "repo": "hashicorp/terraform-provider-random",
+        "homepage": "https://registry.terraform.io/providers/hashicorp/random",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 40
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 5,
+        "behind_patch": 0,
+        "releases_behind": 12,
+        "stable_releases_behind": 11,
+        "days_behind": 1342,
+        "current_age_days": 1417,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Minor upgrade 3.4.3 -> 3.9.0. Additive by convention; verify with tests rather than a full migration review.",
+        "steps": [
+          "Set version = \"~> 3.9.0\" in required_providers",
+          "Run `terraform init -upgrade` to refresh .terraform.lock.hcl",
+          "Run `terraform plan` and read every diff: provider majors change resource schemas, so a plan may show replacements you did not intend",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "Commit the updated lock file so CI resolves identically"
+        ],
+        "target_version": "3.9.0",
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "terraform-module",
+        "name": "Azure/naming/azurerm",
+        "current": "0.3.0",
+        "source": "infra/modules.tf",
+        "line": 1,
+        "raw": "0.3.0",
+        "meta": {
+          "block": "naming",
+          "registry": true,
+          "constraint": "0.3.0"
+        }
+      },
+      "resolution": {
+        "latest_stable": "0.4.3",
+        "repo": "Azure/terraform-azurerm-naming",
+        "homepage": "https://registry.terraform.io/modules/Azure/naming/azurerm",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 9
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 1,
+        "behind_patch": 0,
+        "releases_behind": 4,
+        "stable_releases_behind": 4,
+        "days_behind": 947,
+        "current_age_days": 1156,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Minor upgrade 0.3.0 -> 0.4.3. Additive by convention; verify with tests rather than a full migration review.",
+        "steps": [
+          "Bump the module version to 0.4.3",
+          "Run `terraform init -upgrade` then `plan`; module majors often rename inputs",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [],
+        "target_version": "0.4.3",
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "terraform-provider",
+        "name": "hashicorp/terraform",
+        "current": "1.3",
+        "source": "infra/main.tf",
+        "line": 2,
+        "raw": ">= 1.3",
+        "meta": {
+          "core": true,
+          "constraint": ">= 1.3"
+        }
+      },
+      "resolution": {
+        "latest_stable": "1.15.8",
+        "repo": "hashicorp/terraform",
+        "homepage": "https://github.com/hashicorp/terraform",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 100
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 12,
+        "behind_patch": 0,
+        "releases_behind": 100,
+        "stable_releases_behind": 39,
+        "days_behind": 602,
+        "current_age_days": 620,
+        "age_lower_bound": true,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "medium",
+      "advice": {
+        "risk": "medium",
+        "strategy": "Minor upgrade 1.3 -> 1.15.8. Additive by convention; verify with tests rather than a full migration review.",
+        "steps": [
+          "Bump required_version, then run `terraform version` on the new binary",
+          "Run `terraform plan` on every workspace: state upgrades are one-way",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "State written by a newer Terraform cannot be read by an older one"
+        ],
+        "target_version": "1.15.8",
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "docker-image",
+        "name": "nginx",
+        "current": "latest",
+        "source": "docker-compose.yml",
+        "line": 7,
+        "raw": "nginx:latest",
+        "meta": {
+          "digest": null,
+          "floating": true
+        }
+      },
+      "resolution": {
+        "latest_stable": null,
+        "repo": "nginxinc/docker-nginx",
+        "homepage": null,
+        "deprecated": false,
+        "note": "floating tag; the running image is unpinned and unreproducible",
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": false,
+        "reason": "unparseable version ('latest' vs '')"
+      },
+      "severity": "medium",
+      "advice": {
+        "risk": "medium",
+        "strategy": "Pin this image. A floating tag means the running artifact changes without a commit, so builds are not reproducible and a base-image regression is untraceable.",
+        "steps": [
+          "Replace `nginx:latest` with an explicit version tag",
+          "Better: pin by digest (`image@sha256:...`) and update it deliberately",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "floating tag; the running image is unpinned and unreproducible"
+        ],
+        "target_version": null,
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "docker-image",
+        "name": "python",
+        "current": "3.8-slim",
+        "source": "docker/Dockerfile",
+        "line": 1,
+        "raw": "python:3.8-slim",
+        "meta": {
+          "digest": null,
+          "untagged": false,
+          "floating": false,
+          "also_at": [
+            "docker/Dockerfile:3"
+          ]
+        }
+      },
+      "resolution": {
+        "latest_stable": "3.14.6-slim",
+        "repo": "docker-library/python",
+        "homepage": "https://hub.docker.com/_/python",
+        "deprecated": false,
+        "note": "compared within variant 'slim'; dates are Docker Hub last-push times, not original release dates; tag listing truncated at 200 tags (Hub pages by recency, not version), so an old pin may be absent and undatable; tag '3.8-slim' was not in the fetched listing; age unavailable",
+        "error": null,
+        "extra": {
+          "list_truncated": true,
+          "dates_are_push_times": true
+        },
+        "release_count": 17
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 6,
+        "behind_patch": 0,
+        "releases_behind": 17,
+        "stable_releases_behind": 12,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "medium",
+      "advice": {
+        "risk": "medium",
+        "strategy": "Minor upgrade 3.8-slim -> 3.14.6-slim. Additive by convention; verify with tests rather than a full migration review.",
+        "steps": [
+          "Update the FROM tag to 3.14.6-slim",
+          "Rebuild and run the image's own test suite; base images change libc, OpenSSL and CA bundles between majors",
+          "Change one component per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "compared within variant 'slim'; dates are Docker Hub last-push times, not original release dates; tag listing truncated at 200 tags (Hub pages by recency, not version), so an old pin may be absent and undatable; tag '3.8-slim' was not in the fetched listing; age unavailable"
+        ],
+        "target_version": "3.14.6-slim",
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "azure-api-version",
+        "name": "ARM/deploymentTemplateSchema",
+        "current": "2019-04-01",
+        "source": "azure/template.json",
+        "line": null,
+        "raw": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+        "meta": {
+          "format": "arm",
+          "schema": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "2019-04-01",
+        "repo": null,
+        "homepage": null,
+        "deprecated": false,
+        "note": "ARM template schema version; rarely a functional risk",
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": 0,
+        "current_age_days": 2674,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "current",
+      "advice": {
+        "risk": "current",
+        "strategy": "No action: already at the latest stable version.",
+        "steps": [],
+        "cautions": [],
+        "target_version": "2019-04-01",
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "k8s-api",
+        "name": "apps/Deployment",
+        "current": "v1",
+        "source": "k8s/workloads.yaml",
+        "line": 1,
+        "raw": "apps/v1",
+        "meta": {
+          "group": "apps",
+          "kind": "Deployment",
+          "apiVersion": "apps/v1"
+        }
+      },
+      "resolution": {
+        "latest_stable": "v1",
+        "repo": "kubernetes/kubernetes",
+        "homepage": null,
+        "deprecated": false,
+        "note": "already on the stable apiVersion",
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "current",
+      "advice": {
+        "risk": "current",
+        "strategy": "No action: already at the latest stable version.",
+        "steps": [],
+        "cautions": [],
+        "target_version": "v1",
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "docker-image",
+        "name": "myregistry.example.com/api",
+        "current": "1.4.0",
+        "source": "k8s/workloads.yaml",
+        "line": null,
+        "raw": "myregistry.example.com/api:1.4.0",
+        "meta": {
+          "digest": null,
+          "floating": false
+        }
+      },
+      "resolution": {
+        "latest_stable": null,
+        "repo": null,
+        "homepage": null,
+        "deprecated": false,
+        "note": "registry myregistry.example.com not supported for tag enumeration",
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": false,
+        "reason": "unparseable version ('1.4.0' vs '')"
+      },
+      "severity": "unknown",
+      "advice": {
+        "risk": "unknown",
+        "strategy": "Cannot assess: registry myregistry.example.com not supported for tag enumeration",
+        "steps": [],
+        "cautions": [
+          "unparseable version ('1.4.0' vs '')"
+        ],
+        "target_version": null,
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "github-action",
+        "name": "actions/checkout",
+        "current": null,
+        "source": ".github/workflows/ci.yml",
+        "line": 15,
+        "raw": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+        "meta": {
+          "subpath": null,
+          "sha_pinned": true,
+          "sha": "11bd71901bbe5b1630ceea73d27597364c9af683"
+        }
+      },
+      "resolution": {
+        "latest_stable": null,
+        "repo": "actions/checkout",
+        "homepage": null,
+        "deprecated": false,
+        "note": "pinned to a commit SHA (good for supply-chain safety); version lag not computed",
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": false,
+        "reason": "unparseable version ('' vs '')"
+      },
+      "severity": "unknown",
+      "advice": {
+        "risk": "unknown",
+        "strategy": "Cannot assess: pinned to a commit SHA. Map the SHA to a tag (`gh api repos/OWNER/REPO/commits/SHA`) to measure lag.",
+        "steps": [],
+        "cautions": [],
+        "target_version": null,
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "github-action",
+        "name": "runner/ubuntu-latest",
+        "current": "ubuntu-latest",
+        "source": ".github/workflows/ci.yml",
+        "line": 13,
+        "raw": "ubuntu-latest",
+        "meta": {
+          "runner": true,
+          "successor": null,
+          "latest_label": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "ubuntu-latest",
+        "repo": null,
+        "homepage": null,
+        "deprecated": false,
+        "note": "floating '-latest' runner label; image changes under you, but never goes stale",
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": false,
+        "reason": "unparseable version ('ubuntu-latest' vs 'ubuntu-latest')"
+      },
+      "severity": "unknown",
+      "advice": {
+        "risk": "unknown",
+        "strategy": "Cannot assess: floating '-latest' runner label; image changes under you, but never goes stale",
+        "steps": [],
+        "cautions": [
+          "unparseable version ('ubuntu-latest' vs 'ubuntu-latest')"
+        ],
+        "target_version": "ubuntu-latest",
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "go-module",
+        "name": "golang.org/toolchain",
+        "current": "1.19",
+        "source": "svc/go.mod",
+        "line": null,
+        "raw": "1.19",
+        "meta": {
+          "indirect": false
+        }
+      },
+      "resolution": {
+        "latest_stable": null,
+        "repo": "golang/go",
+        "homepage": "https://go.dev/dl/",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": false,
+        "reason": "unparseable version ('1.19' vs '')"
+      },
+      "severity": "unknown",
+      "advice": {
+        "risk": "unknown",
+        "strategy": "Cannot assess: version not comparable",
+        "steps": [],
+        "cautions": [
+          "unparseable version ('1.19' vs '')"
+        ],
+        "target_version": null,
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "helm-chart",
+        "name": "my-platform",
+        "current": "0.1.0",
+        "source": "helm/Chart.yaml",
+        "line": null,
+        "raw": "0.1.0",
+        "meta": {
+          "self": true,
+          "appVersion": "1.2.3",
+          "chart_api": "v2"
+        }
+      },
+      "resolution": {
+        "latest_stable": null,
+        "repo": null,
+        "homepage": null,
+        "deprecated": false,
+        "note": "chart defined in this repo; version is yours to bump, no upstream",
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": false,
+        "reason": "unparseable version ('0.1.0' vs '')"
+      },
+      "severity": "unknown",
+      "advice": {
+        "risk": "unknown",
+        "strategy": "Cannot assess: chart defined in this repo; version is yours to bump, no upstream",
+        "steps": [],
+        "cautions": [
+          "unparseable version ('0.1.0' vs '')"
+        ],
+        "target_version": null,
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "pypi",
+        "name": "urllib3",
+        "current": null,
+        "source": "app/pyproject.toml",
+        "line": null,
+        "raw": "<2",
+        "meta": {
+          "constraint": "<2",
+          "group": null,
+          "pinned": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "2.7.0",
+        "repo": "urllib3/urllib3",
+        "homepage": "https://pypi.org/project/urllib3/",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 108
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": false,
+        "reason": "unparseable version ('' vs '2.7.0')"
+      },
+      "severity": "unknown",
+      "advice": {
+        "risk": "unknown",
+        "strategy": "Cannot assess: no concrete version declared at this site.",
+        "steps": [],
+        "cautions": [],
+        "target_version": "2.7.0",
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "terraform-module",
+        "name": "../modules/local",
+        "current": null,
+        "source": "infra/modules.tf",
+        "line": 7,
+        "raw": null,
+        "meta": {
+          "block": "local_thing",
+          "registry": false,
+          "constraint": null
+        }
+      },
+      "resolution": {
+        "latest_stable": null,
+        "repo": null,
+        "homepage": null,
+        "deprecated": false,
+        "note": "non-registry module source (git/local); no upstream version feed",
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": false,
+        "reason": "unparseable version ('' vs '')"
+      },
+      "severity": "unknown",
+      "advice": {
+        "risk": "unknown",
+        "strategy": "Cannot assess: no concrete version declared at this site.",
+        "steps": [],
+        "cautions": [],
+        "target_version": null,
+        "intermediate_versions": []
+      },
+      "delta": null
+    },
+    {
+      "component": {
+        "ecosystem": "terraform-provider",
+        "name": "hashicorp/kubernetes",
+        "current": null,
+        "source": "infra/main.tf",
+        "line": 10,
+        "raw": null,
+        "meta": {
+          "alias": "kubernetes",
+          "constraint": null,
+          "unresolved_expr": "var.k8s_provider_version"
+        }
+      },
+      "resolution": {
+        "latest_stable": "3.2.1",
+        "repo": "hashicorp/terraform-provider-kubernetes",
+        "homepage": "https://registry.terraform.io/providers/hashicorp/kubernetes",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 94
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": false,
+        "reason": "unparseable version ('' vs '3.2.1')"
+      },
+      "severity": "unknown",
+      "advice": {
+        "risk": "unknown",
+        "strategy": "Cannot assess: version is the expression `var.k8s_provider_version`, not a literal. Resolve the variable's default (or the lock file) to get a real answer.",
+        "steps": [],
+        "cautions": [],
+        "target_version": "3.2.1",
+        "intermediate_versions": []
+      },
+      "delta": null
+    }
+  ]
+}

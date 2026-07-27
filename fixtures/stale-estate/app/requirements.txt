@@ -1,0 +1,8 @@
+# deliberately stale
+requests==2.20.0
+Django==2.2.28
+flask==1.0.2
+azure-identity>=1.5.0
+-r extra.txt
+./local-package
+git+https://github.com/example/thing.git#egg=thing

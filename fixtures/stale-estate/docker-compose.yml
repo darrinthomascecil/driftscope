@@ -1,0 +1,7 @@
+services:
+  cache:
+    image: redis:5
+  db:
+    image: postgres:11
+  proxy:
+    image: nginx:latest
