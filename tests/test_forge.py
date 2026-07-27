@@ -143,14 +143,40 @@ def test_test_artifacts_are_excluded_like_pull_requests(ado):
     assert any("artifact" in n for n in walk.notes)
 
 
+def test_the_unsampled_sentinel_cannot_be_a_real_count():
+    """The property, not the constant.
+
+    Asserting `positive == NOT_SAMPLED` is a tautology: redefine the constant and
+    both sides of the comparison move together. Mutation testing caught exactly
+    that -- setting NOT_SAMPLED = 0 introduced the "unsampled reads as zero
+    frustration" bug and the suite stayed green.
+
+    What actually has to hold is that the sentinel is outside the range of a real
+    measurement. A reaction count cannot be negative, so a negative sentinel is
+    the thing that keeps "we did not look" distinguishable from "we looked and
+    found none".
+    """
+    assert NOT_SAMPLED < 0
+
+
 def test_reactions_are_not_sampled_and_say_so(ado):
     """The sentinel is the whole point: unsampled must not read as zero."""
     walk = ado.issues_since("contoso/Platform/payments", date(2020, 1, 1))
     assert walk.reactions_sampled is False
-    assert all(i.positive == NOT_SAMPLED and i.negative == NOT_SAMPLED
-               for i in walk.items)
+    assert all(i.positive < 0 and i.negative < 0 for i in walk.items)
     assert all(not i.reactions_sampled for i in walk.items)
     assert any("sentiment not measured" in n for n in walk.notes)
+
+
+def test_a_genuine_zero_is_not_mistaken_for_unsampled():
+    """The other direction: an item that really has no reactions must report
+    sampled, so the two states stay distinct in both directions."""
+    r = IssueRecord(number=1, title="t", url="u", state="New",
+                    created=date(2026, 1, 1), closed=None,
+                    positive=0, negative=0)
+    assert r.reactions_sampled is True
+    assert IssueRecord(number=1, title="t", url="u", state="New",
+                       created=None, closed=None).reactions_sampled is False
 
 
 def test_unreadable_project_is_none_not_empty(ado, monkeypatch):

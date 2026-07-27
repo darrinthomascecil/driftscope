@@ -145,6 +145,64 @@ def test_clean_package_has_no_data(monkeypatch):
     assert reps["npm:x"].has_data is False
 
 
+# ------------------------------------------- zero results: clean, or unmatched?
+#
+# Added after mutation testing: deleting the `unmatched` guard entirely left the
+# suite green. The flag existed, was verified by hand, and had no test on the code
+# that sets it -- only on the reporter that renders it once set.
+
+
+def test_zero_results_on_an_image_is_unmatched_not_clean(monkeypatch):
+    """The postgres case. An approximate query returning nothing means the
+    distro/package/version guess found no match -- which is emphatically not the
+    same as the image being clean, and must not render as silence."""
+    pairs = [(Component(ecosystem=DOCKER, name="postgres", current="15",
+                        source="docker-compose.yml"), "18.2")]
+    reps, _ = run(pairs, [[], []], {}, monkeypatch)
+    r = reps["docker-image:postgres"]
+    assert r.unmatched is True
+    assert r.note and "not that the image" in r.note
+    # has_data must be True so the report says something rather than nothing.
+    assert r.has_data is True
+
+
+def test_zero_results_on_a_package_is_genuinely_clean(monkeypatch):
+    """The contrast that gives the flag meaning: an exact ecosystem query is
+    trustworthy, so zero there really is zero and must NOT be flagged."""
+    pairs = [(Component(ecosystem=NPM, name="left-pad", current="1.0.0",
+                        source="package.json"), "1.3.0")]
+    reps, _ = run(pairs, [[], []], {}, monkeypatch)
+    r = reps["npm:left-pad"]
+    assert r.unmatched is False
+    assert r.has_data is False
+
+
+def test_unmatched_and_indiscriminate_are_mutually_exclusive(monkeypatch):
+    """They describe different failures -- nothing matched, versus everything
+    matched identically -- and a report claiming both would be incoherent."""
+    empty = [(Component(ecosystem=DOCKER, name="postgres", current="15",
+                        source="f"), "18.2")]
+    same = [(Component(ecosystem=DOCKER, name="redis", current="5",
+                       source="f"), "8.8.1")]
+    a, _ = run(empty, [[], []], {}, monkeypatch)
+    b, _ = run(same, [["V1", "V2"], ["V1", "V2"]],
+               {"V1": detail("V1"), "V2": detail("V2")}, monkeypatch)
+    ra, rb = a["docker-image:postgres"], b["docker-image:redis"]
+    assert (ra.unmatched, ra.indiscriminate) == (True, False)
+    assert (rb.unmatched, rb.indiscriminate) == (False, True)
+
+
+def test_unmatched_withholds_the_upgrade_claim(monkeypatch):
+    """Nothing was measured, so nothing may be asserted about what an upgrade
+    would fix."""
+    pairs = [(Component(ecosystem=DOCKER, name="postgres", current="15",
+                        source="f"), "18.2")]
+    reps, _ = run(pairs, [[], []], {}, monkeypatch)
+    r = reps["docker-image:postgres"]
+    assert r.fixed_count == 0 and r.remaining_count == 0
+    assert r.fixed_by_upgrade == [] and r.remaining_after_upgrade == []
+
+
 # ------------------------------------------------------------- call budget
 
 
