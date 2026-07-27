@@ -16,6 +16,12 @@ from ..models import (
     SEV_UNKNOWN,
     severity_rank,
 )
+from .summarize import (
+    spark_ratios,
+    summarize_trend,
+    summarize_velocity,
+    summarize_vulns,
+)
 
 SCHEMA_VERSION = "driftscope/1"
 
@@ -120,52 +126,58 @@ def _lag_phrase(f) -> str:
 SPARK_BLOCKS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
 
 
-def _sparkline(values: list[float]) -> str:
+def _sparkline(values) -> str:
     """A text sparkline. Markdown has no SVG, but block characters read fine in a
     terminal, in a PR comment and in a pasted email."""
-    if not values:
-        return ""
-    peak = max((abs(v) for v in values), default=0) or 1
-    out = []
-    for v in values:
-        idx = min(len(SPARK_BLOCKS) - 1, int(abs(v) / peak * (len(SPARK_BLOCKS) - 1)))
-        out.append(SPARK_BLOCKS[idx])
-    return "".join(out)
+    top = len(SPARK_BLOCKS) - 1
+    return "".join(SPARK_BLOCKS[min(top, int(r * top))] for r in spark_ratios(values))
+
+
+def _md_latest(m) -> str:
+    """The latest-window value. `None` means unmeasurable, which must not read as 0."""
+    if m.latest is None:
+        return "\u2014"
+    if m.kind == "signed_delta":
+        return f"{int(m.latest):+d}"
+    if m.kind == "share":
+        return f"{m.latest:.0f}%"
+    return f"{int(m.latest)}"
+
+
+def _md_change(m) -> str:
+    return "\u2014" if m.change is None else f"{m.change:+.0f}{m.unit}"
 
 
 def _md_trend(d) -> list[str]:
     """Movement since the previous stored run."""
+    s = summarize_trend(d)
     arrow = {"improving": "improving", "falling behind": "falling behind",
-             "flat": "unchanged"}.get(d.direction, d.direction)
+             "flat": "unchanged"}.get(s.direction, s.direction)
     out = ["## Since the last run", ""]
     out.append(
-        f"**{arrow}** &middot; {d.net:+d} actionable findings "
-        f"(`{d.from_run or 'previous'}` -> `{d.to_run or 'current'}`)"
+        f"**{arrow}** &middot; {s.net:+d} actionable findings "
+        f"(`{s.from_run}` -> `{s.to_run}`)"
     )
     out.append("")
     out.append("| Change | Count |")
     out.append("|---|---:|")
-    for label, items in (("worsened", d.worsened), ("new", d.appeared),
-                         ("improved", d.improved), ("resolved", d.resolved)):
-        out.append(f"| {label} | {len(items)} |")
-    out.append(f"| unchanged | {d.unchanged} |")
+    for tile in s.tiles:
+        out.append(f"| {tile.label} | {tile.count} |")
     out.append("")
-    rows = [("worsened", d.worsened), ("new", d.appeared),
-            ("improved", d.improved), ("resolved", d.resolved)]
-    if any(items for _, items in rows):
+    if s.has_rows:
         out.append("| Change | Component | Severity | Version |")
         out.append("|---|---|---|---|")
-        for label, items in rows:
-            for c in items[:12]:
+        for g in s.groups:
+            for c in g.shown:
                 sev = f"{c.from_severity or '-'} -> {c.to_severity or 'gone'}"
                 ver = (f"`{c.from_version or '-'}` -> `{c.to_version or '-'}`"
                        if c.moved_version else f"`{c.to_version or c.from_version or ''}`")
-                out.append(f"| {label} | `{c.name}` | {sev} | {ver} |")
-            if len(items) > 12:
-                out.append(f"| {label} | _+{len(items) - 12} more_ | | |")
+                out.append(f"| {g.label} | `{c.name}` | {sev} | {ver} |")
+            if g.overflow:
+                out.append(f"| {g.label} | _+{g.overflow} more_ | | |")
         out.append("")
-    if d.note:
-        out.append(f"_{d.note}_")
+    if s.note:
+        out.append(f"_{s.note}_")
         out.append("")
     out.append(
         "_Findings are matched by ecosystem and name, so a bumped version reads as "
@@ -178,76 +190,46 @@ def _md_trend(d) -> list[str]:
 
 def _md_vulns(r) -> list[str]:
     """Known advisories and, where knowable, what an upgrade would clear."""
-    out: list[str] = []
-    if r.unmatched:
-        return [f"_Vulnerability lookup: {r.note}_", ""]
-    head = (f"{r.current_count} on record" if r.indiscriminate
-            else f"{r.current_count} affecting `{r.current_version}`")
-    out.append(f"**Known vulnerabilities** &middot; {head} &middot; "
-               f"`{r.package}` via OSV{' (approximate)' if r.approximate else ''}")
+    s = summarize_vulns(r)
+    if s.unmatched:
+        return [f"_Vulnerability lookup: {s.note}_", ""]
+    head = (f"{s.headline_count} on record" if s.headline_version is None
+            else f"{s.headline_count} affecting `{s.headline_version}`")
+    out = [f"**Known vulnerabilities** &middot; {head} &middot; "
+           f"`{s.package}` via OSV{' (approximate)' if s.approximate else ''}", ""]
+    for sec in s.sections:
+        out.append(f"- **{sec.title}: {sec.count}**")
+        for v in sec.shown:
+            out.append(f"  - [{v.cve}]({v.url}) `{v.severity or 'unrated'}` "
+                       f"{v.summary[:120]}")
+        if sec.hidden:
+            out.append(f"  - _+{sec.hidden} more not described_")
+    if s.upgrade_clears_nothing:
+        out.append("")
+        out.append("  _The upgrade clears none of these: they affect the target "
+                   "version too, so this needs a different remedy._")
     out.append("")
-
-    def listing(title: str, vulns, count: int) -> None:
-        if not count:
-            return
-        out.append(f"- **{title}: {count}**")
-        for v in vulns[:6]:
-            sev = v.severity or "unrated"
-            out.append(f"  - [{v.cve}]({v.url}) `{sev}` {v.summary[:120]}")
-        hidden = count - len(vulns[:6])
-        if hidden > 0:
-            out.append(f"  - _+{hidden} more not described_")
-
-    if r.indiscriminate:
-        listing("Advisories on record", r.remaining_after_upgrade, r.remaining_count)
-    else:
-        target = f" to {r.target_version}" if r.target_version else ""
-        listing(f"Fixed by upgrading{target}", r.fixed_by_upgrade, r.fixed_count)
-        listing("Still present after upgrade", r.remaining_after_upgrade,
-                r.remaining_count)
-        listing("Introduced by the upgrade", r.introduced_by_upgrade,
-                r.introduced_count)
-        if r.remaining_count and not r.fixed_count:
-            out.append("")
-            out.append("  _The upgrade clears none of these: they affect the target "
-                       "version too, so this needs a different remedy._")
-    out.append("")
-    if r.note:
-        out.append(f"_{r.note}_")
+    if s.note:
+        out.append(f"_{s.note}_")
         out.append("")
     return out
 
 
 def _md_velocity(v) -> list[str]:
     """Upstream issue, sentiment and release velocity."""
-    out = [f"**Upstream velocity** &middot; {v.verdict} &middot; `{v.repo}` "
-           f"({len(v.windows)} x {v.window_days}-day windows)", ""]
-    if v.error:
-        out += [f"_{v.error}_", ""]
+    s = summarize_velocity(v)
+    out = [f"**Upstream velocity** &middot; {s.verdict} &middot; `{s.repo}` "
+           f"({s.window_count} x {s.window_days}-day windows)", ""]
+    if s.error:
+        out += [f"_{s.error}_", ""]
         return out
     out.append("| Metric | Trend | Latest | Change | Verdict |")
     out.append("|---|---|---:|---:|---|")
-    rows = [
-        ("Issue backlog", [float(w.backlog_delta) for w in v.windows],
-         f"{v.windows[-1].backlog_delta:+d}",
-         (f"{v.backlog_change_abs:+.0f}" if v.backlog_change_abs is not None else "—"),
-         v.issue_trend),
-        ("Negative reactions",
-         [(w.frustration * 100) if w.frustration is not None else 0.0 for w in v.windows],
-         (f"{v.windows[-1].frustration * 100:.0f}%"
-          if v.windows[-1].frustration is not None else "—"),
-         (f"{v.frustration_change_pts:+.0f}pp"
-          if v.frustration_change_pts is not None else "—"),
-         v.sentiment_trend),
-        ("Releases shipped", [float(w.releases) for w in v.windows],
-         str(v.windows[-1].releases),
-         (f"{v.release_change_pct:+.0f}%" if v.release_change_pct is not None else "—"),
-         v.release_trend),
-    ]
-    for label, series, latest, change, verdict in rows:
-        out.append(f"| {label} | `{_sparkline(series)}` | {latest} | {change} | {verdict} |")
+    for m in s.metrics:
+        out.append(f"| {m.label} | `{_sparkline(m.series)}` | {_md_latest(m)} "
+                   f"| {_md_change(m)} | {m.trend} |")
     out.append("")
-    latest = v.latest
+    latest = s.latest_window
     if latest:
         out.append(
             f"_Latest window {latest.label}: {latest.opened} opened, "
@@ -255,7 +237,7 @@ def _md_velocity(v) -> list[str]:
             f"{latest.sampled_issues} sampled issues, {latest.releases} release(s)._"
         )
         out.append("")
-    for n in v.notes[:3]:
+    for n in s.notes:
         out.append(f"_{n}_")
         out.append("")
     return out
