@@ -228,12 +228,21 @@ document.querySelectorAll('button.chip').forEach(b=>b.onclick=()=>{
   sev=b.dataset.v; apply();
 });
 document.getElementById('eco').onchange=ev=>{eco=ev.target.value; apply();};
-document.getElementById('expandall').onclick=()=>{
+const expandBtn=document.getElementById('expandall');
+function syncExpandLabel(){
+  // The button flips both ways, so its label has to follow the rows rather than
+  // stay fixed -- it read "expand all" while everything was already expanded.
+  const anyClosed = rows.some(r=>!r.hidden && detailOf(r) && r.dataset.open!=='1');
+  expandBtn.textContent = anyClosed ? 'expand all' : 'collapse all';
+}
+expandBtn.onclick=()=>{
   const anyClosed = rows.some(r=>!r.hidden && detailOf(r) && r.dataset.open!=='1');
   for(const r of rows){ if(r.hidden||!detailOf(r)) continue;
     if((r.dataset.open==='1') === anyClosed) toggle(r); }
+  syncExpandLabel();
 };
 apply();
+syncExpandLabel();
 """
 
 
@@ -639,7 +648,7 @@ def to_html(report: Report, *, title: str = "Version drift report") -> str:
     for k in ecos:
         a(f"<option value='{e(k)}'>{e(ECO_LABEL.get(k, k))}</option>")
     a("</select>")
-    a("<button class='chip' id='expandall' style='margin-left:8px'>expand all</button>")
+    a("<button class='chip' id='expandall' style='margin-left:8px'>collapse all</button>")
     a("<span style='margin-left:auto;color:var(--text-muted);font-size:12px' id='count'></span>")
     a("</div>")
 
@@ -656,10 +665,14 @@ def to_html(report: Report, *, title: str = "Version drift report") -> str:
                  f"data-eco='{e(c.ecosystem)}'")
         detail = _finding_detail(report, f)
 
-        a(f"<tr class='frow' {attrs} data-for='{rid}'>")
+        # Guidance is expanded on open. The report is read once, usually by
+        # someone who did not run the scan, so the upgrade advice is the point --
+        # making them click 20 carets to reach it buries the answer behind the
+        # question. The caret still collapses a row that is not relevant.
+        a(f"<tr class='frow' {attrs} data-for='{rid}' data-open='1'>")
         if detail:
-            a(f"<td class='tog'><button class='caret' aria-expanded='false' "
-              f"aria-controls='{rid}' title='show guidance'>&#9656;</button></td>")
+            a(f"<td class='tog'><button class='caret' aria-expanded='true' "
+              f"aria-controls='{rid}' title='hide guidance'>&#9662;</button></td>")
         else:
             a("<td class='tog'></td>")
         a(f"<td><span class='badge {role}'><span class='g'>{glyph}</span>{e(f.severity)}</span></td>")
@@ -673,7 +686,7 @@ def to_html(report: Report, *, title: str = "Version drift report") -> str:
         # place per component rather than a table and a separate section to
         # cross-reference.
         if detail:
-            a(f"<tr class='fdetail' id='{rid}' {attrs} hidden>"
+            a(f"<tr class='fdetail' id='{rid}' {attrs}>"
               f"<td class='tog'></td><td colspan='6'>{detail}</td></tr>")
     a("</tbody></table></div>")
     a("<div class='empty' id='none' hidden>Nothing matches this filter.</div>")
