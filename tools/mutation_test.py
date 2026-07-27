@@ -48,7 +48,7 @@ MUTATIONS = [
      "if False:",
      "a 6-month-old node image rates LOW"),
     ("advisor: runtimes scored on distance", "driftscope/advisor.py",
-     "if component.ecosystem in (JVM_TOOLCHAIN, DOTNET_TFM, DOTNET_SDK):",
+     "if component.ecosystem in (JVM_TOOLCHAIN, DOTNET_TFM, DOTNET_SDK,\n                               RUBY_RUNTIME):",
      "if False:",
      "Java 17 LTS rates CRITICAL"),
     ("advisor: floating tags rate CURRENT", "driftscope/advisor.py",
@@ -140,7 +140,25 @@ MUTATIONS = [
      "    except Exception as e:  # resolver bugs must not abort the run\n        return Resolution(error=f\"{type(e).__name__}: {e}\")",
      "    except None:\n        pass",
      "one bad resolver aborts the entire scan"),
+    # --- ruby
+    ("ruby: compare across platform builds", "driftscope/resolvers/ruby.py",
+     '        if (v.get("platform") or "ruby") != "ruby":\n            continue',
+     "        pass",
+     "a platform swap reads as an upgrade"),
+    ("ruby: prereleases become the target", "driftscope/resolvers/ruby.py",
+     "    usable = [r.version for r in releases if not r.prerelease]",
+     "    usable = [r.version for r in releases]",
+     "recommends an rc as the upgrade target"),
+    ("ruby: maintained line punished for distance", "driftscope/advisor.py",
+     "        if is_lts is True:",
+     "        if False:",
+     "a fully supported Ruby line rates MEDIUM for being behind"),
+    ("ruby scanner: read nested lock deps as gems", "driftscope/scanners/ruby.py",
+     'r"^ {4}(?P<name>[\\w.\\-]+) \\((?P<version>[^)]+)\\)$"',
+     'r"^ +(?P<name>[\\w.\\-]+) \\((?P<version>[^)]+)\\)$"',
+     "dependency constraints emitted as pinned gems"),
 ]
+
 
 
 

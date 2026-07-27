@@ -26,6 +26,8 @@ from ..models import (
     K8S_CLUSTER,
     NPM,
     PYPI,
+    RUBYGEMS,
+    RUBY_RUNTIME,
     TERRAFORM_MODULE,
     TERRAFORM_PROVIDER,
     Component,
@@ -76,7 +78,8 @@ def parse_iso(s: str | None) -> datetime | None:
 
 
 def resolve(component: Component, ctx: Context) -> Resolution:
-    from . import azure, dotnet_jvm as dj, github_src, oci, packages, terraform as tf
+    from . import (azure, dotnet_jvm as dj, github_src, oci, packages,
+                   ruby as rb, terraform as tf)
 
     table = {
         TERRAFORM_PROVIDER: tf.resolve_provider,
@@ -97,6 +100,8 @@ def resolve(component: Component, ctx: Context) -> Resolution:
         DOTNET_TFM: dj.resolve_dotnet_tfm,
         DOTNET_SDK: dj.resolve_dotnet_sdk,
         JVM_TOOLCHAIN: dj.resolve_jvm_toolchain,
+        RUBYGEMS: rb.resolve_rubygem,
+        RUBY_RUNTIME: rb.resolve_ruby_runtime,
     }
     fn = table.get(component.ecosystem)
     if fn is None:

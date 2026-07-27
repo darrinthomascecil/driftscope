@@ -29,6 +29,8 @@ MAVEN = "maven"
 DOTNET_TFM = "dotnet-tfm"
 DOTNET_SDK = "dotnet-sdk"
 JVM_TOOLCHAIN = "jvm-toolchain"
+RUBYGEMS = "rubygems"
+RUBY_RUNTIME = "ruby-runtime"
 
 SEV_CRITICAL = "critical"
 SEV_HIGH = "high"

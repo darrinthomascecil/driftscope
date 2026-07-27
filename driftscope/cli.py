@@ -23,6 +23,8 @@ from .models import (
     NPM,
     NUGET,
     PYPI,
+    RUBYGEMS,
+    RUBY_RUNTIME,
     SEV_CRITICAL,
     SEV_HIGH,
     SEV_LOW,
@@ -58,9 +60,10 @@ ECOSYSTEM_GROUPS = {
     "terraform": {TERRAFORM_PROVIDER, TERRAFORM_MODULE},
     "azure": {AZURE_API},
     "containers": {DOCKER, HELM, K8S_API},
-    "deps": {PYPI, NPM, GO, NUGET, MAVEN},
+    "deps": {PYPI, NPM, GO, NUGET, MAVEN, RUBYGEMS},
     "dotnet": {NUGET, DOTNET_TFM, DOTNET_SDK},
     "jvm": {MAVEN, JVM_TOOLCHAIN},
+    "ruby": {RUBYGEMS, RUBY_RUNTIME},
     "ci": {GH_ACTION},
 }
 

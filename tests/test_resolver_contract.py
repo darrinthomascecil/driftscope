@@ -41,6 +41,8 @@ from driftscope.models import (
     NPM,
     NUGET,
     PYPI,
+    RUBYGEMS,
+    RUBY_RUNTIME,
     TERRAFORM_MODULE,
     TERRAFORM_PROVIDER,
     Component,
@@ -70,6 +72,8 @@ ECOSYSTEMS = [
     (DOTNET_TFM, "net6.0", "6.0"),
     (DOTNET_SDK, "dotnet-sdk", "6.0.400"),
     (JVM_TOOLCHAIN, "java", "17"),
+    (RUBYGEMS, "rails", "6.1.7"),
+    (RUBY_RUNTIME, "ruby", "3.1.2"),
 ]
 
 # Payloads a registry should never send, but might: truncated responses, a proxy
@@ -97,7 +101,8 @@ HOSTILE = [
 # lookup: k8s deprecations, .NET/JVM support dates, Azure SKU families. They are
 # correct precisely because they do not depend on the response, so the
 # "must not answer from a bad payload" rule does not apply to them.
-LOCAL_TABLE = {K8S_API, DOTNET_TFM, DOTNET_SDK, JVM_TOOLCHAIN, AZURE_SKU}
+LOCAL_TABLE = {K8S_API, DOTNET_TFM, DOTNET_SDK, JVM_TOOLCHAIN, AZURE_SKU,
+               RUBY_RUNTIME}
 
 
 class HostileClient:

@@ -53,6 +53,8 @@ ECO_LABEL = {
     "dotnet-tfm": ".NET target framework",
     "dotnet-sdk": ".NET SDK",
     "jvm-toolchain": "JVM toolchain",
+    "rubygems": "Ruby gem",
+    "ruby-runtime": "Ruby runtime",
 }
 
 
