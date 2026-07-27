@@ -1,0 +1,1029 @@
+{
+  "schema": "driftscope/1",
+  "root": "/tmp/estate",
+  "source": {
+    "remote": "https://github.com/darrinthomascecil/driftscope-testapp",
+    "ref": "main",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "trend": {
+    "from_run": "2026-01-02T00-00-00",
+    "to_run": "2026-07-27T00-00-00",
+    "from_generated": "2026-01-02T00:00:00+00:00",
+    "to_generated": "2026-07-27T00:00:00+00:00",
+    "appeared": [
+      {
+        "ecosystem": "docker-image",
+        "name": "redis",
+        "from_severity": null,
+        "to_severity": "high",
+        "from_version": null,
+        "to_version": "5",
+        "from_latest": null,
+        "to_latest": "8.8.1"
+      }
+    ],
+    "resolved": [
+      {
+        "ecosystem": "terraform-provider",
+        "name": "hashicorp/random",
+        "from_severity": "high",
+        "to_severity": null,
+        "from_version": "3.1.0",
+        "to_version": null,
+        "from_latest": null,
+        "to_latest": null
+      }
+    ],
+    "worsened": [
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-0",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      },
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-1",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      },
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-2",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      },
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-3",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      },
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-4",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      },
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-5",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      },
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-6",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      },
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-7",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      },
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-8",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      },
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-9",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      },
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-10",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      },
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-11",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      },
+      {
+        "ecosystem": "maven",
+        "name": "org.example:lib-12",
+        "from_severity": "medium",
+        "to_severity": "high",
+        "from_version": "1.0.0",
+        "to_version": "1.0.0",
+        "from_latest": "1.5.0",
+        "to_latest": "2.0.0"
+      }
+    ],
+    "improved": [
+      {
+        "ecosystem": "maven",
+        "name": "org.apache.commons:commons-lang3",
+        "from_severity": "high",
+        "to_severity": "low",
+        "from_version": "3.9",
+        "to_version": "3.19.0",
+        "from_latest": null,
+        "to_latest": null
+      }
+    ],
+    "unchanged": 7,
+    "from_counts": {
+      "critical": 1,
+      "high": 3,
+      "medium": 2
+    },
+    "to_counts": {
+      "critical": 2,
+      "high": 2,
+      "medium": 1
+    },
+    "note": "matched 24 of 26 components across the two runs"
+  },
+  "generated_at": "<SCRUBBED>",
+  "stats": {
+    "files_scanned": 41,
+    "components_found": 9,
+    "resolved": 7,
+    "resolve_errors": 1,
+    "github_queries": 18,
+    "cache_hits": 64,
+    "started": "2026-07-27T00:00:00+00:00",
+    "duration_s": 12.34
+  },
+  "summary": {
+    "critical": 2,
+    "high": 2,
+    "medium": 1,
+    "low": 1,
+    "current": 1,
+    "unknown": 2
+  },
+  "errors": [
+    "velocity: measured 6 of 11 eligible repos (--max-velocity); the rest were skipped"
+  ],
+  "findings": [
+    {
+      "component": {
+        "ecosystem": "terraform-provider",
+        "name": "hashicorp/azurerm",
+        "current": "2.99.0",
+        "source": ".terraform.lock.hcl",
+        "line": 12,
+        "raw": "~> 2.99",
+        "meta": {
+          "locked": true
+        }
+      },
+      "resolution": {
+        "latest_stable": "4.81.0",
+        "repo": "hashicorp/terraform-provider-azurerm",
+        "homepage": null,
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 60
+      },
+      "lag": {
+        "behind_major": 2,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 220,
+        "stable_releases_behind": 220,
+        "days_behind": 1586,
+        "current_age_days": 1598,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Do not jump 2.99.0 -> 4.81.0 in one change.",
+        "steps": [
+          "Set version = \"~> 4.81.0\" in required_providers"
+        ],
+        "cautions": [
+          "Provider major bumps can force resource replacement"
+        ],
+        "target_version": "4.81.0",
+        "intermediate_versions": [
+          "3.117.1"
+        ]
+      },
+      "delta": null,
+      "velocity": null,
+      "vulns": null
+    },
+    {
+      "component": {
+        "ecosystem": "maven",
+        "name": "com.fasterxml.jackson.core:jackson-databind",
+        "current": "2.15.2",
+        "source": "pom.xml",
+        "line": 34,
+        "raw": "2.15.2",
+        "meta": {
+          "also_at": [
+            "service-a/pom.xml",
+            "service-b/pom.xml"
+          ]
+        }
+      },
+      "resolution": {
+        "latest_stable": "2.20.0",
+        "repo": "FasterXML/jackson-databind",
+        "homepage": "https://github.com/FasterXML/jackson-databind",
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 40
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 5,
+        "behind_patch": 0,
+        "releases_behind": 40,
+        "stable_releases_behind": 38,
+        "days_behind": 900,
+        "current_age_days": 1200,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "critical",
+      "advice": {
+        "risk": "critical",
+        "strategy": "Staged upgrade. Step through 2.17.x so each minor's serialisation changes are isolated and revertible.",
+        "steps": [
+          "Bump the jackson-bom entry, not the individual artifacts",
+          "Run the contract tests before the unit tests",
+          "Change one service per commit so a regression bisects cleanly"
+        ],
+        "cautions": [
+          "jackson ships many artifacts on one version line; a partial upgrade silently mixes versions",
+          "3 breaking-change note(s) found in release notes"
+        ],
+        "target_version": "2.20.0",
+        "intermediate_versions": [
+          "2.17.2"
+        ]
+      },
+      "delta": {
+        "repo": "FasterXML/jackson-databind",
+        "from_ref": "2.15.2",
+        "to_ref": "2.20.0",
+        "from_date": "2023-07-05T00:00:00Z",
+        "to_date": "2026-01-10T00:00:00Z",
+        "window_resolved": true,
+        "bug_issues": [
+          {
+            "number": 4100,
+            "title": "Deserialisation regression #0",
+            "url": "https://github.com/FasterXML/jackson-databind/issues/4100",
+            "state": "open",
+            "labels": [
+              "bug"
+            ],
+            "created_at": "2025-03-01T00:00:00Z",
+            "kind": "issue"
+          },
+          {
+            "number": 4101,
+            "title": "Deserialisation regression #1",
+            "url": "https://github.com/FasterXML/jackson-databind/issues/4101",
+            "state": "open",
+            "labels": [
+              "bug"
+            ],
+            "created_at": "2025-03-01T00:00:00Z",
+            "kind": "issue"
+          },
+          {
+            "number": 4102,
+            "title": "Deserialisation regression #2",
+            "url": "https://github.com/FasterXML/jackson-databind/issues/4102",
+            "state": "open",
+            "labels": [
+              "bug"
+            ],
+            "created_at": "2025-03-01T00:00:00Z",
+            "kind": "issue"
+          }
+        ],
+        "open_bug_count": 14,
+        "total_bug_count": 61,
+        "counts_available": true,
+        "breaking_notes": [
+          "2.16.0: `ObjectMapper` - the `USE_BIG_DECIMAL_FOR_FLOATS` default has changed",
+          "2.17.0: removed support for the legacy `JsonSerializable` interface",
+          "2.18.0: minimum required Java version is now 17"
+        ],
+        "releases_in_window": [
+          "2.16.0",
+          "2.17.0",
+          "2.18.0",
+          "2.19.0",
+          "2.20.0"
+        ],
+        "error": null,
+        "note": "issues are filed-in-window signals, not proven regressions; breaking-change notes are quoted from release bodies"
+      },
+      "velocity": {
+        "repo": "FasterXML/jackson-databind",
+        "windows": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-04-01",
+            "opened": 40,
+            "closed": 50,
+            "sampled_issues": 20,
+            "positive": 30,
+            "negative": 6,
+            "comments": 95,
+            "releases": 6,
+            "complete": false,
+            "label": "2025-01-01..2025-04-01",
+            "backlog_delta": -10,
+            "close_ratio": 1.25,
+            "total_reactions": 36,
+            "frustration": 0.16666666666666666,
+            "comments_per_issue": 4.75
+          },
+          {
+            "start": "2025-04-01",
+            "end": "2025-07-01",
+            "opened": 60,
+            "closed": 45,
+            "sampled_issues": 25,
+            "positive": 40,
+            "negative": 15,
+            "comments": 140,
+            "releases": 4,
+            "complete": true,
+            "label": "2025-04-01..2025-07-01",
+            "backlog_delta": 15,
+            "close_ratio": 0.75,
+            "total_reactions": 55,
+            "frustration": 0.2727272727272727,
+            "comments_per_issue": 5.6
+          },
+          {
+            "start": "2025-07-01",
+            "end": "2025-10-01",
+            "opened": 75,
+            "closed": 40,
+            "sampled_issues": 30,
+            "positive": 35,
+            "negative": 28,
+            "comments": 210,
+            "releases": 3,
+            "complete": true,
+            "label": "2025-07-01..2025-10-01",
+            "backlog_delta": 35,
+            "close_ratio": 0.5333333333333333,
+            "total_reactions": 63,
+            "frustration": 0.4444444444444444,
+            "comments_per_issue": 7.0
+          },
+          {
+            "start": "2025-10-01",
+            "end": "2026-01-01",
+            "opened": 90,
+            "closed": 30,
+            "sampled_issues": 35,
+            "positive": 0,
+            "negative": 0,
+            "comments": 260,
+            "releases": 1,
+            "complete": true,
+            "label": "2025-10-01..2026-01-01",
+            "backlog_delta": 60,
+            "close_ratio": 0.3333333333333333,
+            "total_reactions": 0,
+            "frustration": null,
+            "comments_per_issue": 7.428571428571429
+          }
+        ],
+        "window_days": 90,
+        "issue_trend": "deteriorating",
+        "sentiment_trend": "deteriorating",
+        "release_trend": "deteriorating",
+        "verdict": "deteriorating",
+        "backlog_change_pct": 180.0,
+        "backlog_change_abs": 42.0,
+        "frustration_change_pct": 64.0,
+        "frustration_change_pts": 11.0,
+        "release_change_pct": -77.0,
+        "notes": [
+          "oldest window excluded from the baseline: the issue walk stopped at page 20 before covering it"
+        ],
+        "error": null
+      },
+      "vulns": {
+        "ecosystem": "maven",
+        "package": "com.fasterxml.jackson.core:jackson-databind",
+        "current_version": "2.15.2",
+        "target_version": "2.20.0",
+        "fixed_count": 9,
+        "remaining_count": 2,
+        "introduced_count": 1,
+        "fixed_by_upgrade": [
+          {
+            "id": "GHSA-xxxx-0001",
+            "aliases": [
+              "CVE-2024-1001"
+            ],
+            "summary": "Advisory number 1 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "CRITICAL",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0001"
+          },
+          {
+            "id": "GHSA-xxxx-0002",
+            "aliases": [
+              "CVE-2024-1002"
+            ],
+            "summary": "Advisory number 2 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "HIGH",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0002"
+          },
+          {
+            "id": "GHSA-xxxx-0003",
+            "aliases": [
+              "CVE-2024-1003"
+            ],
+            "summary": "Advisory number 3 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "MODERATE",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0003"
+          },
+          {
+            "id": "GHSA-xxxx-0004",
+            "aliases": [
+              "CVE-2024-1004"
+            ],
+            "summary": "Advisory number 4 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "LOW",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0004"
+          },
+          {
+            "id": "GHSA-xxxx-0005",
+            "aliases": [
+              "CVE-2024-1005"
+            ],
+            "summary": "Advisory number 5 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0005"
+          },
+          {
+            "id": "GHSA-xxxx-0006",
+            "aliases": [
+              "CVE-2024-1006"
+            ],
+            "summary": "Advisory number 6 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "HIGH",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0006"
+          }
+        ],
+        "remaining_after_upgrade": [
+          {
+            "id": "GHSA-xxxx-0020",
+            "aliases": [
+              "CVE-2024-1020"
+            ],
+            "summary": "Advisory number 20 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "HIGH",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0020"
+          },
+          {
+            "id": "GHSA-xxxx-0021",
+            "aliases": [
+              "CVE-2024-1021"
+            ],
+            "summary": "Advisory number 21 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "MODERATE",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0021"
+          }
+        ],
+        "introduced_by_upgrade": [
+          {
+            "id": "GHSA-xxxx-0030",
+            "aliases": [
+              "CVE-2024-1030"
+            ],
+            "summary": "Advisory number 30 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "LOW",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0030"
+          }
+        ],
+        "approximate": false,
+        "indiscriminate": false,
+        "unmatched": false,
+        "note": null,
+        "error": null
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "docker-image",
+        "name": "redis",
+        "current": "5",
+        "source": "docker-compose.yml",
+        "line": 7,
+        "raw": null,
+        "meta": {
+          "digest": null,
+          "floating": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "8.8.1",
+        "repo": "redis/redis",
+        "homepage": null,
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 3,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": 2100,
+        "current_age_days": 2400,
+        "age_lower_bound": true,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Rebuild against the 8.x tag.",
+        "steps": [
+          "Pin a full version, not a bare major"
+        ],
+        "cautions": [],
+        "target_version": "8.8.1",
+        "intermediate_versions": []
+      },
+      "delta": null,
+      "velocity": null,
+      "vulns": {
+        "ecosystem": "Debian",
+        "package": "redis",
+        "current_version": "5",
+        "target_version": "8.8.1",
+        "fixed_count": 0,
+        "remaining_count": 72,
+        "introduced_count": 0,
+        "fixed_by_upgrade": [],
+        "remaining_after_upgrade": [
+          {
+            "id": "GHSA-xxxx-0040",
+            "aliases": [
+              "CVE-2024-1040"
+            ],
+            "summary": "Advisory number 40 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "HIGH",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0040"
+          },
+          {
+            "id": "GHSA-xxxx-0041",
+            "aliases": [
+              "CVE-2024-1041"
+            ],
+            "summary": "Advisory number 41 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "HIGH",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0041"
+          },
+          {
+            "id": "GHSA-xxxx-0042",
+            "aliases": [
+              "CVE-2024-1042"
+            ],
+            "summary": "Advisory number 42 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "HIGH",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0042"
+          },
+          {
+            "id": "GHSA-xxxx-0043",
+            "aliases": [
+              "CVE-2024-1043"
+            ],
+            "summary": "Advisory number 43 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.",
+            "severity": "HIGH",
+            "cvss": "7.5",
+            "fixed_in": [
+              "3.0.0"
+            ],
+            "url": "https://osv.dev/vulnerability/GHSA-xxxx-0043"
+          }
+        ],
+        "introduced_by_upgrade": [],
+        "approximate": true,
+        "indiscriminate": true,
+        "unmatched": false,
+        "note": "both versions matched the same 72 advisories, so this query did not discriminate between them; distro package versions do not follow image tags. The fixed/remaining split is withheld.",
+        "error": null
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "docker-image",
+        "name": "postgres",
+        "current": "15",
+        "source": "docker-compose.yml",
+        "line": 15,
+        "raw": null,
+        "meta": {}
+      },
+      "resolution": {
+        "latest_stable": "18.2",
+        "repo": "postgres/postgres",
+        "homepage": null,
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 3,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": 1100,
+        "current_age_days": 1150,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "high",
+      "advice": {
+        "risk": "high",
+        "strategy": "Plan a major-version data migration.",
+        "steps": [],
+        "cautions": [],
+        "target_version": "18.2",
+        "intermediate_versions": []
+      },
+      "delta": null,
+      "velocity": null,
+      "vulns": {
+        "ecosystem": "Debian",
+        "package": "postgresql-15",
+        "current_version": "15",
+        "target_version": "18.2",
+        "fixed_count": 0,
+        "remaining_count": 0,
+        "introduced_count": 0,
+        "fixed_by_upgrade": [],
+        "remaining_after_upgrade": [],
+        "introduced_by_upgrade": [],
+        "approximate": true,
+        "indiscriminate": false,
+        "unmatched": true,
+        "note": "the guessed distro/package/version triple returned no advisories, which means the mapping found nothing -- not that the image is clean",
+        "error": null
+      }
+    },
+    {
+      "component": {
+        "ecosystem": "azure-api-version",
+        "name": "Microsoft.CognitiveServices/accounts",
+        "current": "2023-05-01",
+        "source": "main.bicep",
+        "line": 21,
+        "raw": null,
+        "meta": {
+          "format": "bicep",
+          "preview": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "2026-05-01",
+        "repo": null,
+        "homepage": null,
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 3,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 4,
+        "days_behind": 1096,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "medium",
+      "advice": {
+        "risk": "medium",
+        "strategy": "Bump the apiVersion and re-deploy.",
+        "steps": [],
+        "cautions": [],
+        "target_version": "2026-05-01",
+        "intermediate_versions": []
+      },
+      "delta": null,
+      "velocity": null,
+      "vulns": null
+    },
+    {
+      "component": {
+        "ecosystem": "jvm-toolchain",
+        "name": "java",
+        "current": "21",
+        "source": "pom.xml",
+        "line": 8,
+        "raw": null,
+        "meta": {}
+      },
+      "resolution": {
+        "latest_stable": "25",
+        "repo": null,
+        "homepage": null,
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {
+          "lts": true,
+          "support_days_left": 900
+        },
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 4,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "low",
+      "advice": {
+        "risk": "low",
+        "strategy": "21 is a supported LTS; no action needed yet.",
+        "steps": [],
+        "cautions": [],
+        "target_version": "25",
+        "intermediate_versions": []
+      },
+      "delta": null,
+      "velocity": null,
+      "vulns": null
+    },
+    {
+      "component": {
+        "ecosystem": "k8s-api",
+        "name": "apps/Deployment",
+        "current": "v1",
+        "source": "k8s/deploy.yaml",
+        "line": 2,
+        "raw": null,
+        "meta": {}
+      },
+      "resolution": {
+        "latest_stable": "v1",
+        "repo": null,
+        "homepage": null,
+        "deprecated": false,
+        "note": "stable",
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "current",
+      "advice": {
+        "risk": "current",
+        "strategy": "No action needed.",
+        "steps": [],
+        "cautions": [],
+        "target_version": null,
+        "intermediate_versions": []
+      },
+      "delta": null,
+      "velocity": null,
+      "vulns": null
+    },
+    {
+      "component": {
+        "ecosystem": "docker-image",
+        "name": "internal/tool",
+        "current": "alpine",
+        "source": "Dockerfile",
+        "line": 1,
+        "raw": null,
+        "meta": {}
+      },
+      "resolution": {
+        "latest_stable": null,
+        "repo": null,
+        "homepage": null,
+        "deprecated": false,
+        "note": null,
+        "error": "registry returned HTTP 404",
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": false,
+        "reason": "unparseable version ('alpine' vs '')"
+      },
+      "severity": "unknown",
+      "advice": {
+        "risk": "unknown",
+        "strategy": "Cannot assess: no upstream feed.",
+        "steps": [],
+        "cautions": [],
+        "target_version": null,
+        "intermediate_versions": []
+      },
+      "delta": null,
+      "velocity": null,
+      "vulns": null
+    },
+    {
+      "component": {
+        "ecosystem": "terraform-provider",
+        "name": "hashicorp/kubernetes",
+        "current": null,
+        "source": "versions.tf",
+        "line": 16,
+        "raw": null,
+        "meta": {
+          "unresolved_expr": "var.k8s_provider_version"
+        }
+      },
+      "resolution": {
+        "latest_stable": "3.2.1",
+        "repo": "hashicorp/terraform-provider-kubernetes",
+        "homepage": null,
+        "deprecated": false,
+        "note": null,
+        "error": null,
+        "extra": {},
+        "release_count": 0
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 0,
+        "behind_patch": 0,
+        "releases_behind": 0,
+        "stable_releases_behind": 0,
+        "days_behind": null,
+        "current_age_days": null,
+        "age_lower_bound": false,
+        "comparable": false,
+        "reason": "unparseable version ('' vs '3.2.1')"
+      },
+      "severity": "unknown",
+      "advice": {
+        "risk": "unknown",
+        "strategy": "Cannot assess: version is the expression `var.k8s_provider_version`, not a literal.",
+        "steps": [],
+        "cautions": [],
+        "target_version": null,
+        "intermediate_versions": []
+      },
+      "delta": null,
+      "velocity": null,
+      "vulns": null
+    }
+  ]
+}

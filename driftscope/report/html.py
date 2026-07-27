@@ -30,6 +30,12 @@ from ..models import (
     severity_rank,
 )
 from .render import ECO_LABEL, _lag_phrase, _plural
+from .summarize import (
+    spark_ratios,
+    summarize_trend,
+    summarize_velocity,
+    summarize_vulns,
+)
 
 # Severity -> status role. Six levels map onto four reserved status colours;
 # LOW and UNKNOWN stay in ink because they are informational, not stateful.
@@ -237,16 +243,22 @@ TREND_STYLE = {
 }
 
 
-def _spark(values: list[float], *, role: str, labels: list[str]) -> str:
+def _spark(values, *, role: str, labels) -> str:
     """A tiny per-window bar strip. One series, so no legend -- the row label names
-    it; the last bar is emphasised because it is the window under judgement."""
-    if not values:
+    it; the last bar is emphasised because it is the window under judgement.
+
+    The 2px floor keeps a near-zero window visible as a bar rather than as nothing,
+    which is why this maps ratios to pixels itself instead of reusing the
+    eight-glyph bucketing the Markdown sparkline uses.
+    """
+    ratios = spark_ratios(values)
+    if not ratios:
         return ""
-    peak = max((abs(v) for v in values), default=0) or 1
     bars = []
-    for i, (v, lab) in enumerate(zip(values, labels)):
-        h = max(2, round(abs(v) / peak * 18))
-        last = " last" if i == len(values) - 1 else ""
+    last_i = len(ratios) - 1
+    for i, (r, v, lab) in enumerate(zip(ratios, values, labels)):
+        h = max(2, round(r * 18))
+        last = " last" if i == last_i else ""
         sign = " neg" if v < 0 else ""
         bars.append(
             f"<i class='b{last}{sign}' style='height:{h}px' title='{e(lab)}: {v:g}'></i>"
@@ -269,14 +281,12 @@ VSEV_STYLE = {
 }
 
 
-def _vuln_rows(title: str, vulns, count: int, role: str) -> str:
-    if not count:
-        return ""
-    out = [f"<tr><th class='vh'>{e(title)}</th><td class='v'>"
-           f"<b class='{role}-ink'>{count}</b></td><td>"]
-    if vulns:
+def _vuln_rows(sec) -> str:
+    out = [f"<tr><th class='vh'>{e(sec.title)}</th><td class='v'>"
+           f"<b class='{sec.role}-ink'>{sec.count}</b></td><td>"]
+    if sec.shown:
         items = []
-        for v in vulns[:6]:
+        for v in sec.shown:
             sev = VSEV_STYLE.get(v.severity, "unknown")
             items.append(
                 f"<div><a href='{e(v.url)}' target='_blank' rel='noopener'>"
@@ -284,51 +294,37 @@ def _vuln_rows(title: str, vulns, count: int, role: str) -> str:
                 f"</span> {e(v.summary[:110])}</div>"
             )
         out.append("".join(items))
-        hidden = count - len(vulns[:6])
-        if hidden > 0:
-            out.append(f"<div class='note'>+{hidden} more not described</div>")
+        if sec.hidden:
+            out.append(f"<div class='note'>+{sec.hidden} more not described</div>")
     out.append("</td></tr>")
     return "".join(out)
 
 
 def _vuln_block(r) -> str:
     """Known advisories, and specifically which ones the upgrade would clear."""
-    if r.unmatched:
-        return (f"<div class='note'>Vulnerability lookup: {e(r.note)}</div>")
-    worst = VSEV_STYLE.get(r.worst_severity, "unknown")
+    s = summarize_vulns(r)
+    if s.unmatched:
+        return f"<div class='note'>Vulnerability lookup: {e(s.note)}</div>"
+    worst = VSEV_STYLE.get(s.worst_severity, "unknown")
     out = [
         "<div class='vel vuln'><div class='velhead'><b>Known vulnerabilities</b> ",
-        (f"<span class='badge unknown'>{r.current_count} on record</span> "
-         if r.indiscriminate else
-         f"<span class='badge {worst}'>{r.current_count} affecting "
-         f"{e(r.current_version)}</span> "),
-        f"<span class='note'>{e(r.package)} &middot; via OSV"
-        f"{' &middot; approximate' if r.approximate else ''}</span></div>",
+        (f"<span class='badge unknown'>{s.headline_count} on record</span> "
+         if s.headline_version is None else
+         f"<span class='badge {worst}'>{s.headline_count} affecting "
+         f"{e(s.headline_version)}</span> "),
+        f"<span class='note'>{e(s.package)} &middot; via OSV"
+        f"{' &middot; approximate' if s.approximate else ''}</span></div>",
         "<table class='veltable'><tbody>",
     ]
-    if r.indiscriminate:
-        # The split is unknowable here, so only the advisory list is shown.
-        out.append(_vuln_rows(
-            "Advisories on record", r.remaining_after_upgrade,
-            r.remaining_count, "unknown"))
-    else:
-        out.append(_vuln_rows(
-            f"Fixed by upgrading to {r.target_version}" if r.target_version
-            else "Fixed by upgrading", r.fixed_by_upgrade, r.fixed_count, "good"))
-        out.append(_vuln_rows(
-            "Still present after upgrade", r.remaining_after_upgrade,
-            r.remaining_count, "critical"))
-    out.append(_vuln_rows(
-        "Introduced by the upgrade", r.introduced_by_upgrade,
-        r.introduced_count, "critical"))
+    out += [_vuln_rows(sec) for sec in s.sections]
     out.append("</tbody></table>")
-    if r.remaining_count and not r.fixed_count and not r.indiscriminate:
+    if s.upgrade_clears_nothing:
         out.append(
             "<div class='note'>The upgrade clears none of these: they affect the "
             "target version too, so this needs a different remedy.</div>"
         )
-    if r.note:
-        out.append(f"<div class='note'>{e(r.note)}</div>")
+    if s.note:
+        out.append(f"<div class='note'>{e(s.note)}</div>")
     out.append("</div>")
     return "".join(out)
 
@@ -342,40 +338,30 @@ DIR_STYLE = {
 
 def _trend_block(d) -> str:
     """Movement since the previous stored run: are we catching up?"""
-    role, glyph = DIR_STYLE.get(d.direction, DIR_STYLE["flat"])
+    s = summarize_trend(d)
+    role, glyph = DIR_STYLE.get(s.direction, DIR_STYLE["flat"])
     out = ["<div class='card'><h2>Since the last run</h2>"]
     out.append(
         f"<div class='velhead'><span class='badge {role}'><span class='g'>{glyph}</span>"
-        f"{e(d.direction)}</span> <b>{d.net:+d}</b> actionable findings "
-        f"<span class='note'>{e(d.from_run or 'previous')} &rarr; "
-        f"{e(d.to_run or 'current')}</span></div>"
+        f"{e(s.direction)}</span> <b>{s.net:+d}</b> actionable findings "
+        f"<span class='note'>{e(s.from_run)} &rarr; "
+        f"{e(s.to_run)}</span></div>"
     )
     out.append("<div class='tiles'>")
-    for label, items, trole in (
-        ("worsened", d.worsened, "critical"),
-        ("new", d.appeared, "serious"),
-        ("improved", d.improved, "good"),
-        ("resolved", d.resolved, "good"),
-        ("unchanged", [None] * d.unchanged, "low"),
-    ):
+    for tile in s.tiles:
         out.append(
-            f"<div class='tile'><div class='n'>{len(items)}</div>"
-            f"<div class='k'><span class='dot {trole}'></span>{e(label)}</div></div>"
+            f"<div class='tile'><div class='n'>{tile.count}</div>"
+            f"<div class='k'><span class='dot {tile.role}'></span>"
+            f"{e(tile.label)}</div></div>"
         )
     out.append("</div>")
 
-    rows = [
-        ("worsened", d.worsened, "critical"),
-        ("new", d.appeared, "serious"),
-        ("improved", d.improved, "good"),
-        ("resolved", d.resolved, "good"),
-    ]
-    if any(items for _, items, _ in rows):
+    if s.has_rows:
         out.append("<div class='scroll'><table><thead><tr><th>Change</th>"
                    "<th>Component</th><th>Severity</th><th>Version</th>"
                    "</tr></thead><tbody>")
-        for label, items, trole in rows:
-            for c in items[:12]:
+        for g in s.groups:
+            for c in g.shown:
                 sev = (
                     f"{e(c.from_severity or '—')} &rarr; {e(c.to_severity or 'gone')}"
                 )
@@ -386,22 +372,22 @@ def _trend_block(d) -> str:
                     else f"<span class='v'>{e(c.to_version or c.from_version or '')}</span>"
                 )
                 out.append(
-                    f"<tr><td><span class='badge {trole}'>{e(label)}</span></td>"
+                    f"<tr><td><span class='badge {g.role}'>{e(g.label)}</span></td>"
                     f"<td><span class='name'>{e(c.name)}</span><br>"
                     f"<span class='eco'>{e(ECO_LABEL.get(c.ecosystem, c.ecosystem))}</span></td>"
                     f"<td>{sev}</td><td>{ver}</td></tr>"
                 )
-            if len(items) > 12:
+            if g.overflow:
                 out.append(
-                    f"<tr><td></td><td class='note'>+{len(items) - 12} more "
-                    f"{e(label)}</td><td></td><td></td></tr>"
+                    f"<tr><td></td><td class='note'>+{g.overflow} more "
+                    f"{e(g.label)}</td><td></td><td></td></tr>"
                 )
         out.append("</tbody></table></div>")
-    elif d.is_empty:
+    elif s.is_empty:
         out.append("<div class='empty'>No component changed severity or version.</div>")
 
-    if d.note:
-        out.append(f"<div class='note'>{e(d.note)}</div>")
+    if s.note:
+        out.append(f"<div class='note'>{e(s.note)}</div>")
     out.append(
         "<div class='note'>Findings are matched by ecosystem and name, so a bumped "
         "version reads as the same component moving rather than one disappearing "
@@ -438,62 +424,39 @@ def _where(report, source: str | None, line: int | None) -> str:
     return f"<a href='{e(url)}' target='_blank' rel='noopener'>{label}</a>" if url else label
 
 
-def _unit_for(label: str) -> str:
-    """Issue backlog is an absolute count; sentiment moves in percentage points."""
-    if label.startswith("Issue"):
-        return ""
-    if label.startswith("Negative"):
-        return "pp"
-    return "%"
-
-
 def _velocity_block(v) -> str:
     """Upstream health, shown beneath the finding it qualifies."""
-    role, glyph, meaning = TREND_STYLE.get(v.verdict, TREND_STYLE["unknown"])
+    s = summarize_velocity(v)
+    role, glyph, meaning = TREND_STYLE.get(s.verdict, TREND_STYLE["unknown"])
     out = [f"<div class='vel'><div class='velhead'>"
            f"<b>Upstream velocity</b> "
            f"<span class='badge {role}'><span class='g'>{glyph}</span>"
-           f"{e(v.verdict)}</span> "
-           f"<span class='note'>{e(v.repo)} &middot; {len(v.windows)}"
-           f" &times; {v.window_days}-day windows</span></div>"]
+           f"{e(s.verdict)}</span> "
+           f"<span class='note'>{e(s.repo)} &middot; {s.window_count}"
+           f" &times; {s.window_days}-day windows</span></div>"]
 
-    if v.error:
-        out.append(f"<div class='note'>{e(v.error)}</div></div>")
+    if s.error:
+        out.append(f"<div class='note'>{e(s.error)}</div></div>")
         return "".join(out)
 
-    labels = [w.label for w in v.windows]
-    rows = [
-        ("Issue backlog", [float(w.backlog_delta) for w in v.windows],
-         v.issue_trend, v.backlog_change_abs,
-         "opened minus closed per window; positive means the backlog grew. "
-         "Shown as an absolute change because a percentage of a signed value "
-         "straddling zero is meaningless"),
-        ("Negative reactions", [
-            (w.frustration * 100) if w.frustration is not None else 0.0
-            for w in v.windows
-         ], v.sentiment_trend, v.frustration_change_pts,
-         "share of \N{THUMBS DOWN SIGN}/\N{CONFUSED FACE} among all reactions on the "
-         "most-reacted issues of each window"),
-        ("Releases shipped", [float(w.releases) for w in v.windows],
-         v.release_trend, v.release_change_pct,
-         "releases published per window"),
-    ]
     out.append("<table class='veltable'><tbody>")
-    for label, values, trend, change, why in rows:
-        trole, tglyph, _ = TREND_STYLE.get(trend, TREND_STYLE["unknown"])
-        latest = values[-1] if values else 0
-        shown = f"{latest:.0f}%" if "reaction" in label.lower() else f"{latest:.0f}"
+    for m in s.metrics:
+        trole, tglyph, _ = TREND_STYLE.get(m.trend, TREND_STYLE["unknown"])
+        # Deliberately the series value, not m.latest: the bar strip and the number
+        # beside it must agree, and an unmeasurable window plots as a zero bar.
+        latest = m.series[-1] if m.series else 0
+        shown = f"{latest:.0f}%" if m.kind == "share" else f"{latest:.0f}"
         out.append(
-            f"<tr><th title='{e(why)}'>{e(label)}</th>"
-            f"<td>{_spark(values, role=trole, labels=labels)}</td>"
+            f"<tr><th title='{e(m.why)}'>{e(m.label)}</th>"
+            f"<td>{_spark(m.series, role=trole, labels=m.series_labels)}</td>"
             f"<td class='v'>{shown}</td>"
             f"<td class='v {trole}-ink'>"
-            f"{_pct(change, unit=_unit_for(label))}</td>"
+            f"{_pct(m.change, unit=m.unit)}</td>"
             f"<td><span class='badge {trole}'><span class='g'>{tglyph}</span>"
-            f"{e(trend)}</span></td></tr>"
+            f"{e(m.trend)}</span></td></tr>"
         )
     out.append("</tbody></table>")
-    latest = v.latest
+    latest = s.latest_window
     if latest:
         out.append(
             f"<div class='note'>Latest window {e(latest.label)}: "
@@ -501,7 +464,7 @@ def _velocity_block(v) -> str:
             f"{latest.total_reactions} reactions across {latest.sampled_issues} "
             f"sampled issues, {latest.releases} release(s).</div>"
         )
-    for n in v.notes[:3]:
+    for n in s.notes:
         out.append(f"<div class='note'>{e(n)}</div>")
     out.append(
         "<div class='note'>Percentages compare the latest window with the mean of "
