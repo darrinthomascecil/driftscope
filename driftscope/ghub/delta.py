@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from datetime import timezone
 
-from ..forge import Forge, ReleaseRecord
+from ..forge import BUG_LABELS, Forge, ReleaseRecord
 from ..models import GitHubDelta, IssueSignal, Release, Resolution
 
 BREAKING_PATTERNS = (
@@ -39,9 +39,6 @@ BREAKING_PATTERNS = (
     r"drops? support",
 )
 _BREAKING_RE = re.compile("|".join(BREAKING_PATTERNS), re.I)
-
-BUG_LABELS = ("bug", "regression", "defect", "type/bug", "kind/bug", "crash", "panic")
-
 
 def _is_section_heading(s: str) -> bool:
     """True for release-note section labels such as `DEPRECATIONS:`.
@@ -241,8 +238,9 @@ def compute_delta(
     # cover both forges, so an ADO delta reports numbers without links.
     lister = getattr(forge, "search_issues", None)
     if lister is not None:
-        query = (f'repo:{repo} is:issue created:{day_from}..{day_to} '
-                 f'label:"bug" is:open')
+        clause = getattr(forge, "label_clause", lambda: 'label:"bug"')()
+        query = (f"repo:{repo} is:issue created:{day_from}..{day_to} "
+                 f"{clause} is:open")
         for item in lister(query, limit=max_issues):
             d.bug_issues.append(
                 IssueSignal(

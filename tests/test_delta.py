@@ -164,3 +164,52 @@ def test_notes_are_capped_and_deduplicated():
     notes = _breaking_from_releases(releases)
     assert len(notes) <= 25
     assert len(notes) == len(set(notes)), "duplicates within a release must collapse"
+
+
+# ------------------------------------------------- which labels count as a bug
+#
+# BUG_LABELS existed as a module constant and was never referenced: every query
+# hardcoded label:"bug". Measured against kubernetes/kubernetes over one window,
+# that spelling returns 0 while kind/bug returns 332 -- reported as "no labelled
+# bugs found", which is the confident wrong zero this codebase exists to prevent.
+
+
+def test_the_label_clause_is_a_single_or_qualifier():
+    """GitHub reads one comma-separated `label:` as OR. Repeating the qualifier is
+    AND, and no issue carries every bug-ish label at once -- that spelling returns
+    0, which is exactly the bug this replaced."""
+    from driftscope.forge import BUG_LABELS
+    from driftscope.forge.github import GitHubForge
+
+    clause = GitHubForge.label_clause()
+    assert clause.count("label:") == 1, "repeating the qualifier means AND"
+    assert clause.startswith('label:"')
+    for lbl in BUG_LABELS:
+        assert f'"{lbl}"' in clause
+
+
+def test_the_conventions_that_actually_occur_are_covered():
+    from driftscope.forge import BUG_LABELS
+
+    for lbl in ("bug", "kind/bug", "type/bug", "regression", "defect"):
+        assert lbl in BUG_LABELS, f"{lbl} is a real convention and must be queried"
+
+
+def test_counts_query_uses_every_label(monkeypatch):
+    from driftscope.forge import BUG_LABELS
+    from driftscope.forge.github import GitHubForge
+
+    seen = []
+
+    class GH:
+        enabled, queries = True, 0
+        def search_count(self, q):
+            seen.append(q); return 7
+        def api(self, path, **kw): return None
+
+    total, opened = GitHubForge(GH()).issue_counts("k8s/k8s", "2024-01-01", "2024-06-01")
+    assert (total, opened) == (7, 7)
+    assert seen and all("kind/bug" in q for q in seen), (
+        "a project using kind/bug must not report zero"
+    )
+    assert all(q.count("label:") == 1 for q in seen)

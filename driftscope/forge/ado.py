@@ -354,9 +354,15 @@ class AdoForge(Forge):
         )
 
     def issue_counts(
-        self, repo: str, day_from: str, day_to: str, *, label: str = "bug"
+        self, repo: str, day_from: str, day_to: str, *, labels=None
     ) -> tuple[int | None, int | None]:
-        """Exact counts -- WIQL returns the full ID set, so there is no estimate."""
+        """Exact counts -- WIQL returns the full ID set, so there is no estimate.
+
+        `labels` is accepted for protocol compatibility and ignored: Azure DevOps
+        models a defect as a work-item *type*, not a label, so `Bug` is the direct
+        and unambiguous analogue. There is no per-project naming drift to defend
+        against the way there is on GitHub.
+        """
         parts = self._split(repo)
         if not parts:
             return None, None

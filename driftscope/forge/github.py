@@ -18,7 +18,7 @@ from datetime import date, datetime
 
 from ..http import GitHub as _GitHubClient
 from ..models import NEGATIVE_REACTIONS, POSITIVE_REACTIONS
-from . import GITHUB, Forge, IssueRecord, IssueWalk, ReleaseRecord
+from . import BUG_LABELS, GITHUB, Forge, IssueRecord, IssueWalk, ReleaseRecord
 
 
 def _as_instant(s: object) -> datetime | None:
@@ -140,10 +140,18 @@ class GitHubForge(Forge):
         walk.oldest_seen = oldest
         return walk
 
+    @staticmethod
+    def label_clause(labels=BUG_LABELS) -> str:
+        """One `label:` qualifier with comma-separated values, which GitHub reads
+        as OR. Repeating the qualifier instead means AND, and an issue carrying
+        every bug-ish label at once does not exist -- that spelling returns 0."""
+        return "label:" + ",".join(f'"{l}"' for l in labels)
+
     def issue_counts(
-        self, repo: str, day_from: str, day_to: str, *, label: str = "bug"
+        self, repo: str, day_from: str, day_to: str, *, labels=BUG_LABELS
     ) -> tuple[int | None, int | None]:
-        base = f'repo:{repo} is:issue created:{day_from}..{day_to} label:"{label}"'
+        base = (f"repo:{repo} is:issue created:{day_from}..{day_to} "
+                f"{self.label_clause(labels)}")
         # search_count returns None on a throttled/failed call rather than 0 -- a
         # throttled search once read as "this project has no issues".
         return self._gh.search_count(base), self._gh.search_count(f"{base} is:open")

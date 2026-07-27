@@ -39,6 +39,16 @@ AZURE_DEVOPS = "azure-devops"
 # from "we did not look".
 NOT_SAMPLED = -1
 
+# What "a bug" is called, across the conventions projects actually use. Querying
+# only "bug" is a silent zero on any project with a different scheme: measured
+# against kubernetes/kubernetes over one 5-month window, label:"bug" returns 0 and
+# label:"kind/bug" returns 332. Reporting that as "no labelled bugs found" is the
+# same confident-wrong-zero this package exists to prevent.
+BUG_LABELS = (
+    "bug", "kind/bug", "type/bug", "Type: Bug", "type: bug",
+    "regression", "kind/regression", "defect", "crash", "panic",
+)
+
 
 @dataclass(frozen=True)
 class IssueRecord:
