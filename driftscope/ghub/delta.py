@@ -18,6 +18,7 @@ release notes in step 2 are the part to trust.
 from __future__ import annotations
 
 import re
+from datetime import timezone
 
 from ..http import GitHub
 from ..models import GitHubDelta, IssueSignal, Release, Resolution
@@ -67,21 +68,49 @@ def _find_tag(repo: str, version: str, gh: GitHub) -> tuple[str | None, str | No
     return None, None
 
 
+def _instant(s: object):
+    """An ISO-8601 timestamp as a comparable instant, or None.
+
+    The window used to be computed by comparing these strings directly, which is
+    only correct when every timestamp shares one format. Two real forms break it:
+
+      `12:00:00.123456Z` vs `12:00:00Z` -- the fractional one is LATER but sorts
+      earlier, because '.' precedes 'Z'. GitHub emits whole seconds while a
+      datetime round-tripped through parse_iso keeps microseconds, so a window
+      bound and a release date routinely arrive in different forms.
+
+      `14:00+02:00` vs `12:00Z` -- the same instant, but the first looks two hours
+      later as text, so a release exactly on the boundary lands on the wrong side.
+    """
+    from ..resolvers import parse_iso
+
+    dt = parse_iso(s) if isinstance(s, str) else None
+    if dt is None:
+        return None
+    # Normalise to UTC so offsets compare as instants rather than as wall clocks.
+    return dt.astimezone(timezone.utc)
+
+
 def _releases_between(
     repo: str, from_date: str, to_date: str, gh: GitHub
 ) -> list[dict]:
     body = gh.api(f"repos/{repo}/releases?per_page=100")
     if not isinstance(body, list):
         return []
+    lo, hi = _instant(from_date), _instant(to_date)
+    if lo is None or hi is None:
+        return []
     out = []
     for r in body:
-        pub = r.get("published_at")
-        if not pub or not isinstance(pub, str):
+        if not isinstance(r, dict):
             continue
-        if from_date < pub <= to_date:
-            out.append(r)
-    out.sort(key=lambda r: r.get("published_at") or "")
-    return out
+        pub = _instant(r.get("published_at"))
+        # Half-open: the version you are ON is not part of what changed; the
+        # version you are moving TO is.
+        if pub is not None and lo < pub <= hi:
+            out.append((pub, r))
+    out.sort(key=lambda pair: pair[0])
+    return [r for _, r in out]
 
 
 def _breaking_from_releases(releases: list[dict]) -> list[str]:
@@ -152,7 +181,11 @@ def compute_delta(
             "Release notes comparison unavailable."
         )
         return d
-    if from_date >= to_date:
+    lo, hi = _instant(from_date), _instant(to_date)
+    if lo is None or hi is None or lo >= hi:
+        # Compared as instants, not strings: the same two forms that broke
+        # _releases_between would misjudge the window's validity here too, either
+        # abandoning a real window or accepting an inverted one.
         d.note = "current release is not older than target; nothing to analyse"
         return d
     d.window_resolved = True
