@@ -82,13 +82,31 @@ class Cache:
         return (time.time() - mtime) <= self.ttl
 
     def put(self, key: str, body: Any) -> None:
+        """Write atomically, via a temp file unique to this writer.
+
+        The temp name used to be derived from the key alone, so two threads
+        writing the same URL raced: the first `replace()` consumed the shared temp
+        file and the second raised FileNotFoundError. That is not hypothetical --
+        resolution runs eight workers and a real scan resolves `rails/rails` from
+        five components and `kubernetes/kubernetes` from four, all hitting one URL.
+        The exception escaped `put`, propagated out of the resolver, and was caught
+        by the dispatcher as a resolver failure, so the component rendered as
+        `unknown` for no reason but a cache collision -- and only sometimes.
+
+        `replace()` is atomic on POSIX and Windows, so concurrent writers now
+        simply last-write-wins on identical content rather than colliding.
+        """
         if not self.enabled:
             return
         p = self._path(key)
         p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"key": key, "at": time.time(), "body": body}))
-        tmp.replace(p)
+        tmp = p.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+        try:
+            tmp.write_text(json.dumps({"key": key, "at": time.time(), "body": body}))
+            tmp.replace(p)
+        except OSError:
+            # A cache write must never fail a scan: the answer is already in hand.
+            tmp.unlink(missing_ok=True)
 
     def clear(self) -> None:
         if self.root.exists():

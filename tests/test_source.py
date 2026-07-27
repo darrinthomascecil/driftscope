@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import pytest
 
+from pathlib import Path
+
 from driftscope import source as src_mod
 from driftscope.source import (
     AdoRef,
@@ -169,3 +171,60 @@ def test_no_token_means_no_auth_env(monkeypatch):
     rather than producing a header with an empty token."""
     monkeypatch.setattr(src_mod, "ado_token", lambda: None)
     assert _auth_env_for("https://dev.azure.com/contoso/Platform/_git/payments") == {}
+
+
+# --------------------------------------------------------------- cache writes
+
+
+def test_concurrent_writers_to_one_url_do_not_collide(tmp_path):
+    """Regression: the temp filename was derived from the key alone, so two threads
+    writing the same URL raced -- the first replace() consumed the shared temp file
+    and the second raised FileNotFoundError.
+
+    Reachable in normal use: resolution runs eight workers, and a real scan
+    resolves rails/rails from five components and kubernetes/kubernetes from four,
+    all hitting one URL. The exception escaped put(), propagated out of the
+    resolver, and the dispatcher turned it into a `unknown` finding -- intermittent
+    and with no cause visible in the report.
+    """
+    import threading
+
+    from driftscope.http import Cache
+
+    cache = Cache(root=tmp_path / "c")
+    key = "https://registry.example/shared"
+    errors: list[str] = []
+
+    def writer(i: int) -> None:
+        try:
+            for _ in range(40):
+                cache.put(key, {"writer": i, "payload": "x" * 4000})
+                got = cache.get(key)
+                if got is not None and "writer" not in got:
+                    errors.append(f"torn read: {sorted(got)[:3]}")
+        except Exception as e:  # noqa: BLE001 -- the point is that none escape
+            errors.append(f"{type(e).__name__}: {e}")
+
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(40)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == [], errors[:3]
+    # And the entry is intact afterwards, not a half-written file.
+    assert "writer" in cache.get(key)
+
+
+def test_a_failed_cache_write_never_fails_the_caller(tmp_path, monkeypatch):
+    """The answer is already in hand by the time we write it; losing the cache
+    entry is a slower next run, not a failed scan."""
+    from driftscope.http import Cache
+
+    cache = Cache(root=tmp_path / "c")
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "write_text", boom)
+    cache.put("k", {"a": 1})  # must not raise
