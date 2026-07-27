@@ -66,7 +66,19 @@ def build_context(
     )
     client = Client(cache=cache, offline=offline)
     gh = GitHub(cache=cache, offline=offline, enabled=not no_github)
-    return Context(client=client, github=gh, allow_az=not no_az)
+
+    # Both forges share the disk cache and the offline switch, so --offline and
+    # --no-github (now --no-forge) mean the same thing regardless of where a
+    # component's upstream lives.
+    from .forge import AZURE_DEVOPS, GITHUB
+    from .forge.ado import AdoForge
+    from .forge.github import GitHubForge
+
+    forges = {
+        GITHUB: GitHubForge(gh),
+        AZURE_DEVOPS: AdoForge(cache, offline=offline, enabled=not no_github),
+    }
+    return Context(client=client, github=gh, allow_az=not no_az, forges=forges)
 
 
 def run_scan(

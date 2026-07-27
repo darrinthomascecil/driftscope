@@ -230,6 +230,7 @@
       "resolution": {
         "latest_stable": "4.81.0",
         "repo": "hashicorp/terraform-provider-azurerm",
+        "forge": "github",
         "homepage": null,
         "deprecated": false,
         "note": null,
@@ -286,6 +287,7 @@
       "resolution": {
         "latest_stable": "2.20.0",
         "repo": "FasterXML/jackson-databind",
+        "forge": "github",
         "homepage": "https://github.com/FasterXML/jackson-databind",
         "deprecated": false,
         "note": null,
@@ -628,6 +630,7 @@
       "resolution": {
         "latest_stable": "8.8.1",
         "repo": "redis/redis",
+        "forge": "github",
         "homepage": null,
         "deprecated": false,
         "note": null,
@@ -744,6 +747,7 @@
       "resolution": {
         "latest_stable": "18.2",
         "repo": "postgres/postgres",
+        "forge": "github",
         "homepage": null,
         "deprecated": false,
         "note": null,
@@ -808,6 +812,7 @@
       "resolution": {
         "latest_stable": "2026-05-01",
         "repo": null,
+        "forge": "github",
         "homepage": null,
         "deprecated": false,
         "note": null,
@@ -853,6 +858,7 @@
       "resolution": {
         "latest_stable": "25",
         "repo": null,
+        "forge": "github",
         "homepage": null,
         "deprecated": false,
         "note": null,
@@ -901,6 +907,7 @@
       "resolution": {
         "latest_stable": "v1",
         "repo": null,
+        "forge": "github",
         "homepage": null,
         "deprecated": false,
         "note": "stable",
@@ -946,6 +953,7 @@
       "resolution": {
         "latest_stable": null,
         "repo": null,
+        "forge": "github",
         "homepage": null,
         "deprecated": false,
         "note": null,
@@ -993,6 +1001,7 @@
       "resolution": {
         "latest_stable": "3.2.1",
         "repo": "hashicorp/terraform-provider-kubernetes",
+        "forge": "github",
         "homepage": null,
         "deprecated": false,
         "note": null,

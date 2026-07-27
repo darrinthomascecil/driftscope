@@ -40,6 +40,15 @@ class Context:
     github: GitHub
     allow_az: bool = True
     now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    # Forge clients keyed by kind. Populated by build_context; resolvers keep using
+    # `.github` directly, which is why adding this breaks nothing.
+    forges: dict = field(default_factory=dict)
+
+    def forge_for(self, kind: str | None):
+        """The client for a resolution's forge, defaulting to GitHub."""
+        from ..forge import resolve_forge
+
+        return resolve_forge(kind, self.forges)
 
 
 def parse_iso(s: str | None) -> datetime | None:

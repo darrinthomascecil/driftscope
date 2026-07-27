@@ -1,0 +1,27 @@
+{
+  "Product Backlog Item": {
+    "New": "Proposed",
+    "Approved": "Proposed",
+    "Committed": "InProgress",
+    "Done": "Completed",
+    "Removed": "Removed"
+  },
+  "Bug": {
+    "New": "Proposed",
+    "Approved": "Proposed",
+    "Committed": "InProgress",
+    "Done": "Completed",
+    "Removed": "Removed"
+  },
+  "Test Case": {
+    "Design": "Proposed",
+    "Ready": "InProgress",
+    "Closed": "Completed"
+  },
+  "Task": {
+    "To Do": "Proposed",
+    "In Progress": "InProgress",
+    "Done": "Completed",
+    "Removed": "Removed"
+  }
+}
