@@ -215,12 +215,15 @@ def run_scan(
                     parse_node_image_date(f.resolution.latest_stable),
                 )
                 return f
+            forge = ctx.forge_for(f.resolution.forge)
+            if forge is None or not forge.enabled:
+                return f
             f.delta = ghdelta.compute_delta(
+                forge,
                 f.resolution.repo,
                 f.component.current,
                 f.resolution.latest_stable,
                 f.resolution,
-                ctx.github,
             )
             return f
 
@@ -263,7 +266,9 @@ def run_scan(
     if include_velocity and ctx.github.enabled:
         from .ghub import velocity as vel
 
-        repos: dict[str, list[Finding]] = {}
+        # Keyed by (forge, repo): the same "owner/name" on two forges is two
+        # different projects, and measuring one would attribute the other's health.
+        repos: dict[tuple[str, str], list[Finding]] = {}
         for f in findings:
             repo = f.resolution.repo
             if (
@@ -271,7 +276,7 @@ def run_scan(
                 and severity_rank(f.severity) <= severity_rank(velocity_threshold)
                 and f.component.ecosystem != AZURE_API
             ):
-                repos.setdefault(repo, []).append(f)
+                repos.setdefault((f.resolution.forge, repo), []).append(f)
         # Truncating by insertion order dropped the most severe packages; rank
         # repos by their worst finding so the budget is spent where it matters.
         ranked = sorted(
@@ -286,9 +291,12 @@ def run_scan(
             )
 
         def measure(item):
-            repo, fs = item
+            (forge_kind, repo), fs = item
+            forge = ctx.forge_for(forge_kind)
+            if forge is None or not forge.enabled:
+                return repo
             v = vel.measure(
-                ctx.github,
+                forge,
                 repo,
                 windows=velocity_windows,
                 window_days=velocity_window_days,

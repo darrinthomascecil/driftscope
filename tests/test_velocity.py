@@ -6,6 +6,7 @@ from datetime import date
 
 import pytest
 
+from driftscope.forge.github import GitHubForge
 from driftscope.ghub import velocity as vel
 from driftscope.models import (
     TREND_DETERIORATING,
@@ -13,6 +14,16 @@ from driftscope.models import (
     TREND_STEADY,
     TREND_UNKNOWN,
 )
+
+
+def forge_of(gh) -> GitHubForge:
+    """Wrap the canned client in the real adapter.
+
+    These tests drove `measure` directly with raw GitHub JSON. Routing them
+    through GitHubForge means the adapter's own translation is exercised by every
+    velocity case rather than only by its unit tests.
+    """
+    return GitHubForge(gh)
 
 
 class GH:
@@ -110,7 +121,7 @@ def test_windows_are_contiguous_and_ordered():
 
 def test_backlog_shrinking_after_growth_is_improving():
     counts = {w: c for w, c in zip(W, [(20, 5), (20, 5), (20, 5), (10, 30)])}
-    v = vel.measure(GH(counts=counts), "o/r", now=TODAY)
+    v = vel.measure(forge_of(GH(counts=counts)), "o/r", now=TODAY)
     assert v.issue_trend == TREND_IMPROVING
     assert v.windows[-1].backlog_delta == -20
     assert any("shrank" in n for n in v.notes)
@@ -118,20 +129,20 @@ def test_backlog_shrinking_after_growth_is_improving():
 
 def test_backlog_growing_after_shrinking_is_deteriorating():
     counts = {w: c for w, c in zip(W, [(5, 20), (5, 20), (5, 20), (30, 10)])}
-    v = vel.measure(GH(counts=counts), "o/r", now=TODAY)
+    v = vel.measure(forge_of(GH(counts=counts)), "o/r", now=TODAY)
     assert v.issue_trend == TREND_DETERIORATING
 
 
 def test_flat_backlog_is_steady():
     counts = {w: (10, 10) for w in W}
-    v = vel.measure(GH(counts=counts), "o/r", now=TODAY)
+    v = vel.measure(forge_of(GH(counts=counts)), "o/r", now=TODAY)
     assert v.issue_trend == TREND_STEADY
 
 
 def test_absolute_backlog_change_is_reported():
     """A percentage of a signed value straddling zero is meaningless."""
     counts = {w: c for w, c in zip(W, [(12, 10), (12, 10), (12, 10), (10, 14)])}
-    v = vel.measure(GH(counts=counts), "o/r", now=TODAY)
+    v = vel.measure(forge_of(GH(counts=counts)), "o/r", now=TODAY)
     assert v.backlog_change_abs == pytest.approx(-6.0)  # -4 vs prior mean +2
 
 
@@ -139,7 +150,7 @@ def test_sentiment_deteriorates_when_negative_share_rises():
     issues = {W[i]: [rx(pos=10, neg=0)] for i in range(3)}
     issues[W[3]] = [rx(pos=5, neg=5)]  # 50% negative
     counts = {w: (5, 5) for w in W}
-    v = vel.measure(GH(counts=counts, issues=issues), "o/r", now=TODAY)
+    v = vel.measure(forge_of(GH(counts=counts, issues=issues)), "o/r", now=TODAY)
     assert v.sentiment_trend == TREND_DETERIORATING
     assert v.frustration_change_pts == pytest.approx(50.0)
     assert any("negative reactions rose" in n for n in v.notes)
@@ -149,7 +160,7 @@ def test_sentiment_change_in_points_matches_the_threshold():
     """Regression: the relative % read as a contradiction beside "steady"."""
     issues = {W[i]: [rx(pos=88, neg=12)] for i in range(3)}  # 12%
     issues[W[3]] = [rx(pos=83, neg=17)]  # 17% -> +5pp, +42% relative
-    v = vel.measure(GH(counts={w: (5, 5) for w in W}, issues=issues), "o/r", now=TODAY)
+    v = vel.measure(forge_of(GH(counts={w: (5, 5) for w in W}, issues=issues)), "o/r", now=TODAY)
     assert v.frustration_change_pts == pytest.approx(5.0, abs=0.6)
     assert v.frustration_change_pct > 30, "relative change is much larger"
     assert v.sentiment_trend == TREND_STEADY, "5pp is at the steady boundary"
@@ -157,8 +168,8 @@ def test_sentiment_change_in_points_matches_the_threshold():
 
 def test_release_drought_is_deteriorating():
     rel = [date(2025, 9, 1), date(2025, 11, 1), date(2026, 2, 1)]
-    v = vel.measure(
-        GH(counts={w: (5, 5) for w in W}, releases=rel), "o/r", now=TODAY
+    v = vel.measure(forge_of(
+        GH(counts={w: (5, 5) for w in W}, releases=rel)), "o/r", now=TODAY
     )
     assert v.windows[-1].releases == 0
     assert v.release_trend == TREND_DETERIORATING
@@ -167,13 +178,13 @@ def test_release_drought_is_deteriorating():
 
 def test_no_activity_is_an_error_not_a_verdict():
     """A wrong repo guess must not produce a confident "healthy" reading."""
-    v = vel.measure(GH(), "o/does-not-exist", now=TODAY)
+    v = vel.measure(forge_of(GH()), "o/does-not-exist", now=TODAY)
     assert v.error and "no issue activity" in v.error
     assert v.verdict == TREND_UNKNOWN
 
 
 def test_missing_repo_is_rejected():
-    v = vel.measure(GH(), "", now=TODAY)
+    v = vel.measure(forge_of(GH()), "", now=TODAY)
     assert v.error and "no repository" in v.error
 
 
@@ -181,7 +192,7 @@ def test_disagreeing_signals_report_pessimistically():
     # backlog improving, releases stalled
     counts = {w: c for w, c in zip(W, [(20, 5), (20, 5), (20, 5), (5, 30)])}
     rel = [date(2025, 9, 1), date(2025, 11, 1), date(2026, 2, 1)]
-    v = vel.measure(GH(counts=counts, releases=rel), "o/r", now=TODAY)
+    v = vel.measure(forge_of(GH(counts=counts, releases=rel)), "o/r", now=TODAY)
     assert v.issue_trend == TREND_IMPROVING
     assert v.release_trend == TREND_DETERIORATING
     assert v.verdict == TREND_DETERIORATING
@@ -215,7 +226,7 @@ def test_real_repo_velocity():
     from driftscope.engine import build_context
 
     ctx = build_context(no_az=True)
-    v = vel.measure(ctx.github, "prometheus/prometheus", windows=2, window_days=90)
+    v = vel.measure(forge_of(ctx.github), "prometheus/prometheus", windows=2, window_days=90)
     assert v.error is None, v.error
     assert len(v.windows) == 2
     assert any(w.opened for w in v.windows), "expected issue activity"
@@ -257,7 +268,7 @@ def test_pull_requests_are_excluded():
     page = [_issue("2026-05-01", "2026-05-01", "2026-05-02") for _ in range(3)]
     page += [dict(_issue("2026-05-01", "2026-05-01", "2026-05-02"),
                   pull_request={"url": "x"}) for _ in range(5)]
-    v = vel.measure(GH(pages=page), "o/r", now=TODAY)
+    v = vel.measure(forge_of(GH(pages=page)), "o/r", now=TODAY)
     assert v.windows[-1].closed == 3, "the five PRs must not be counted"
 
 
@@ -269,7 +280,7 @@ def test_windows_beyond_the_page_cap_are_marked_incomplete():
     window's start (2026-04-28) but not the earlier ones.
     """
     page = [_issue("2026-04-01", "2026-04-01") for _ in range(100)]
-    v = vel.measure(GH(pages=page * 5), "o/r", now=TODAY, max_pages=2)
+    v = vel.measure(forge_of(GH(pages=page * 5)), "o/r", now=TODAY, max_pages=2)
     assert [w.complete for w in v.windows] == [False, False, False, True]
     assert any("excluded from the trend" in n for n in v.notes)
 
@@ -277,7 +288,7 @@ def test_windows_beyond_the_page_cap_are_marked_incomplete():
 def test_a_partly_covered_latest_window_is_also_incomplete():
     """Coverage stopping mid-window must not be reported as covered."""
     page = [_issue("2026-06-01", "2026-06-01") for _ in range(100)]
-    v = vel.measure(GH(pages=page * 5), "o/r", now=TODAY, max_pages=2)
+    v = vel.measure(forge_of(GH(pages=page * 5)), "o/r", now=TODAY, max_pages=2)
     # 2026-06-01 falls inside the last window, so nothing is fully covered.
     assert not any(w.complete for w in v.windows)
     assert v.verdict == TREND_UNKNOWN
@@ -285,7 +296,7 @@ def test_a_partly_covered_latest_window_is_also_incomplete():
 
 def test_no_complete_baseline_refuses_a_verdict():
     page = [_issue("2026-06-01", "2026-06-01") for _ in range(100)]
-    v = vel.measure(GH(pages=page * 5), "o/r", now=TODAY, max_pages=1)
+    v = vel.measure(forge_of(GH(pages=page * 5)), "o/r", now=TODAY, max_pages=1)
     assert v.verdict == TREND_UNKNOWN
     assert any("no complete earlier window" in n for n in v.notes)
 
@@ -293,7 +304,7 @@ def test_no_complete_baseline_refuses_a_verdict():
 def test_short_history_is_fully_complete():
     """A repo whose history fits inside one page needs no caveats."""
     page = [_issue("2026-05-01", "2026-05-01", "2026-05-02")]
-    v = vel.measure(GH(pages=page), "o/r", now=TODAY)
+    v = vel.measure(forge_of(GH(pages=page)), "o/r", now=TODAY)
     assert all(w.complete for w in v.windows)
     assert not any("excluded" in n for n in v.notes)
 
@@ -307,7 +318,7 @@ def test_issue_walk_uses_the_core_endpoint_not_search():
             calls.append(path)
             return super().api(path, **kw)
 
-    vel.measure(Recorder(counts={w: (2, 1) for w in W}), "o/r", now=TODAY)
+    vel.measure(forge_of(Recorder(counts={w: (2, 1) for w in W})), "o/r", now=TODAY)
     assert calls, "expected API calls"
     assert not any("search/" in c for c in calls), "must not hit the search endpoint"
     assert any("/issues?" in c for c in calls)

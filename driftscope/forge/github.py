@@ -14,11 +14,20 @@ is both far fewer calls and 160x more headroom.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from ..http import GitHub as _GitHubClient
 from ..models import NEGATIVE_REACTIONS, POSITIVE_REACTIONS
 from . import GITHUB, Forge, IssueRecord, IssueWalk, ReleaseRecord
+
+
+def _as_instant(s: object) -> datetime | None:
+    """Full timestamp, UTC-normalised. Release windows compare instants."""
+    from ..resolvers import parse_iso
+    from datetime import timezone
+
+    dt = parse_iso(s) if isinstance(s, str) else None
+    return dt.astimezone(timezone.utc) if dt else None
 
 
 def _as_date(s: object) -> date | None:
@@ -58,11 +67,16 @@ class GitHubForge(Forge):
             if not isinstance(r, dict):
                 continue
             tag = r.get("tag_name")
-            if not isinstance(tag, str):
-                continue
+            tag = tag if isinstance(tag, str) else ""
+            published = _as_instant(r.get("published_at"))
+            if not tag and published is None:
+                continue  # neither identifiable nor placeable in a window
+            # A release with a date but no usable tag still counts toward cadence.
+            # Dropping it would silently undercount how often the project ships,
+            # and an undercount reads as a slowdown that never happened.
             out.append(ReleaseRecord(
                 tag=tag,
-                published=_as_date(r.get("published_at")),
+                published=published,
                 body=r.get("body") if isinstance(r.get("body"), str) else "",
                 prerelease=bool(r.get("prerelease")),
             ))

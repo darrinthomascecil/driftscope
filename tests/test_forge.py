@@ -241,7 +241,7 @@ def test_state_map_is_fetched_once_per_type(ado):
 
 def test_annotated_tags_carry_date_and_message(ado):
     rels = {r.tag: r for r in ado.releases("contoso/Platform/payments")}
-    assert rels["v2.4.0"].published == date(2026, 1, 10)
+    assert rels["v2.4.0"].published.date() == date(2026, 1, 10)
     assert "BREAKING CHANGES" in rels["v2.4.0"].body
 
 
@@ -308,3 +308,88 @@ def test_issue_walk_defaults_to_unreadable():
     """The safe default: a walk nobody populated must not look like an empty
     project."""
     assert IssueWalk().readable is False
+
+
+# ------------------------------------------- the velocity engine, on both forges
+#
+# Phase 3's point: the same engine, fed by either forge. These assert that the
+# ADO-specific gaps propagate as gaps rather than being absorbed into a number.
+
+
+def test_velocity_runs_on_an_ado_project(ado):
+    from datetime import date as _date
+
+    from driftscope.ghub import velocity as vel
+
+    v = vel.measure(ado, "contoso/Platform/payments", windows=4, window_days=90,
+                    now=_date(2021, 10, 1))
+    assert v.error is None
+    assert len(v.windows) == 4
+    assert any(w.opened for w in v.windows), "the recorded items must land somewhere"
+
+
+def test_ado_sentiment_is_unknown_and_says_why(ado):
+    """The whole sentinel chain, end to end: the forge does not sample reactions,
+    so no window accrues any, frustration stays None, and the verdict is unknown
+    with the reason attached -- never 0% contentment."""
+    from datetime import date as _date
+
+    from driftscope.ghub import velocity as vel
+    from driftscope.models import TREND_UNKNOWN
+
+    v = vel.measure(ado, "contoso/Platform/payments", now=_date(2021, 10, 1))
+    assert v.sentiment_trend == TREND_UNKNOWN
+    assert all(w.total_reactions == 0 for w in v.windows)
+    assert all(w.frustration is None for w in v.windows)
+    assert any("sentiment not measured" in n for n in v.notes), (
+        "the reason must travel with the verdict"
+    )
+
+
+def test_an_unreadable_ado_project_is_an_error_not_a_quiet_zero(ado, monkeypatch):
+    from datetime import date as _date
+
+    from driftscope.ghub import velocity as vel
+
+    monkeypatch.setattr(ado, "_call", lambda url, *, body=None: None)
+    v = vel.measure(ado, "contoso/Platform/payments", now=_date(2021, 10, 1))
+    assert v.error and "could not read issues" in v.error
+
+
+def test_delta_on_ado_uses_tags_and_reports_counts(ado):
+    from driftscope.ghub.delta import compute_delta
+    from driftscope.models import Resolution
+
+    d = compute_delta(ado, "contoso/Platform/payments", "2.3.0", "2.4.0",
+                      Resolution(forge=AZURE_DEVOPS))
+    assert d.window_resolved is True
+    assert d.from_ref == "v2.3.0" and d.to_ref == "v2.4.0"
+    assert "v2.4.0" in d.releases_in_window
+    # The annotated tag message carries the notes; the section heading is filtered.
+    assert any("legacyMode" in n for n in d.breaking_notes)
+    assert not any(n.rstrip().endswith("BREAKING CHANGES:") for n in d.breaking_notes)
+
+
+def test_ado_delta_reports_counts_without_issue_links(ado):
+    """The individual-issue listing uses GitHub's search endpoint, which has no ADO
+    analogue worth the call budget. Counts cover both forges; an ADO delta reports
+    numbers without links rather than pretending to have them."""
+    from driftscope.ghub.delta import compute_delta
+    from driftscope.models import Resolution
+
+    d = compute_delta(ado, "contoso/Platform/payments", "2.3.0", "2.4.0",
+                      Resolution(forge=AZURE_DEVOPS))
+    assert d.bug_issues == []
+    assert d.counts_available is True
+
+
+def test_ado_delta_failure_leaves_counts_unavailable(ado, monkeypatch):
+    from driftscope.ghub.delta import compute_delta
+    from driftscope.models import Resolution
+
+    real = ado._call
+    monkeypatch.setattr(ado, "_call", lambda url, *, body=None:
+                        None if "wiql" in url else real(url, body=body))
+    d = compute_delta(ado, "contoso/Platform/payments", "2.3.0", "2.4.0",
+                      Resolution(forge=AZURE_DEVOPS))
+    assert d.counts_available is False, "a failed count is unknown, never zero"

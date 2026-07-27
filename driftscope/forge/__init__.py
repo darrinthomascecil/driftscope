@@ -27,7 +27,7 @@ so, and the type system is where that gets enforced.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import Protocol, runtime_checkable
 
 GITHUB = "github"
@@ -70,7 +70,11 @@ class IssueRecord:
 class ReleaseRecord:
     """A GitHub release, or an Azure DevOps git tag.
 
-    `published` is None for a lightweight git tag, which carries neither a date nor
+    `published` is a full instant, not a date: two releases can share a day, and a
+    version window whose bound falls at midday must place them correctly. Velocity
+    narrows it to a date itself, where 90-day windows make time-of-day irrelevant.
+
+    It is None for a lightweight git tag, which carries neither a date nor
     a message. Such a tag still counts toward release *cadence* but must not be
     dated, or "days behind" would quietly mean something different per tag.
 
@@ -81,7 +85,7 @@ class ReleaseRecord:
     """
 
     tag: str
-    published: date | None = None
+    published: datetime | None = None
     body: str = ""
     prerelease: bool = False
 

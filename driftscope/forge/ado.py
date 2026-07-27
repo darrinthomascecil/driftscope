@@ -33,7 +33,7 @@ import math
 import time
 import urllib.error
 import urllib.request
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from ..http import USER_AGENT, Cache
@@ -68,6 +68,13 @@ NON_ISSUE_TYPES = {
     "code review request", "code review response",
     "feedback request", "feedback response",
 }
+
+
+def _as_instant(s: object) -> datetime | None:
+    from ..resolvers import parse_iso
+
+    dt = parse_iso(s) if isinstance(s, str) else None
+    return dt.astimezone(timezone.utc) if dt else None
 
 
 def _as_date(s: object) -> date | None:
@@ -264,7 +271,7 @@ class AdoForge(Forge):
                     org, project,
                     f"git/repositories/{quote(name)}/annotatedtags/{oid}"))
                 if isinstance(ann, dict):
-                    published = _as_date((ann.get("taggedBy") or {}).get("date"))
+                    published = _as_instant((ann.get("taggedBy") or {}).get("date"))
                     message = ann.get("message") or ""
             out.append(ReleaseRecord(tag=tag, published=published, body=message))
         return out

@@ -2,24 +2,13 @@
 
 from __future__ import annotations
 
+from driftscope.forge import ReleaseRecord
 from driftscope.ghub.delta import (
     _breaking_from_releases,
     _is_section_heading,
+    _match_release,
     _releases_between,
 )
-
-
-class FakeGitHub:
-    """Serves one canned /releases payload. `None` means the repo is unreadable."""
-
-    enabled = True
-    queries = 0
-
-    def __init__(self, payload):
-        self.payload = payload
-
-    def api(self, path, **kw):
-        return self.payload
 
 # Trimmed from the real hashicorp/terraform-provider-azurerm release bodies that
 # surfaced this bug during a live scan.
@@ -79,8 +68,11 @@ def test_heading_detection():
 # happens to share one format. Two forms break it, and both occur in real data.
 
 
-def rel(tag: str, published: str, body: str = "") -> dict:
-    return {"tag_name": tag, "published_at": published, "body": body}
+def rel(tag: str, published: str | None, body: str = "") -> ReleaseRecord:
+    """A ReleaseRecord from an ISO string, exactly as the forge adapter builds it."""
+    from driftscope.forge.github import _as_instant
+
+    return ReleaseRecord(tag=tag, published=_as_instant(published), body=body)
 
 
 def test_fractional_seconds_do_not_invert_the_ordering():
@@ -95,9 +87,8 @@ def test_fractional_seconds_do_not_invert_the_ordering():
         rel("v1.1", "2023-07-05T12:00:00.500000Z"),   # inside, just after the floor
         rel("v1.2", "2023-08-01T00:00:00Z"),
     ]
-    got = _releases_between("o/r", "2023-07-05T12:00:00Z", "2023-09-01T00:00:00Z",
-                            FakeGitHub(releases))
-    assert {r["tag_name"] for r in got} == {"v1.1", "v1.2"}
+    got = _releases_between(releases, "2023-07-05T12:00:00Z", "2023-09-01T00:00:00Z")
+    assert {r.tag for r in got} == {"v1.1", "v1.2"}
 
 
 def test_a_non_utc_offset_is_compared_as_an_instant():
@@ -106,13 +97,11 @@ def test_a_non_utc_offset_is_compared_as_an_instant():
     wrong side of it."""
     releases = [rel("v2.0", "2023-07-05T14:00:00+02:00")]  # == 12:00:00Z
     # Floor is that same instant, and the bound is exclusive, so it must be OUT.
-    got = _releases_between("o/r", "2023-07-05T12:00:00Z", "2023-09-01T00:00:00Z",
-                            FakeGitHub(releases))
+    got = _releases_between(releases, "2023-07-05T12:00:00Z", "2023-09-01T00:00:00Z")
     assert got == [], "a release at the exclusive floor must be excluded"
     # One second later it is genuinely inside.
-    got = _releases_between("o/r", "2023-07-05T11:59:59Z", "2023-09-01T00:00:00Z",
-                            FakeGitHub(releases))
-    assert [r["tag_name"] for r in got] == ["v2.0"]
+    got = _releases_between(releases, "2023-07-05T11:59:59Z", "2023-09-01T00:00:00Z")
+    assert [r.tag for r in got] == ["v2.0"]
 
 
 def test_window_bounds_are_half_open():
@@ -123,34 +112,50 @@ def test_window_bounds_are_half_open():
         rel("mid", "2023-06-01T00:00:00Z"),
         rel("to", "2023-12-01T00:00:00Z"),
     ]
-    got = _releases_between("o/r", "2023-01-01T00:00:00Z", "2023-12-01T00:00:00Z",
-                            FakeGitHub(releases))
-    assert [r["tag_name"] for r in got] == ["mid", "to"]
+    got = _releases_between(releases, "2023-01-01T00:00:00Z", "2023-12-01T00:00:00Z")
+    assert [r.tag for r in got] == ["mid", "to"]
 
 
 def test_releases_are_returned_oldest_first():
     releases = [rel("c", "2023-09-01T00:00:00Z"), rel("a", "2023-02-01T00:00:00Z"),
                 rel("b", "2023-05-01T00:00:00Z")]
-    got = _releases_between("o/r", "2023-01-01T00:00:00Z", "2023-12-01T00:00:00Z",
-                            FakeGitHub(releases))
-    assert [r["tag_name"] for r in got] == ["a", "b", "c"]
+    got = _releases_between(releases, "2023-01-01T00:00:00Z", "2023-12-01T00:00:00Z")
+    assert [r.tag for r in got] == ["a", "b", "c"]
 
 
-def test_undated_and_malformed_releases_are_skipped_not_guessed():
+def test_undated_releases_are_skipped_not_placed():
+    """A lightweight git tag has no tagger date. It cannot be put in a window, and
+    dating it from its commit would make `days behind` mean something different
+    per tag."""
     releases = [
         rel("good", "2023-06-01T00:00:00Z"),
-        {"tag_name": "draft", "published_at": None},
-        {"tag_name": "junk", "published_at": "not-a-date"},
-        {"tag_name": "wrong-type", "published_at": 12345},
+        rel("lightweight", None),
+        rel("junk", "not-a-date"),
     ]
-    got = _releases_between("o/r", "2023-01-01T00:00:00Z", "2023-12-01T00:00:00Z",
-                            FakeGitHub(releases))
-    assert [r["tag_name"] for r in got] == ["good"]
+    got = _releases_between(releases, "2023-01-01T00:00:00Z", "2023-12-01T00:00:00Z")
+    assert [r.tag for r in got] == ["good"]
 
 
-def test_unreadable_repo_yields_no_window_rather_than_an_empty_one():
-    assert _releases_between("o/r", "2023-01-01T00:00:00Z", "2023-12-01T00:00:00Z",
-                             FakeGitHub(None)) == []
+def test_no_releases_yields_an_empty_window():
+    assert _releases_between([], "2023-01-01T00:00:00Z", "2023-12-01T00:00:00Z") == []
+
+
+def test_match_release_handles_the_tag_shapes_projects_use():
+    releases = [rel("v1.2.3", "2023-01-01T00:00:00Z"),
+                rel("2.0.0", "2023-06-01T00:00:00Z"),
+                rel("myproj-3.0.0", "2023-09-01T00:00:00Z")]
+    assert _match_release(releases, "1.2.3").tag == "v1.2.3"
+    assert _match_release(releases, "v1.2.3").tag == "v1.2.3"
+    assert _match_release(releases, "2.0.0").tag == "2.0.0"
+    assert _match_release(releases, "3.0.0").tag == "myproj-3.0.0"
+    assert _match_release(releases, "9.9.9") is None
+    assert _match_release(releases, "") is None
+
+
+def test_untagged_release_never_matches_a_version():
+    """A dated release with no tag counts toward cadence but cannot identify a
+    version -- matching it would date the window from the wrong release."""
+    assert _match_release([rel("", "2023-01-01T00:00:00Z")], "1.0.0") is None
 
 
 def test_notes_are_capped_and_deduplicated():

@@ -33,10 +33,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-from ..http import GitHub
+from ..forge import Forge
 from ..models import (
-    NEGATIVE_REACTIONS,
-    POSITIVE_REACTIONS,
     TREND_DETERIORATING,
     TREND_IMPROVING,
     TREND_STEADY,
@@ -76,7 +74,7 @@ def _windows(now: date, count: int, days: int) -> list[tuple[date, date]]:
 
 
 def measure(
-    gh: GitHub,
+    forge: Forge,
     repo: str,
     *,
     windows: int = 4,
@@ -90,46 +88,50 @@ def measure(
         return v
 
     today = now or datetime.now(timezone.utc).date()
-    release_dates = _release_dates(gh, repo)
+    release_dates = [r.published.date() for r in forge.releases(repo)
+                     if r.published]
 
     bounds = _windows(today, windows, window_days)
     v.windows = [Window(start=s, end=e) for s, e in bounds]
 
-    # One paginated walk of the issues list replaces three search calls per window.
-    # `/issues` sits on the *core* rate limit (5000/hour) instead of the search
-    # limit (~30/minute), and each item already carries created_at, closed_at,
-    # reactions and comments -- so this is both far fewer calls and 160x more
-    # headroom. Sorting by `updated` with `since` guarantees the walk sees every
-    # issue either opened or closed inside the period.
-    issues, truncated, oldest_seen = _fetch_issues(
-        gh, repo, bounds[0][0], max_pages=max_pages
-    )
-    if issues is None:
+    # One walk of the forge's issue feed replaces three search calls per window.
+    # On GitHub that is `/issues`, which sits on the core rate limit (5000/hour)
+    # rather than the search limit (~30/minute) and carries created_at, closed_at,
+    # reactions and comments on every item. On Azure DevOps it is a WIQL query plus
+    # a batched field fetch. Either way the engine sees normalised IssueRecords.
+    walk = forge.issues_since(repo, bounds[0][0], max_pages=max_pages)
+    if not walk.readable:
         v.error = (
-            f"could not read issues for {repo} (repo missing, issues disabled, or "
-            "the GitHub call failed)"
+            f"could not read issues for {repo} (project missing, issues disabled, "
+            "or the call failed)"
         )
         return v
 
-    for it in issues:
-        created = _as_date(it.get("created_at"))
-        closed = _as_date(it.get("closed_at"))
+    # Whatever the forge could not measure travels with the result rather than
+    # being silently absorbed -- ADO does not sample reactions by default.
+    v.notes.extend(walk.notes)
+
+    for it in walk.items:
         for w in v.windows:
-            if created and w.start <= created <= w.end:
+            if it.created and w.start <= it.created <= w.end:
                 w.opened += 1
                 # Sentiment is attributed to the window the issue was raised in,
                 # so a mood shift lands where the frustration was expressed.
                 w.sampled_issues += 1
-                w.comments += int(it.get("comments") or 0)
-                rx = it.get("reactions") or {}
-                w.positive += sum(int(rx.get(k) or 0) for k in POSITIVE_REACTIONS)
-                w.negative += sum(int(rx.get(k) or 0) for k in NEGATIVE_REACTIONS)
-            if closed and w.start <= closed <= w.end:
+                w.comments += it.comments
+                # Unsampled reactions contribute nothing rather than zero, so an
+                # unmeasured window ends with no reactions at all and reports
+                # sentiment as unknown instead of as contentment.
+                if it.reactions_sampled:
+                    w.positive += it.positive
+                    w.negative += it.negative
+            if it.closed and w.start <= it.closed <= w.end:
                 w.closed += 1
 
     for w in v.windows:
         w.releases = sum(1 for d in release_dates if w.start <= d <= w.end)
 
+    truncated, oldest_seen = walk.truncated, walk.oldest_seen
     if truncated and oldest_seen:
         # Only windows entirely newer than the oldest record we retrieved are
         # trustworthy; the rest are undercounts and are excluded from the trend.
@@ -149,70 +151,6 @@ def measure(
 
     _derive_trends(v)
     return v
-
-
-def _as_date(s: object) -> date | None:
-    if not isinstance(s, str) or len(s) < 10:
-        return None
-    try:
-        return date.fromisoformat(s[:10])
-    except ValueError:
-        return None
-
-
-def _fetch_issues(
-    gh: GitHub, repo: str, since: date, *, max_pages: int
-) -> tuple[list[dict] | None, bool, date | None]:
-    """Every issue opened or closed since `since`, in as few calls as possible.
-
-    Returns (issues, truncated). `None` means the repository could not be read at
-    all, which is different from a repository with no issues.
-
-    Pull requests are filtered out: `/issues` includes them, and counting merged
-    PRs as closed issues would make every active project look like it was clearing
-    a backlog.
-    """
-    out: list[dict] = []
-    seen_any = False
-    oldest: date | None = None
-    for page in range(1, max_pages + 1):
-        body = gh.api(
-            f"repos/{repo}/issues?state=all&since={since.isoformat()}T00:00:00Z"
-            f"&sort=updated&direction=desc&per_page=100&page={page}"
-        )
-        if body is None or not isinstance(body, list):
-            return (out if seen_any else None), False, oldest
-        seen_any = True
-        for it in body:
-            if not isinstance(it, dict):
-                continue
-            upd = _as_date(it.get("updated_at"))
-            if upd and (oldest is None or upd < oldest):
-                oldest = upd
-            # /issues includes pull requests; counting merged PRs as closed issues
-            # would make every active project look like it was clearing a backlog.
-            if "pull_request" in it:
-                continue
-            out.append(it)
-        if len(body) < 100:
-            # Reached the end of the history: everything since `since` is covered.
-            return out, False, since
-    return out, True, oldest
-
-
-def _release_dates(gh: GitHub, repo: str) -> list[date]:
-    body = gh.api(f"repos/{repo}/releases?per_page=100")
-    if not isinstance(body, list):
-        return []
-    out = []
-    for r in body:
-        s = r.get("published_at")
-        if isinstance(s, str) and len(s) >= 10:
-            try:
-                out.append(date.fromisoformat(s[:10]))
-            except ValueError:
-                continue
-    return out
 
 
 def _derive_trends(v: Velocity) -> None:
