@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: driftscope
+  labels:
+    app.kubernetes.io/name: driftscope
+    app.kubernetes.io/component: scan-service
+spec:
+  replicas: 1                       # the service is stateless; the on-disk cache is
+  selector:                         # a per-pod performance cache, not state.
+    matchLabels:
+      app.kubernetes.io/name: driftscope
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: driftscope
+        app.kubernetes.io/component: scan-service
+    spec:
+      # The image already runs as the unprivileged `drift` user (uid 1000). These
+      # settings make that explicit and lock the container down: no root, no
+      # privilege escalation, no capabilities, a read-only root filesystem with
+      # writable scratch only where the app genuinely needs it.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000               # makes the emptyDir volumes group-writable by drift
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: driftscope
+          image: driftscope:dev
+          # Local image loaded with `kind load docker-image`; never pull from a
+          # registry. With a reused tag you MUST reload + `rollout restart` for a
+          # change to take -- k8s serves the cached image otherwise.
+          imagePullPolicy: IfNotPresent
+          # ENTRYPOINT is `driftscope`; args replace the image's default CMD.
+          args:
+            - serve
+            - --host=0.0.0.0
+            - --port=8080
+            - --allow-host=github.com
+            - --allow-host=dev.azure.com
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DRIFTSCOPE_CACHE
+              value: /cache
+            - name: TMPDIR          # git clones land here; must be a writable mount
+              value: /tmp
+            - name: HOME
+              value: /home/drift
+          # Forge tokens are optional: without them the scan degrades to `unknown`,
+          # not failure. Referenced from a Secret that need not exist (optional).
+          envFrom:
+            - secretRef:
+                name: driftscope-tokens
+                optional: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # /healthz is cheap and always-on; readiness gates traffic, liveness
+          # restarts a wedged pod. A scan is slow but never blocks these.
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          volumeMounts:
+            - { name: cache, mountPath: /cache }
+            - { name: tmp, mountPath: /tmp }
+            - { name: home, mountPath: /home/drift }
+      volumes:
+        - { name: cache, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+        - { name: home, emptyDir: {} }
