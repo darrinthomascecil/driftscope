@@ -114,6 +114,7 @@ INDEX_HTML = """<!doctype html>
     go.disabled = true;
     ecos.innerHTML = ''; summary.innerHTML = ''; out.innerHTML = '';
     setStatus('Starting …', true);
+    var t0 = performance.now();
     var ecoDone = {}, ecoTotal = {};
 
     function ecoChip(name) {
@@ -149,7 +150,8 @@ INDEX_HTML = """<!doctype html>
         return;
       }
       sevChips(r.severity);
-      setStatus('✓ Scanned ' + repo + (r.commit ? ' @ ' + r.commit : ''), false, 'done');
+      var secs = ((performance.now() - t0) / 1000).toFixed(1);
+      setStatus('✓ Scanned ' + repo + (r.commit ? ' @ ' + r.commit : '') + ' in ' + secs + 's', false, 'done');
       if (format === 'html') {
         var iframe = document.createElement('iframe');
         iframe.setAttribute('sandbox', 'allow-scripts');   // report's filter/collapse need JS
