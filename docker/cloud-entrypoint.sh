@@ -34,6 +34,14 @@ imds_reachable() {
 # Record the outcome in a variable rather than re-running `az account show` later:
 # the second check was redundant, and it coupled token-minting to state that only
 # a real login persists -- fine on Azure, but a needless dependency.
+# A caller may supply an Azure DevOps credential directly (an AAD token, a PAT, or
+# a pipeline's SYSTEM_ACCESSTOKEN). ADO auth is then covered on its own, independent
+# of any az session -- which only ARM / ACR / --live-azure need. The messaging below
+# must not conflate the two, or a scan that authenticated ADO fine still reads as if
+# it did not.
+ado_supplied=0
+[ -n "${AZURE_DEVOPS_TOKEN:-}${AZURE_DEVOPS_EXT_PAT:-}${SYSTEM_ACCESSTOKEN:-}" ] && ado_supplied=1
+
 have_azure=0
 if az account show >/dev/null 2>&1; then
     echo "cloud-entrypoint: using the existing az login." >&2
@@ -41,22 +49,25 @@ if az account show >/dev/null 2>&1; then
 elif imds_reachable && timeout 30 az login --identity ${AZURE_CLIENT_ID:+--username "$AZURE_CLIENT_ID"} >/dev/null 2>&1; then
     echo "cloud-entrypoint: signed in with the managed identity." >&2
     have_azure=1
+elif [ "$ado_supplied" = 1 ]; then
+    # No az session, but ADO is covered by the supplied credential. Only ARM / ACR /
+    # --live-azure are affected -- not the ADO repo clone or work-item correlation.
+    echo "cloud-entrypoint: no az session; using the supplied Azure DevOps credential." >&2
+    echo "  ARM / ACR / --live-azure results will be unknown, not failed." >&2
 else
-    # Not fatal: driftscope degrades an unreachable forge/estate to `unknown`
-    # findings, never to a false `current`. A GitHub-only scan needs no az at all.
-    echo "cloud-entrypoint: no Azure credential (no managed identity, no existing az login);" >&2
+    # Nothing at all. driftscope degrades an unreachable forge/estate to `unknown`,
+    # never a false `current`; a GitHub-only scan needs no Azure credential.
+    echo "cloud-entrypoint: no Azure credential (no managed identity, no az login, no ADO token);" >&2
     echo "  Azure DevOps / ARM / ACR / --live-azure results will be unknown, not failed." >&2
 fi
 
-# With any Azure session, publish the ADO token so even code paths that never call
-# az still authenticate. `|| true` under `set -e`: a token failure must not abort
-# the scan, only quiet the ADO half of it.
-if [ "$have_azure" = 1 ]; then
+# Mint an ADO token from the az session only when the caller supplied none, so an
+# explicit token/PAT is never silently overridden. `|| true` under `set -e`: a token
+# failure must not abort the scan, only quiet the ADO half of it.
+if [ "$have_azure" = 1 ] && [ "$ado_supplied" = 0 ]; then
     tok=$(az account get-access-token --resource "$ADO_RESOURCE" \
             --query accessToken -o tsv 2>/dev/null || true)
-    if [ -n "${tok:-}" ]; then
-        export AZURE_DEVOPS_TOKEN="$tok"
-    fi
+    [ -n "${tok:-}" ] && export AZURE_DEVOPS_TOKEN="$tok"
 fi
 
 exec driftscope "$@"
