@@ -2,13 +2,15 @@
 
 Styled with the single-repo report's CSS so it drops into the same iframe as the
 per-repo tabs. It renders one row per component and one column per repo, with the
-pinned version in each cell; rows where the repos disagree float to the top and are
-highlighted (the whole point of the view). Zero dependencies.
+pinned version in each cell. Rows rank by risk and then by fleet debt -- blast radius
+times how far behind -- so the upgrade that helps the most repos leads, not merely the
+first one that happens to disagree. Divergence stays a highlight and a filter. Zero
+dependencies.
 """
 
 from __future__ import annotations
 
-from ..compare import FleetComparison, newest_pin
+from ..compare import FleetComparison, lag_label, newest_pin
 from .html import _CSS, e
 from .render import ECO_LABEL
 
@@ -45,6 +47,23 @@ def _cell(pin, newest):
     behind = newest is not None and newest not in pin.versions
     td_cls = "behind" if behind else ""
     return f"<td class='{td_cls}'><span class='{cls}'>{vers}</span></td>"
+
+
+def _behind(row) -> str:
+    """The 'how far behind' cell: the deepest lag plus the fleet debt (blast x depth).
+
+    'differs' -- not '--' -- when the component diverges on a scheme we can't order,
+    so a calver/floating spread never masquerades as 'up to date'.
+    """
+    if row.depth_comparable and row.worst_lag is not None:
+        lbl = lag_label(row.worst_lag)
+        if not lbl:
+            return "<span class='note'>&mdash;</span>"
+        debt = f" <span class='note'>&middot; {row.fleet_debt} rel</span>" if row.fleet_debt else ""
+        return f"<b class='sev-{row.worst}'>{e(lbl)}</b>{debt}"
+    if row.diverges:
+        return "<span class='note'>differs</span>"
+    return "<span class='note'>&mdash;</span>"
 
 
 def _posture(fc) -> str:
@@ -104,7 +123,8 @@ def to_comparison_html(fc: FleetComparison) -> str:
     ap("<th>Component</th><th>Type</th>")
     for r in fc.repos:
         ap(f"<th>{e(r.rsplit('/', 1)[-1] or r)}</th>")
-    ap("<th class='num'>Uses</th><th>Align &rarr;</th><th>Latest</th></tr></thead><tbody>")
+    ap("<th class='num'>Uses</th><th>Behind</th><th>Align &rarr;</th>"
+       "<th>Latest</th></tr></thead><tbody>")
 
     for row in fc.rows:
         newest = newest_pin({v for p in row.pins.values() for v in p.versions}, row.ecosystem)
@@ -117,16 +137,20 @@ def to_comparison_html(fc: FleetComparison) -> str:
         for repo in fc.repos:
             ap(_cell(row.pins.get(repo), newest))
         ap(f"<td class='num note'>{row.repo_count}/{len(fc.repos)}</td>")
+        ap("<td>" + _behind(row) + "</td>")
         ap("<td>" + (f"&rarr; <b>{e(row.align_to)}</b>" if row.align_to
                      else "<span class='note'>&mdash;</span>") + "</td>")
         ap(f"<td class='note'>{e(row.latest or '?')}</td></tr>")
     ap("</tbody></table></div>")
     ap("<p class='note'>Cells show each repo's declared pin; red means it lacks the "
        "newest pin present across the repos. <b>Uses</b> is how many repos pin the "
-       "component (shared risk). <b>Align &rarr;</b> is the newest pin already in the "
-       "fleet &mdash; a proven target to bring the laggards to, before aiming for "
-       "<b>Latest</b>. \"Diverging\" means the repos pin more than one version between "
-       "them, not that one is provably older when the scheme can't be ordered.</p>")
+       "component (shared risk). <b>Behind</b> is the deepest lag among them (a major "
+       "behind outweighs any number of patches) and, after it, the <b>fleet debt</b> "
+       "&mdash; releases-behind summed across the repos, so blast radius and depth "
+       "together decide the order. <b>Align &rarr;</b> is the newest pin already in the "
+       "fleet &mdash; a proven target for the laggards, before aiming for <b>Latest</b>. "
+       "\"Behind\" reads <i>differs</i> when the repos disagree on a scheme that can't be "
+       "ordered, rather than inventing a distance.</p>")
 
     js = ("<script>(function(){"
           "var dv=document.getElementById('dvonly'),ef=document.getElementById('ecofilter');"
