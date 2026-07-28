@@ -35,7 +35,7 @@ from ..models import (
     severity_rank,
 )
 from ..source import parse_ado_url
-from .render import ECO_LABEL, _lag_phrase, _plural
+from .render import ECO_LABEL, _lag_phrase, _plural, source_of
 from .summarize import (
     group_findings,
     spark_ratios,
@@ -663,6 +663,12 @@ def _finding_detail(report: Report, f) -> str:
     if res.homepage:
         a(f"<div><b>Docs:</b> <a href='{e(res.homepage)}' target='_blank' "
           f"rel='noopener'>{e(res.homepage)}</a></div>")
+    src = source_of(c, res)
+    if src:
+        label, url = src
+        shown = (f"<a href='{e(url)}' target='_blank' rel='noopener'>{e(label)}</a>"
+                 if url else e(label))
+        a(f"<div><b>Checked against:</b> {shown}</div>")
     if adv:
         if adv.strategy:
             a(f"<p><b>Strategy.</b> {e(adv.strategy)}</p>")

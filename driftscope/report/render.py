@@ -27,6 +27,55 @@ _VERDICT_MD = {
     VERDICT_HOLD: "HOLD",
     VERDICT_LOW: "LOW PRIORITY",
 }
+
+# Where each ecosystem's "how far behind / how old" judgement comes from -- the
+# authority driftscope actually queried, surfaced so a reader can see and re-check
+# the basis for a finding rather than trust a bare number. Keyed by the ecosystem
+# string; a few (containers, actions) resolve their source per-finding below.
+_SOURCE = {
+    "go-module": ("Go module proxy", "https://proxy.golang.org"),
+    "npm": ("npm registry", "https://registry.npmjs.org"),
+    "pypi": ("PyPI", "https://pypi.org"),
+    "rubygems": ("RubyGems", "https://rubygems.org"),
+    "ruby-runtime": ("Ruby release history", "https://www.ruby-lang.org/en/downloads/releases/"),
+    "nuget": ("NuGet gallery", "https://www.nuget.org"),
+    "maven": ("Maven Central", "https://search.maven.org"),
+    "terraform-provider": ("Terraform Registry", "https://registry.terraform.io"),
+    "terraform-module": ("Terraform Registry", "https://registry.terraform.io"),
+    "azure-api-version": ("Azure Resource Manager provider metadata",
+                          "https://learn.microsoft.com/rest/api/resources/providers/list"),
+    "k8s-api": ("Kubernetes deprecated-API migration guide",
+                "https://kubernetes.io/docs/reference/using-api/deprecation-guide/"),
+    "jvm-toolchain": ("OpenJDK / Adoptium release history",
+                      "https://adoptium.net/temurin/releases/"),
+    "dotnet-tfm": (".NET target-framework metadata",
+                   "https://learn.microsoft.com/dotnet/standard/frameworks"),
+    "dotnet-sdk": (".NET SDK release notes", "https://dotnet.microsoft.com/download/dotnet"),
+    "azure-node-image": ("AKS / AgentBaker release history",
+                         "https://github.com/Azure/AgentBaker/releases"),
+    "helm-chart": ("Helm chart repository index", None),
+}
+
+
+def source_of(component, resolution):
+    """(label, url) naming where 'how far behind' was determined, or None."""
+    eco = component.ecosystem
+    ex = resolution.extra or {}
+    if eco == "docker-image":
+        if ex.get("registry"):
+            return f"private registry {ex['registry']}", f"https://{ex['registry']}"
+        if ex.get("dates_are_push_times"):
+            return "Docker Hub tag list", "https://hub.docker.com"
+        if resolution.repo:
+            return (f"GitHub releases ({resolution.repo})",
+                    f"https://github.com/{resolution.repo}/releases")
+        return "container registry tags", None
+    if eco == "github-action":
+        if resolution.repo:
+            return (f"GitHub releases/tags ({resolution.repo})",
+                    f"https://github.com/{resolution.repo}/releases")
+        return "GitHub releases/tags", None
+    return _SOURCE.get(eco)
 from .summarize import (
     spark_ratios,
     summarize_trend,
@@ -377,6 +426,9 @@ def to_markdown(report: Report, *, max_detail: int = 40) -> str:
             a(f"- **Source:** {forge_web_url(res.forge, res.repo)}")
         if res.homepage:
             a(f"- **Docs:** {res.homepage}")
+        _src = source_of(c, res)
+        if _src:
+            a("- **Checked against:** " + (f"[{_src[0]}]({_src[1]})" if _src[1] else _src[0]))
         a("")
         if adv:
             a(f"**Strategy.** {adv.strategy}")

@@ -89,6 +89,7 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 - **Age of your version:** 4.4 years (1598 days since publish)
 - **Declared at:** `.terraform.lock.hcl`:12
 - **Source:** https://github.com/hashicorp/terraform-provider-azurerm
+- **Checked against:** [Terraform Registry](https://registry.terraform.io)
 
 **Strategy.** Staged upgrade. Do not jump 2.99.0 -> 4.81.0 in one change.
 
@@ -117,6 +118,7 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 - **Also at:** `service-a/pom.xml`, `service-b/pom.xml`
 - **Source:** https://github.com/FasterXML/jackson-databind
 - **Docs:** https://github.com/FasterXML/jackson-databind
+- **Checked against:** [Maven Central](https://search.maven.org)
 
 **Strategy.** Staged upgrade. Step through 2.17.x so each minor's serialisation changes are isolated and revertible.
 
@@ -193,6 +195,7 @@ _oldest window excluded from the baseline: the issue walk stopped at page 20 bef
 - **Age of your version:** at least 6.6 years — this version predates the registry's version window, so its exact publish date is unavailable
 - **Declared at:** `docker-compose.yml`:7
 - **Source:** https://github.com/redis/redis
+- **Checked against:** [GitHub releases (redis/redis)](https://github.com/redis/redis/releases)
 
 **Strategy.** Rebuild against the 8.x tag.
 
@@ -224,6 +227,7 @@ _both versions matched the same 72 advisories, so this query did not discriminat
 - **Age of your version:** 3.1 years (1150 days since publish)
 - **Declared at:** `docker-compose.yml`:15
 - **Source:** https://github.com/postgres/postgres
+- **Checked against:** [GitHub releases (postgres/postgres)](https://github.com/postgres/postgres/releases)
 
 **Strategy.** Plan a major-version data migration.
 
@@ -240,6 +244,7 @@ _Vulnerability lookup: the guessed distro/package/version triple returned no adv
 - **Latest stable:** `2026-05-01`
 - **Behind by:** 3 years, 4 api-versions, 1096 days
 - **Declared at:** `main.bicep`:21
+- **Checked against:** [Azure Resource Manager provider metadata](https://learn.microsoft.com/rest/api/resources/providers/list)
 
 **Strategy.** Bump the apiVersion and re-deploy.
 
@@ -256,6 +261,7 @@ _Vulnerability lookup: the guessed distro/package/version triple returned no adv
 - **Declared at:** `svc/go.mod`:6
 - **Source:** https://github.com/spf13/cobra
 - **Docs:** https://pkg.go.dev/github.com/spf13/cobra
+- **Checked against:** [Go module proxy](https://proxy.golang.org)
 
 **Strategy.** Bump the require line and reconcile the module graph.
 

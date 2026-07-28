@@ -130,6 +130,9 @@ def scan_request(
                 ctx=ctx,
                 ecosystems=set(ecosystems) if ecosystems else None,
                 include_vulns=bool(req.get("include_vulns", True)),
+                # Velocity = the issue open/close rate + release cadence over time.
+                # Opt-in: it walks each top-severity repo's issues (rate-limited), so
+                # a caller asks for it rather than paying the cost on every scan.
                 include_velocity=bool(req.get("velocity", False)),
                 progress=on_progress,
             )

@@ -71,6 +71,7 @@ INDEX_HTML = """<!doctype html>
     </select>
     <label class="chk"><input type="checkbox" id="no_az" checked> no&nbsp;az</label>
     <label class="chk"><input type="checkbox" id="no_github"> no&nbsp;GitHub</label>
+    <label class="chk" title="issue open/close rate + release cadence for the top repos (slower)"><input type="checkbox" id="velocity"> issue&nbsp;history</label>
     <button id="go" type="submit">Scan</button>
   </form>
   <div id="status"><span id="spin" class="spin" hidden></span><span id="stext"></span></div>
@@ -109,7 +110,8 @@ INDEX_HTML = """<!doctype html>
     var body = {
       repo: repo, format: format,
       no_az: document.getElementById('no_az').checked,
-      no_github: document.getElementById('no_github').checked
+      no_github: document.getElementById('no_github').checked,
+      velocity: document.getElementById('velocity').checked
     };
     go.disabled = true;
     ecos.innerHTML = ''; summary.innerHTML = ''; out.innerHTML = '';
