@@ -19,8 +19,16 @@ date, and they disagree by years:
   build time  the `created` field inside the image config blob -- when this
               exact image was assembled. This is the one that answers "how old
               is the thing running in production".
-  release date of the underlying version upstream, which a private registry
-              simply does not know.
+  release date of the underlying version upstream, which the registry itself
+              does not know -- but the *image* may, if it was built with an
+              `org.opencontainers.image.source` label. When it carries one, that
+              URL is resolved to a GitHub or Azure DevOps repo and set as the
+              resolution's `repo`/`forge`, so the same delta engine that dates a
+              public image's upgrade window and lists the issues filed across it
+              runs for the private one too. The issue window is bounded by the
+              upstream project's own release dates, not the image build times:
+              build times cluster when versions are rebuilt in a batch, and a
+              collapsed window drops every issue in it (see ghub/delta.py).
 
 Reporting push time as the image's age is wrong in the direction that hides the
 problem: a three-year-old image re-pushed during a registry migration reads as
@@ -48,7 +56,6 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
 
 from ..models import Component, Release, Resolution
 from ..version import sort_versions
@@ -352,11 +359,32 @@ def resolve_acr_image(c: Component, ctx: Context) -> Resolution | None:
     # A registry with no labels at all is the common case, and must read as
     # "nobody recorded anything" rather than as "nothing changed".
     documented = sum(1 for t in span if _labels(configs.get(t)))
-    note = (
-        "private registry: dates are image build times, not upstream release "
-        "dates; there is no upstream project to compare against"
-    )
-    if span and not documented:
+
+    # The image may name its own source. When it does, the private registry stops
+    # being a dead end: the upstream project's release notes and issue tracker can
+    # answer "what changed" and "what broke" for the version span, exactly as they
+    # do for a public image. `forge` routes the delta to GitHub or Azure DevOps.
+    source = _first_label(current_labels, ("org.opencontainers.image.source",))
+    from ..forge import forge_ref_from_url
+
+    forge_ref = forge_ref_from_url(source)
+    upstream_repo = forge_ref[1] if forge_ref else None
+    forge_kind = forge_ref[0] if forge_ref else "github"
+
+    if upstream_repo:
+        note = (
+            f"private registry: image dates are build times (they drive the age "
+            f"figures); upstream project {upstream_repo} ({forge_kind}) supplies "
+            "the release notes and issues, and the version window is bounded by "
+            "that project's release dates when it dates its releases"
+        )
+    else:
+        note = (
+            "private registry: dates are image build times, not upstream release "
+            "dates; the image names no source, so there is no upstream project to "
+            "compare against"
+        )
+    if span and not documented and not upstream_repo:
         note += (
             f"; none of the {len(span)} version(s) ahead carry changelog labels, "
             "so what changed is unrecorded rather than empty"
@@ -365,7 +393,9 @@ def resolve_acr_image(c: Component, ctx: Context) -> Resolution | None:
     return Resolution(
         latest_stable=latest,
         releases=releases,
-        homepage=_first_label(current_labels, ("org.opencontainers.image.source",)),
+        repo=upstream_repo,
+        forge=forge_kind,
+        homepage=source,
         note=note,
         extra={
             "registry": host,

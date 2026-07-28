@@ -617,7 +617,9 @@ def _finding_detail(report: Report, f) -> str:
         more = f" (+{len(also) - 8} more)" if len(also) > 8 else ""
         a(f"<div><b>Also at:</b> <span class='where'>{', '.join(links)}</span>{more}</div>")
     if res.repo:
-        a(f"<div><b>Source:</b> <a href='https://github.com/{e(res.repo)}' "
+        from ..forge import forge_web_url
+
+        a(f"<div><b>Source:</b> <a href='{e(forge_web_url(res.forge, res.repo))}' "
           f"target='_blank' rel='noopener'>{e(res.repo)}</a></div>")
     if res.homepage:
         a(f"<div><b>Docs:</b> <a href='{e(res.homepage)}' target='_blank' "

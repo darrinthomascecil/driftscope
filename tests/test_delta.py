@@ -195,6 +195,78 @@ def test_the_conventions_that_actually_occur_are_covered():
         assert lbl in BUG_LABELS, f"{lbl} is a real convention and must be queried"
 
 
+def _dt(s):
+    from datetime import datetime, timezone
+
+    return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+
+
+class _StubForge:
+    """A forge whose releases carry real, date-separated tags."""
+
+    kind = "github"
+    enabled = True
+
+    def releases(self, repo):
+        return [
+            ReleaseRecord(tag="1.0.0", published=_dt("2025-01-10T00:00:00"), body=""),
+            ReleaseRecord(tag="2.1.0", published=_dt("2025-09-01T00:00:00"), body=""),
+        ]
+
+    def issue_counts(self, repo, day_from, day_to, **k):
+        self.window = (day_from, day_to)
+        return (4, 2)
+
+    def web_url(self, repo):
+        return "x"
+
+
+def test_build_time_dates_are_ignored_for_the_window():
+    """A private image's dates are build times, which cluster when versions are
+    rebuilt in a batch. Bounding the issue window with them collapses it to a day
+    and drops every issue; the upstream release dates are the right axis."""
+    from driftscope.ghub.delta import compute_delta
+    from driftscope.models import Release, Resolution
+
+    # Both build times land on the SAME day -- the batch-rebuild case.
+    res = Resolution(
+        latest_stable="2.1.0",
+        releases=[
+            Release(version="1.0.0", published=_dt("2026-04-16T00:00:00")),
+            Release(version="2.1.0", published=_dt("2026-04-16T00:00:00")),
+        ],
+        repo="contoso/payments",
+        extra={"dates_are_build_times": True},
+    )
+    forge = _StubForge()
+    d = compute_delta(forge, "contoso/payments", "1.0.0", "2.1.0", res)
+
+    assert d.window_resolved, "the upstream release dates should give a real window"
+    assert d.from_date[:10] == "2025-01-10" and d.to_date[:10] == "2025-09-01"
+    assert forge.window == ("2025-01-10", "2025-09-01")
+    assert d.total_bug_count == 4
+
+
+def test_ordinary_resolution_dates_still_bound_the_window():
+    """The build-time detour is scoped: a normal resolution's dates ARE the
+    upstream release dates, so they must keep bounding the window directly."""
+    from driftscope.ghub.delta import compute_delta
+    from driftscope.models import Release, Resolution
+
+    res = Resolution(
+        latest_stable="2.1.0",
+        releases=[
+            Release(version="1.0.0", published=_dt("2024-02-01T00:00:00")),
+            Release(version="2.1.0", published=_dt("2024-08-01T00:00:00")),
+        ],
+        repo="contoso/payments",
+    )
+    d = compute_delta(_StubForge(), "contoso/payments", "1.0.0", "2.1.0", res)
+
+    assert d.window_resolved
+    assert d.from_date[:10] == "2024-02-01" and d.to_date[:10] == "2024-08-01"
+
+
 def test_counts_query_uses_every_label(monkeypatch):
     from driftscope.forge import BUG_LABELS
     from driftscope.forge.github import GitHubForge

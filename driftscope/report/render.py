@@ -353,7 +353,9 @@ def to_markdown(report: Report, *, max_detail: int = 40) -> str:
             a(f"- **Also at:** {', '.join(f'`{x}`' for x in also[:8])}"
               + (f" (+{len(also) - 8} more)" if len(also) > 8 else ""))
         if res.repo:
-            a(f"- **Source:** https://github.com/{res.repo}")
+            from ..forge import forge_web_url
+
+            a(f"- **Source:** {forge_web_url(res.forge, res.repo)}")
         if res.homepage:
             a(f"- **Docs:** {res.homepage}")
         a("")
