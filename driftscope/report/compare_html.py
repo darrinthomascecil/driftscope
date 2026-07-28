@@ -21,6 +21,9 @@ _CMP_CSS = """
 .cmp td.miss{color:var(--text-muted);opacity:.5}
 .cmp .eco{color:var(--text-muted);font-size:11px}
 .cmp .num{text-align:right;font-variant-numeric:tabular-nums}
+.ecopill{display:inline-block;font-size:11px;line-height:1.4;padding:1px 8px;border-radius:999px;border:1px solid var(--rule,#8884);color:var(--text-secondary);white-space:nowrap}
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:6px 0}
+.filters select{font:inherit;font-size:12px;padding:2px 6px}
 .scroll{overflow-x:auto;margin-bottom:10px}
 .sev-critical{color:var(--st-critical)}.sev-high{color:var(--st-serious,var(--st-critical))}
 .sev-medium{color:var(--st-warning)}.sev-low,.sev-current{color:var(--text-secondary)}
@@ -89,11 +92,16 @@ def to_comparison_html(fc: FleetComparison) -> str:
            + "; ".join(f"{e(k.rsplit('/', 1)[-1])} ({e(v)})" for k, v in fc.errors.items())
            + "</div>")
 
-    ap("<label class='note' style='display:block;margin:6px 0'>"
-       "<input type='checkbox' id='dvonly'> show only components that diverge</label>")
+    ecos = sorted({row.ecosystem for row in fc.rows}, key=lambda x: ECO_LABEL.get(x, x).lower())
+    opts = "".join(f"<option value='{e(x)}'>{e(ECO_LABEL.get(x, x))}</option>" for x in ecos)
+    ap("<div class='filters'>"
+       "<label class='note'><input type='checkbox' id='dvonly'> only components that diverge</label>"
+       "<label class='note'>ecosystem "
+       f"<select id='ecofilter'><option value=''>all</option>{opts}</select></label>"
+       "</div>")
 
-    ap("<div class='scroll'><table class='cmp'><thead><tr>")
-    ap("<th>Component</th>")
+    ap("<div class='scroll'><table class='cmp' id='matrix'><thead><tr>")
+    ap("<th>Component</th><th>Type</th>")
     for r in fc.repos:
         ap(f"<th>{e(r.rsplit('/', 1)[-1] or r)}</th>")
     ap("<th class='num'>Uses</th><th>Align &rarr;</th><th>Latest</th></tr></thead><tbody>")
@@ -101,9 +109,11 @@ def to_comparison_html(fc: FleetComparison) -> str:
     for row in fc.rows:
         newest = newest_pin({v for p in row.pins.values() for v in p.versions}, row.ecosystem)
         cls = "dv" if row.diverges else ""
-        ap(f"<tr class='{cls}' data-dv='{1 if row.diverges else 0}'>")
         eco = ECO_LABEL.get(row.ecosystem, row.ecosystem)
-        ap(f"<td><b>{e(row.name)}</b> <span class='eco'>{e(eco)}</span></td>")
+        ap(f"<tr class='{cls}' data-dv='{1 if row.diverges else 0}' "
+           f"data-eco='{e(row.ecosystem)}'>")
+        ap(f"<td><b>{e(row.name)}</b></td>")
+        ap(f"<td><span class='ecopill'>{e(eco)}</span></td>")
         for repo in fc.repos:
             ap(_cell(row.pins.get(repo), newest))
         ap(f"<td class='num note'>{row.repo_count}/{len(fc.repos)}</td>")
@@ -118,9 +128,14 @@ def to_comparison_html(fc: FleetComparison) -> str:
        "<b>Latest</b>. \"Diverging\" means the repos pin more than one version between "
        "them, not that one is provably older when the scheme can't be ordered.</p>")
 
-    js = ("<script>document.getElementById('dvonly').addEventListener('change',function(e){"
-          "document.querySelectorAll('.cmp tbody tr').forEach(function(r){"
-          "r.style.display=(e.target.checked && r.dataset.dv==='0')?'none':'';});});</script>")
+    js = ("<script>(function(){"
+          "var dv=document.getElementById('dvonly'),ef=document.getElementById('ecofilter');"
+          "function apply(){var d=dv.checked,x=ef.value;"
+          "document.querySelectorAll('#matrix tbody tr').forEach(function(r){"
+          "var hide=(d&&r.dataset.dv==='0')||(x&&r.dataset.eco!==x);"
+          "r.style.display=hide?'none':'';});}"
+          "dv.addEventListener('change',apply);ef.addEventListener('change',apply);"
+          "})();</script>")
 
     return (f"<!doctype html><html><head><meta charset='utf-8'>"
             f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
