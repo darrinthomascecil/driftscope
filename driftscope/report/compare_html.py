@@ -14,7 +14,7 @@ from .render import ECO_LABEL
 
 _CMP_CSS = """
 .cmp{border-collapse:collapse;width:100%;font-size:13px}
-.cmp th,.cmp td{border-bottom:1px solid var(--border-subtle,#8882);padding:6px 10px;text-align:left;white-space:nowrap}
+.cmp th,.cmp td{border-bottom:1px solid var(--rule,#8882);padding:6px 10px;text-align:left;white-space:nowrap}
 .cmp thead th{position:sticky;top:0;background:var(--surface-1,#0000);font-weight:600}
 .cmp tr.dv{background:color-mix(in srgb, var(--st-warning) 12%, transparent)}
 .cmp td.behind{color:var(--st-critical)}
@@ -24,7 +24,7 @@ _CMP_CSS = """
 .sev-critical{color:var(--st-critical)}.sev-high{color:var(--st-serious,var(--st-critical))}
 .sev-medium{color:var(--st-warning)}.sev-low,.sev-current{color:var(--text-secondary)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
-.chip{font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid var(--border-subtle,#8884);color:var(--text-secondary)}
+.chip{font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid var(--rule,#8884);color:var(--text-secondary)}
 .chip.warn{border-color:var(--st-warning);color:var(--st-warning)}
 """
 
@@ -43,8 +43,7 @@ def _cell(pin, newest):
 def to_comparison_html(fc: FleetComparison) -> str:
     a: list[str] = []
     ap = a.append
-    ap("<div class='card'>")
-    ap(f"<h1 style='margin:0 0 2px'>Fleet comparison</h1>")
+    ap("<h1 style='margin:0 0 2px'>Fleet comparison</h1>")
     ap(f"<p class='note'>{len(fc.repos)} repos &middot; {len(fc.rows)} components "
        f"&middot; {len(fc.divergent)} diverging across repos</p>")
 
@@ -83,7 +82,6 @@ def to_comparison_html(fc: FleetComparison) -> str:
        "newest pin present across the repos. \"Diverging\" means the repos pin more "
        "than one version between them &mdash; not that one is provably older when the "
        "version scheme can't be ordered.</p>")
-    ap("</div>")
 
     js = ("<script>document.getElementById('dvonly').addEventListener('change',function(e){"
           "document.querySelectorAll('.cmp tbody tr').forEach(function(r){"
@@ -92,4 +90,4 @@ def to_comparison_html(fc: FleetComparison) -> str:
     return (f"<!doctype html><html><head><meta charset='utf-8'>"
             f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
             f"<title>Fleet comparison</title><style>{_CSS}{_CMP_CSS}</style></head>"
-            f"<body><main class='report'>{''.join(a)}</main>{js}</body></html>")
+            f"<body class='ds'><div class='wrap'>{''.join(a)}</div>{js}</body></html>")
