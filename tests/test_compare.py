@@ -41,8 +41,15 @@ def test_divergence_is_flagged_the_ioredis_case():
     assert ioredis.pins["repo-b"].versions == ["4.4.0"]
     assert ioredis.latest == "5.4.1"
 
+    # align_to = the newest pin already in the fleet (the consensus target)
+    assert ioredis.align_to == "4.4.0"
+
     lodash = next(r for r in fc.rows if r.name == "lodash")
     assert lodash.diverges is False
+    assert lodash.align_to is None  # nothing to align when they agree
+
+    # per-repo posture roll-up
+    assert fc.posture["repo-a"]["high"] == 1 and fc.posture["repo-a"]["current"] == 1
 
     # divergent rows sort first
     assert fc.rows[0].name == "ioredis"
