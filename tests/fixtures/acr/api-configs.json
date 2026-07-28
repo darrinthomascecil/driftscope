@@ -1,0 +1,226 @@
+{
+ "sha256:884d259c9ec1c0049f0034bbcc6c83dddd9f061435cd6277cfdb3f29148f9751": {
+  "architecture": "amd64",
+  "config": {
+   "Env": [
+    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+   ],
+   "Cmd": [
+    "/bin/sh"
+   ],
+   "WorkingDir": "/",
+   "Labels": {
+    "io.driftscope.breaking": "",
+    "io.driftscope.changelog": "First public release. REST endpoints for charge, refund and balance.",
+    "io.driftscope.known-issues": "Balance endpoint returns stale data for up to 60s under cache warm-up.",
+    "org.opencontainers.image.description": "Initial release",
+    "org.opencontainers.image.source": "https://dev.azure.com/contoso/Platform/_git/payments",
+    "org.opencontainers.image.title": "Payments API",
+    "org.opencontainers.image.vendor": "Contoso Platform Team",
+    "org.opencontainers.image.version": "1.0.0"
+   },
+   "ArgsEscaped": true
+  },
+  "created": "2026-04-16T23:53:15.704110414Z",
+  "history": [
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "ADD alpine-minirootfs-3.21.7-x86_64.tar.gz / # buildkit",
+    "comment": "buildkit.dockerfile.v0"
+   },
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "CMD [\"/bin/sh\"]",
+    "comment": "buildkit.dockerfile.v0",
+    "empty_layer": true
+   },
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "LABEL org.opencontainers.image.title=Payments API org.opencontainers.image.version=1.0.0 org.opencontainers.image.description=Initial release org.opencontainers.image.source=https://dev.azure.com/contoso/Platform/_git/payments org.opencontainers.image.vendor=Contoso Platform Team io.driftscope.changelog=First public release. REST endpoints for charge, refund and balance. io.driftscope.known-issues=Balance endpoint returns stale data for up to 60s under cache warm-up. io.driftscope.breaking=",
+    "comment": "buildkit.dockerfile.v0",
+    "empty_layer": true
+   },
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "CMD [\"/bin/sh\"]",
+    "comment": "buildkit.dockerfile.v0",
+    "empty_layer": true
+   }
+  ],
+  "os": "linux",
+  "rootfs": {
+   "type": "layers",
+   "diff_ids": [
+    "sha256:7211d01aba8fa2e9eb71ad34395cd313df5fc51a6b69b92d2dfad32cc37759cb"
+   ]
+  }
+ },
+ "sha256:05b2c577443dbef68da752e154c915369afadfde8aea6e0ddb6d13354cfc4ddf": {
+  "architecture": "amd64",
+  "config": {
+   "Env": [
+    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+   ],
+   "Cmd": [
+    "/bin/sh"
+   ],
+   "WorkingDir": "/",
+   "Labels": {
+    "io.driftscope.breaking": "",
+    "io.driftscope.changelog": "Added Idempotency-Key header support on POST /charge. Retries no longer double-charge. Fixed timezone handling in settlement reports.",
+    "io.driftscope.known-issues": "Idempotency keys are held in memory only; a pod restart loses them.",
+    "org.opencontainers.image.description": "Idempotency keys",
+    "org.opencontainers.image.source": "https://dev.azure.com/contoso/Platform/_git/payments",
+    "org.opencontainers.image.title": "Payments API",
+    "org.opencontainers.image.vendor": "Contoso Platform Team",
+    "org.opencontainers.image.version": "1.1.0"
+   },
+   "ArgsEscaped": true
+  },
+  "created": "2026-04-16T23:53:15.704110414Z",
+  "history": [
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "ADD alpine-minirootfs-3.21.7-x86_64.tar.gz / # buildkit",
+    "comment": "buildkit.dockerfile.v0"
+   },
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "CMD [\"/bin/sh\"]",
+    "comment": "buildkit.dockerfile.v0",
+    "empty_layer": true
+   },
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "LABEL org.opencontainers.image.title=Payments API org.opencontainers.image.version=1.1.0 org.opencontainers.image.description=Idempotency keys org.opencontainers.image.source=https://dev.azure.com/contoso/Platform/_git/payments org.opencontainers.image.vendor=Contoso Platform Team io.driftscope.changelog=Added Idempotency-Key header support on POST /charge. Retries no longer double-charge. Fixed timezone handling in settlement reports. io.driftscope.known-issues=Idempotency keys are held in memory only; a pod restart loses them. io.driftscope.breaking=",
+    "comment": "buildkit.dockerfile.v0",
+    "empty_layer": true
+   },
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "CMD [\"/bin/sh\"]",
+    "comment": "buildkit.dockerfile.v0",
+    "empty_layer": true
+   }
+  ],
+  "os": "linux",
+  "rootfs": {
+   "type": "layers",
+   "diff_ids": [
+    "sha256:7211d01aba8fa2e9eb71ad34395cd313df5fc51a6b69b92d2dfad32cc37759cb"
+   ]
+  }
+ },
+ "sha256:c8ce1ef565e580c4b87023693bb0db346be8f3214278252c3cc57fabe04e1eb6": {
+  "architecture": "amd64",
+  "config": {
+   "Env": [
+    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+   ],
+   "Cmd": [
+    "/bin/sh"
+   ],
+   "WorkingDir": "/",
+   "Labels": {
+    "io.driftscope.breaking": "API-key auth removed; /v1/charge alias removed; report column order changed",
+    "io.driftscope.changelog": "Replaced API-key auth with OAuth2 client credentials. Removed the deprecated /v1/charge alias. Settlement report columns reordered.",
+    "io.driftscope.known-issues": "OAuth token refresh storms under high concurrency; mitigate with a jittered retry.",
+    "org.opencontainers.image.description": "Auth overhaul",
+    "org.opencontainers.image.source": "https://dev.azure.com/contoso/Platform/_git/payments",
+    "org.opencontainers.image.title": "Payments API",
+    "org.opencontainers.image.vendor": "Contoso Platform Team",
+    "org.opencontainers.image.version": "2.0.0"
+   },
+   "ArgsEscaped": true
+  },
+  "created": "2026-04-16T23:53:15.704110414Z",
+  "history": [
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "ADD alpine-minirootfs-3.21.7-x86_64.tar.gz / # buildkit",
+    "comment": "buildkit.dockerfile.v0"
+   },
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "CMD [\"/bin/sh\"]",
+    "comment": "buildkit.dockerfile.v0",
+    "empty_layer": true
+   },
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "LABEL org.opencontainers.image.title=Payments API org.opencontainers.image.version=2.0.0 org.opencontainers.image.description=Auth overhaul org.opencontainers.image.source=https://dev.azure.com/contoso/Platform/_git/payments org.opencontainers.image.vendor=Contoso Platform Team io.driftscope.changelog=Replaced API-key auth with OAuth2 client credentials. Removed the deprecated /v1/charge alias. Settlement report columns reordered. io.driftscope.known-issues=OAuth token refresh storms under high concurrency; mitigate with a jittered retry. io.driftscope.breaking=API-key auth removed; /v1/charge alias removed; report column order changed",
+    "comment": "buildkit.dockerfile.v0",
+    "empty_layer": true
+   },
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "CMD [\"/bin/sh\"]",
+    "comment": "buildkit.dockerfile.v0",
+    "empty_layer": true
+   }
+  ],
+  "os": "linux",
+  "rootfs": {
+   "type": "layers",
+   "diff_ids": [
+    "sha256:7211d01aba8fa2e9eb71ad34395cd313df5fc51a6b69b92d2dfad32cc37759cb"
+   ]
+  }
+ },
+ "sha256:5084d31232f5232472931efb99b6c64f145081e248cf261b1030cb0b0095f5a1": {
+  "architecture": "amd64",
+  "config": {
+   "Env": [
+    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+   ],
+   "Cmd": [
+    "/bin/sh"
+   ],
+   "WorkingDir": "/",
+   "Labels": {
+    "io.driftscope.breaking": "",
+    "io.driftscope.changelog": "Patched CVE-2026-1337 in the settlement parser. Idempotency keys now persisted to Redis. Reduced p99 latency on /balance by 40%.",
+    "io.driftscope.known-issues": "",
+    "org.opencontainers.image.description": "Security and stability",
+    "org.opencontainers.image.source": "https://dev.azure.com/contoso/Platform/_git/payments",
+    "org.opencontainers.image.title": "Payments API",
+    "org.opencontainers.image.vendor": "Contoso Platform Team",
+    "org.opencontainers.image.version": "2.1.0"
+   },
+   "ArgsEscaped": true
+  },
+  "created": "2026-04-16T23:53:15.704110414Z",
+  "history": [
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "ADD alpine-minirootfs-3.21.7-x86_64.tar.gz / # buildkit",
+    "comment": "buildkit.dockerfile.v0"
+   },
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "CMD [\"/bin/sh\"]",
+    "comment": "buildkit.dockerfile.v0",
+    "empty_layer": true
+   },
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "LABEL org.opencontainers.image.title=Payments API org.opencontainers.image.version=2.1.0 org.opencontainers.image.description=Security and stability org.opencontainers.image.source=https://dev.azure.com/contoso/Platform/_git/payments org.opencontainers.image.vendor=Contoso Platform Team io.driftscope.changelog=Patched CVE-2026-1337 in the settlement parser. Idempotency keys now persisted to Redis. Reduced p99 latency on /balance by 40%. io.driftscope.known-issues= io.driftscope.breaking=",
+    "comment": "buildkit.dockerfile.v0",
+    "empty_layer": true
+   },
+   {
+    "created": "2026-04-16T23:53:15.704110414Z",
+    "created_by": "CMD [\"/bin/sh\"]",
+    "comment": "buildkit.dockerfile.v0",
+    "empty_layer": true
+   }
+  ],
+  "os": "linux",
+  "rootfs": {
+   "type": "layers",
+   "diff_ids": [
+    "sha256:7211d01aba8fa2e9eb71ad34395cd313df5fc51a6b69b92d2dfad32cc37759cb"
+   ]
+  }
+ }
+}

@@ -42,6 +42,7 @@ def ctx(tmp_path):
 @pytest.fixture(autouse=True)
 def clear_token_cache(monkeypatch):
     monkeypatch.setattr(acr_mod, "_TOKENS", {})
+    monkeypatch.setattr(acr_mod, "_REFRESH", {})
 
 
 @pytest.fixture
@@ -123,8 +124,12 @@ def test_published_is_the_build_time_not_the_push_time(ctx, registry):
 
 def test_push_times_are_kept_but_never_stand_in_for_a_build_date(ctx, registry):
     """A tag whose build date was not sampled reports None, not its push time --
-    `None` means "not measured" everywhere else in this codebase and must here."""
-    r = resolve_acr_image(component("1.0.0"), ctx)
+    `None` means "not measured" everywhere else in this codebase and must here.
+
+    Deployed 2.0.0, so only 2.0.0 and 2.1.0 are opened; the two older tags are
+    behind what is running and are never fetched.
+    """
+    r = resolve_acr_image(component("2.0.0"), ctx)
     sampled = set(r.extra["build_dates_sampled"])
     unsampled = [x for x in r.releases if x.version not in sampled]
 
@@ -135,12 +140,13 @@ def test_push_times_are_kept_but_never_stand_in_for_a_build_date(ctx, registry):
         assert r.extra["pushed"][rel.version]
 
 
-def test_only_the_deployed_and_latest_tags_cost_extra_calls(ctx, registry):
-    """Build dates are three round trips each. Sampling the two tags that change
-    a decision keeps a 500-tag registry from costing 1500 requests."""
-    r = resolve_acr_image(component("1.0.0"), ctx)
+def test_versions_behind_the_deployed_one_are_never_opened(ctx, registry):
+    """The gap is what costs money: each version in it is up to three round trips.
+    Versions older than what is running cannot appear in an upgrade's notes, so
+    fetching them would be pure waste on a registry with hundreds of tags."""
+    r = resolve_acr_image(component("2.0.0"), ctx)
 
-    assert r.extra["build_dates_sampled"] == ["1.0.0", "2.1.0"]
+    assert r.extra["build_dates_sampled"] == ["2.0.0", "2.1.0"]
     assert len([p for p in registry if "/blobs/" in p]) == 2
 
 
@@ -267,3 +273,150 @@ def test_one_token_is_minted_for_many_images_in_one_registry(ctx, monkeypatch):
     # Every worker gets the same real token, and only one exchange happened.
     assert results == ["TOKEN"] * 8
     assert len(calls) == 1
+
+
+# --------------------------------------------------------------- token scoping
+
+
+def test_two_repositories_in_one_registry_get_their_own_tokens(ctx, monkeypatch):
+    """Regression: the access token was cached per *host* while being scoped per
+    *repository*, so whichever image resolved first minted a token for its own
+    repository and every other repository in the same registry answered 401 --
+    which surfaced as `unknown`, reading like a permissions problem rather than
+    a cache-key mistake.
+    """
+    minted: list[tuple[str, str]] = []
+
+    def fake_mint(host, repo, c):
+        minted.append((host, repo))
+        return f"TOKEN-for-{repo}"
+
+    monkeypatch.setattr(acr_mod, "_mint_token", fake_mint)
+
+    a = acr_mod._registry_token(HOST, "internal/api", ctx)
+    b = acr_mod._registry_token(HOST, "internal/webapp", ctx)
+    again = acr_mod._registry_token(HOST, "internal/api", ctx)
+
+    assert a == "TOKEN-for-internal/api"
+    assert b == "TOKEN-for-internal/webapp"
+    assert a != b, "one token cannot cover two repository scopes"
+    assert again is a, "the second lookup for a repo must come from cache"
+    assert len(minted) == 2, "one exchange per repository, not per image"
+
+
+def test_the_az_subprocess_runs_once_per_registry(ctx, monkeypatch):
+    """The scope exchange is per repository, but the `az acr login` behind it is
+    registry-wide and slow -- paying it twice for one registry would be waste."""
+    calls: list[str] = []
+
+    def fake_run(argv, **kw):
+        calls.append(argv[4])
+
+        class R:
+            returncode = 0
+            stdout = "REFRESH\n"
+        return R()
+
+    monkeypatch.setattr(acr_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(acr_mod, "_get", lambda *a, **k: {})
+    # Exchange is stubbed out; only the subprocess count matters here.
+    monkeypatch.setattr(
+        acr_mod.urllib.request, "urlopen",
+        lambda *a, **k: (_ for _ in ()).throw(ValueError("stub")),
+    )
+    acr_mod._mint_token(HOST, "internal/api", ctx)
+    acr_mod._mint_token(HOST, "internal/webapp", ctx)
+
+    assert calls == ["driftscopetestacr"], f"az ran {len(calls)} times"
+
+
+# ----------------------------------------------------------------- changelogs
+
+# Recorded from four images built with OCI labels: 1.1.0 and 2.0.0 carry known
+# issues, 2.0.0 alone is marked breaking, and all four carry a changelog.
+
+
+@pytest.fixture
+def api_registry(monkeypatch):
+    """Replay the labelled `internal/api` repository."""
+    tags = load("api-tags")
+    manifests = load("api-manifests")
+    configs = load("api-configs")
+
+    def fake_get(host, path, token, accept=None):
+        if "/_tags" in path:
+            return tags
+        if "/manifests/" in path:
+            return manifests[path.rsplit("/manifests/", 1)[1]]
+        if "/blobs/" in path:
+            return configs[path.rsplit("/blobs/", 1)[1]]
+        raise AssertionError(f"unexpected path {path}")
+
+    monkeypatch.setattr(acr_mod, "_get", fake_get)
+    monkeypatch.setattr(acr_mod, "_registry_token", lambda h, r, c: "TOKEN")
+
+
+def api_component(current="1.0.0"):
+    return Component(
+        ecosystem="docker-image", name=f"{HOST}/internal/api",
+        current=current, source="k8s/api.yaml", line=10,
+    )
+
+
+def test_changelog_covers_the_gap_and_excludes_what_is_deployed(ctx, api_registry):
+    """A version you are already running did not change anything for you."""
+    r = resolve_acr_image(api_component("1.0.0"), ctx)
+    versions = [x["version"] for x in r.extra["changelog"]]
+
+    assert versions == ["1.1.0", "2.0.0", "2.1.0"]
+    assert "1.0.0" not in versions
+
+
+def test_a_narrower_gap_yields_a_shorter_changelog(ctx, api_registry):
+    r = resolve_acr_image(api_component("2.0.0"), ctx)
+    assert [x["version"] for x in r.extra["changelog"]] == ["2.1.0"]
+
+
+def test_breaking_changes_are_separated_from_ordinary_notes(ctx, api_registry):
+    """"Removed the deprecated alias" buried in a paragraph of improvements is
+    how a breaking change gets missed."""
+    r = resolve_acr_image(api_component("1.0.0"), ctx)
+    breaking = r.extra["breaking"]
+
+    assert [b["version"] for b in breaking] == ["2.0.0"]
+    assert "API-key auth removed" in breaking[0]["text"]
+
+
+def test_issues_in_the_deployed_version_are_kept_apart_from_issues_ahead(ctx, api_registry):
+    """These answer different questions: one is wrong in production right now,
+    the other is a hazard along the upgrade path."""
+    r = resolve_acr_image(api_component("1.0.0"), ctx)
+
+    assert "Balance endpoint returns stale data" in r.extra["current_known_issues"]
+    ahead = {k["version"] for k in r.extra["known_issues"]}
+    assert ahead == {"1.1.0", "2.0.0"}
+    assert "1.0.0" not in ahead
+
+
+def test_oci_source_label_becomes_the_homepage(ctx, api_registry):
+    r = resolve_acr_image(api_component("1.0.0"), ctx)
+    assert r.homepage == "https://dev.azure.com/contoso/Platform/_git/payments"
+
+
+def test_an_unlabelled_registry_says_unrecorded_not_unchanged(ctx, registry):
+    """The webapp fixture carries no labels at all -- the common real case. An
+    empty changelog must not read as "nothing changed"."""
+    r = resolve_acr_image(component("1.0.0"), ctx)
+
+    assert r.extra["changelog"] == []
+    assert r.extra["documented_versions"] == 0
+    assert "unrecorded rather than empty" in r.note
+
+
+def test_a_long_gap_is_capped_and_says_so(ctx, api_registry, monkeypatch):
+    """A silently shortened changelog reads as a shorter changelog."""
+    monkeypatch.setattr(acr_mod, "SPAN_LIMIT", 2)
+    r = resolve_acr_image(api_component("1.0.0"), ctx)
+
+    assert r.extra["span_truncated"] is True
+    assert len(r.extra["span"]) == 2

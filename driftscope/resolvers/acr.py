@@ -67,16 +67,62 @@ MANIFEST_ACCEPT = ", ".join(
     )
 )
 
-# How many tags to fetch a build date for. Two is the useful minimum: what is
-# deployed, and what it would move to.
-BUILD_DATE_SAMPLE = 2
+# How many versions in the deployed -> latest span to open. Each costs up to
+# three round trips, and a registry can hold hundreds of tags, so the span is
+# capped rather than unbounded. `extra["span_truncated"]` says when the cap bit,
+# because a silently shortened changelog reads as a shorter changelog.
+SPAN_LIMIT = 12
 
-_TOKENS: dict[str, str | None] = {}
-# Resolution runs eight workers, and every image in one registry contends for the
-# same token. Without this lock the first thread in publishes "no token yet" as
-# though it were "no token exists", and every sibling reports the registry as
-# unauthenticated while the winner resolves it fine -- two findings for the same
-# registry disagreeing within one report.
+# Where an image records what changed in it. There is no OCI standard field for
+# a changelog -- the spec defines `description` for the image, not for the
+# release -- so these are conventions, in preference order, and the report says
+# a changelog is absent rather than implying nothing changed.
+CHANGELOG_KEYS = (
+    "io.driftscope.changelog",
+    "org.label-schema.changelog",
+    "changelog",
+    "org.opencontainers.image.description",  # last resort: describes the image
+)
+KNOWN_ISSUE_KEYS = (
+    "io.driftscope.known-issues",
+    "io.driftscope.known_issues",
+    "known-issues",
+)
+BREAKING_KEYS = (
+    "io.driftscope.breaking",
+    "io.driftscope.breaking-changes",
+)
+
+# Standard OCI annotations worth carrying into the report verbatim.
+OCI_KEYS = (
+    "org.opencontainers.image.title",
+    "org.opencontainers.image.vendor",
+    "org.opencontainers.image.source",
+    "org.opencontainers.image.revision",
+)
+
+
+def _first_label(labels: dict, keys) -> str | None:
+    for k in keys:
+        v = (labels.get(k) or "").strip()
+        if v:
+            return v
+    return None
+
+# Two caches, because the two halves have different keys and different costs.
+#
+# The refresh token comes from an `az acr login` subprocess and is good for the
+# whole registry, so it is worth paying for exactly once per host. The access
+# token is scoped to one repository -- caching *that* per host was a real bug:
+# whichever image resolved first minted a token for its own repository, and
+# every other repository in the same registry then got a 401 that read as a
+# permissions problem rather than as a cache key mistake.
+_REFRESH: dict[str, str | None] = {}
+_TOKENS: dict[tuple[str, str], str | None] = {}
+# Resolution runs eight workers, and every image in one registry contends for
+# these. Without the lock the first thread in publishes "not looked up yet" as
+# though it were "no token exists", and its siblings report the registry as
+# unauthenticated while the winner resolves it fine.
 _TOKEN_LOCK = threading.Lock()
 
 
@@ -115,30 +161,44 @@ def _registry_token(host: str, repo: str, ctx: Context) -> str | None:
     touching several repositories in one registry is common and the exchange is
     the expensive half.
     """
+    key = (host, repo)
     with _TOKEN_LOCK:
-        if host in _TOKENS:
-            return _TOKENS[host]
+        if key in _TOKENS:
+            return _TOKENS[key]
         token = _mint_token(host, repo, ctx)
-        _TOKENS[host] = token
+        _TOKENS[key] = token
         return token
 
 
-def _mint_token(host: str, repo: str, ctx: Context) -> str | None:
-    """The actual exchange. Called once per registry, under `_TOKEN_LOCK`."""
+def _refresh_token(host: str, ctx: Context) -> str | None:
+    """The registry-wide refresh token, one `az` subprocess per host."""
+    if host in _REFRESH:
+        return _REFRESH[host]
+    _REFRESH[host] = None
     if not ctx.allow_az:
         return None
-
-    registry = host.split(".")[0]
     try:
         r = subprocess.run(
-            ["az", "acr", "login", "-n", registry, "--expose-token",
+            ["az", "acr", "login", "-n", host.split(".")[0], "--expose-token",
              "--query", "accessToken", "-o", "tsv"],
             capture_output=True, text=True, timeout=60,
         )
     except (subprocess.SubprocessError, OSError):
         return None
-    refresh = r.stdout.strip()
-    if r.returncode != 0 or not refresh:
+    if r.returncode == 0 and r.stdout.strip():
+        _REFRESH[host] = r.stdout.strip()
+    return _REFRESH[host]
+
+
+def _mint_token(host: str, repo: str, ctx: Context) -> str | None:
+    """Exchange the registry refresh token for one scoped to `repo`.
+
+    Called under `_TOKEN_LOCK`, once per (host, repo).
+    """
+    if not ctx.allow_az:
+        return None
+    refresh = _refresh_token(host, ctx)
+    if not refresh:
         return None
 
     # Actions within one scope are comma-separated. A space here is a 400 that
@@ -169,11 +229,13 @@ def _get(host: str, path: str, token: str, accept: str | None = None):
         return json.loads(resp.read().decode("utf-8", "replace"))
 
 
-def _build_date(host: str, repo: str, tag: str, token: str) -> datetime | None:
-    """The `created` timestamp inside the image config, or None.
+def _image_config(host: str, repo: str, tag: str, token: str) -> dict | None:
+    """The image config blob for a tag, or None if it could not be fetched.
 
-    None here means "could not determine", and the caller must not substitute a
-    push time for it -- that is the conflation this module exists to prevent.
+    One fetch yields both the build timestamp and the labels, so the changelog
+    costs nothing beyond what the date already cost. None means "could not
+    determine" -- the caller must not substitute a push time for a missing build
+    date, which is the conflation this module exists to prevent.
     """
     try:
         m = _get(host, f"/v2/{repo}/manifests/{tag}", token, MANIFEST_ACCEPT)
@@ -194,9 +256,35 @@ def _build_date(host: str, repo: str, tag: str, token: str) -> datetime | None:
         digest = (m.get("config") or {}).get("digest")
         if not digest:
             return None
-        return parse_iso(_get(host, f"/v2/{repo}/blobs/{digest}", token).get("created"))
+        return _get(host, f"/v2/{repo}/blobs/{digest}", token)
     except (urllib.error.URLError, ValueError, KeyError, TimeoutError):
         return None
+
+
+def _labels(config: dict | None) -> dict:
+    """Labels live under `config.Labels`, and are null rather than {} when unset."""
+    if not config:
+        return {}
+    return ((config.get("config") or {}).get("Labels")) or {}
+
+
+def _changelog_span(versions, current: str | None, latest: str | None):
+    """The versions whose notes belong in a "what changed" summary.
+
+    Everything strictly after what is deployed, up to and including the target.
+    A version you are already on did not change anything for you, and versions
+    beyond the target are not part of this upgrade.
+    """
+    if not current or not latest:
+        return [v for v in versions[-1:]], False
+    names = [v.raw for v in versions]
+    try:
+        lo = names.index(current)
+    except ValueError:
+        return [latest], False
+    hi = names.index(latest) if latest in names else len(names) - 1
+    span = names[lo + 1 : hi + 1]
+    return span[-SPAN_LIMIT:], len(span) > SPAN_LIMIT
 
 
 def resolve_acr_image(c: Component, ctx: Context) -> Resolution | None:
@@ -232,25 +320,65 @@ def resolve_acr_image(c: Component, ctx: Context) -> Resolution | None:
     ordered = sort_versions(list(pushed))
     latest = ordered[-1].raw if ordered else None
 
-    # Sample build dates only where they change a decision: the tag in use and
-    # the tag it would move to.
-    want = [t for t in (c.current, latest) if t and t in pushed][:BUILD_DATE_SAMPLE]
-    built = {t: _build_date(host, repo, t, token) for t in want}
+    # Open the config for what is deployed plus everything up to the target: one
+    # fetch yields both the build date and that version's notes, so a changelog
+    # costs nothing the date did not already cost.
+    span, truncated = _changelog_span(ordered, c.current, latest)
+    want = [t for t in ([c.current] if c.current in pushed else []) + span if t in pushed]
+    configs = {t: _image_config(host, repo, t, token) for t in dict.fromkeys(want)}
+
+    changelog, known_issues, breaking = [], [], []
+    for tag in span:
+        labels = _labels(configs.get(tag))
+        if not labels:
+            continue
+        if entry := _first_label(labels, CHANGELOG_KEYS):
+            changelog.append({"version": tag, "text": entry})
+        if issue := _first_label(labels, KNOWN_ISSUE_KEYS):
+            known_issues.append({"version": tag, "text": issue})
+        if brk := _first_label(labels, BREAKING_KEYS):
+            breaking.append({"version": tag, "text": brk})
+
+    # Known issues in the version actually running are a different claim from
+    # those in versions ahead of it: these are live, now, in production.
+    current_labels = _labels(configs.get(c.current))
+    current_issues = _first_label(current_labels, KNOWN_ISSUE_KEYS)
 
     releases = [
-        Release(version=name, published=built.get(name)) for name in pushed
+        Release(version=name, published=parse_iso((configs.get(name) or {}).get("created")))
+        for name in pushed
     ]
+
+    # A registry with no labels at all is the common case, and must read as
+    # "nobody recorded anything" rather than as "nothing changed".
+    documented = sum(1 for t in span if _labels(configs.get(t)))
+    note = (
+        "private registry: dates are image build times, not upstream release "
+        "dates; there is no upstream project to compare against"
+    )
+    if span and not documented:
+        note += (
+            f"; none of the {len(span)} version(s) ahead carry changelog labels, "
+            "so what changed is unrecorded rather than empty"
+        )
+
     return Resolution(
         latest_stable=latest,
         releases=releases,
-        note=(
-            "private registry: dates are image build times, not upstream release "
-            "dates; there is no upstream project to compare against"
-        ),
+        homepage=_first_label(current_labels, ("org.opencontainers.image.source",)),
+        note=note,
         extra={
             "registry": host,
             "pushed": pushed,
-            "build_dates_sampled": want,
+            "build_dates_sampled": sorted(configs),
             "dates_are_build_times": True,
+            "changelog": changelog,
+            "known_issues": known_issues,
+            "current_known_issues": current_issues,
+            "breaking": breaking,
+            "span": span,
+            "span_truncated": truncated,
+            "documented_versions": documented,
+            "oci": {k: v for k in OCI_KEYS if (v := current_labels.get(k))},
         },
     )

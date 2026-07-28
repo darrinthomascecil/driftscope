@@ -1,0 +1,58 @@
+{
+ "registry": "driftscopetestacr.azurecr.io",
+ "imageName": "internal/api",
+ "tags": [
+  {
+   "name": "2.1.0",
+   "digest": "sha256:f374fbfb04c7b481101eae4675a1774a9f7cd0d103869d381091453db99eba1a",
+   "createdTime": "2026-07-28T00:56:08.5613903Z",
+   "lastUpdateTime": "2026-07-28T00:56:08.5613903Z",
+   "signed": false,
+   "changeableAttributes": {
+    "deleteEnabled": true,
+    "writeEnabled": true,
+    "readEnabled": true,
+    "listEnabled": true
+   }
+  },
+  {
+   "name": "2.0.0",
+   "digest": "sha256:d322f1d0f8742ea332592f44f9d86a7faa46fbe4aa283814df871c9f156972b7",
+   "createdTime": "2026-07-28T00:56:05.3874834Z",
+   "lastUpdateTime": "2026-07-28T00:56:05.3874834Z",
+   "signed": false,
+   "changeableAttributes": {
+    "deleteEnabled": true,
+    "writeEnabled": true,
+    "readEnabled": true,
+    "listEnabled": true
+   }
+  },
+  {
+   "name": "1.1.0",
+   "digest": "sha256:5f34da9993c2b17e601fd6d59e22222021b6ff9cf2eccd40f0d2e7fbcb571ebe",
+   "createdTime": "2026-07-28T00:56:02.5084489Z",
+   "lastUpdateTime": "2026-07-28T00:56:02.5084489Z",
+   "signed": false,
+   "changeableAttributes": {
+    "deleteEnabled": true,
+    "writeEnabled": true,
+    "readEnabled": true,
+    "listEnabled": true
+   }
+  },
+  {
+   "name": "1.0.0",
+   "digest": "sha256:58968852c107ebeee25f5eaa0d27b49afce24c66c112e6fc5a759ded5532448a",
+   "createdTime": "2026-07-28T00:55:59.36371Z",
+   "lastUpdateTime": "2026-07-28T00:55:59.36371Z",
+   "signed": false,
+   "changeableAttributes": {
+    "deleteEnabled": true,
+    "writeEnabled": true,
+    "readEnabled": true,
+    "listEnabled": true
+   }
+  }
+ ]
+}

@@ -328,6 +328,67 @@ def _vuln_rows(sec) -> str:
     return "".join(out)
 
 
+def _registry_notes_block(f) -> str:
+    """What changed between the image running and the one available.
+
+    A private registry has no release notes endpoint, so this is assembled from
+    OCI labels on each image in the gap. Three claims are kept apart because they
+    are answers to different questions: what changed, what breaks, and what is
+    already wrong with the version in production right now.
+    """
+    ex = (f.resolution.extra or {}) if f.resolution else {}
+    if not ex.get("registry"):
+        return ""
+    changelog = ex.get("changelog") or []
+    breaking = ex.get("breaking") or []
+    ahead = ex.get("known_issues") or []
+    current_issue = ex.get("current_known_issues")
+    span = ex.get("span") or []
+    if not (changelog or breaking or ahead or current_issue or span):
+        return ""
+
+    out = []
+    a = out.append
+    a(f"<p><b>Registry notes</b> {e(ex['registry'])}"
+      f"{f' &middot; {len(span)} version(s) ahead' if span else ''}</p>")
+
+    # Deployed-version issues first: this is live in production, not prospective.
+    if current_issue:
+        a(f"<div class='note'><b>Known issue in the deployed version "
+          f"{e(str(f.component.current))}:</b> {e(current_issue)}</div>")
+
+    if breaking:
+        a("<div class='note'><b>Breaking changes in this upgrade</b></div><ul>")
+        for b in breaking[:8]:
+            a(f"<li><code>{e(b['version'])}</code> {e(b['text'])}</li>")
+        a("</ul>")
+
+    if changelog:
+        a("<div class='note'><b>Changelog</b></div><ul>")
+        for entry in changelog[:12]:
+            a(f"<li><code>{e(entry['version'])}</code> {e(entry['text'])}</li>")
+        a("</ul>")
+
+    if ahead:
+        a("<div class='note'><b>Known issues introduced along the way</b> "
+          "&mdash; present in intermediate versions, check whether the target "
+          "still carries them</div><ul>")
+        for k in ahead[:8]:
+            a(f"<li><code>{e(k['version'])}</code> {e(k['text'])}</li>")
+        a("</ul>")
+
+    # Absence of notes is not absence of change, and must not read as one.
+    documented = ex.get("documented_versions", 0)
+    if span and documented < len(span):
+        a(f"<div class='note'>{len(span) - documented} of {len(span)} version(s) "
+          "in this gap carry no changelog label &mdash; what changed in them is "
+          "unrecorded, not empty.</div>")
+    if ex.get("span_truncated"):
+        a("<div class='note'>Older versions in the gap were not opened; the "
+          "changelog above is the most recent portion only.</div>")
+    return "".join(out)
+
+
 def _vuln_block(r) -> str:
     """Known advisories, and specifically which ones the upgrade would clear."""
     s = summarize_vulns(r)
@@ -562,6 +623,7 @@ def _finding_detail(report: Report, f) -> str:
             for ct in adv.cautions:
                 a(f"<li>{e(ct)}</li>")
             a("</ul>")
+    a(_registry_notes_block(f))
     d = f.delta
     if d and (d.breaking_notes or d.bug_issues):
         a(f"<p><b>Upstream delta</b> {e(d.from_ref)} &rarr; {e(d.to_ref)}"
