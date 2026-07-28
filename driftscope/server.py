@@ -171,6 +171,7 @@ def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
 
 def multi_json(results, fc):
     """Serialise a multi-scan for the non-streaming JSON response (no report bodies)."""
+    from .compare import lag_label
     return {
         "repos": [{k: v for k, v in r.items() if k != "report"} for r in results],
         "comparison": {
@@ -181,6 +182,8 @@ def multi_json(results, fc):
             "rows": [{
                 "ecosystem": row.ecosystem, "name": row.name, "latest": row.latest,
                 "diverges": row.diverges, "worst": row.worst,
+                "fleet_debt": row.fleet_debt,
+                "behind": lag_label(row.worst_lag) if row.depth_comparable else None,
                 "pins": {repo: pin.versions for repo, pin in row.pins.items()},
             } for row in fc.rows],
         },
