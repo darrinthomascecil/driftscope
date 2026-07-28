@@ -20,6 +20,7 @@ from .models import (
     DOTNET_SDK,
     DOTNET_TFM,
     JVM_TOOLCHAIN,
+    RUBY_RUNTIME,
     MAVEN,
     NUGET,
     AZURE_NODE_IMAGE,
@@ -97,7 +98,8 @@ def score(component: Component, res: Resolution, lag: Lag) -> str:
     # Runtimes and toolchains are judged on support status, not version distance.
     # Java 17 is eight "majors" behind 25 and is a supported LTS -- rating that
     # CRITICAL would train people to ignore the report.
-    if component.ecosystem in (JVM_TOOLCHAIN, DOTNET_TFM, DOTNET_SDK):
+    if component.ecosystem in (JVM_TOOLCHAIN, DOTNET_TFM, DOTNET_SDK,
+                               RUBY_RUNTIME):
         days_left = res.extra.get("support_days_left")
         is_lts = res.extra.get("lts")
         if res.deprecated:
@@ -112,8 +114,17 @@ def score(component: Component, res: Resolution, lag: Lag) -> str:
             return SEV_LOW if lag.behind_major else SEV_CURRENT
         if is_lts is False:
             return SEV_HIGH  # non-LTS: six-month window, no time to plan
-        # No support data: fall back to distance, but never above MEDIUM, because
-        # "N majors behind" is a poor proxy for runtime risk.
+        if is_lts is True:
+            # Supported with no announced end date -- the healthiest state a
+            # runtime can be in. A null `days_left` is ambiguous on its own: it
+            # means both "no data" and "supported indefinitely". Without this
+            # branch a fully maintained line was rated MEDIUM purely for being one
+            # major behind, which is the same mistake as rating Java 17 CRITICAL
+            # that this whole block exists to avoid. Covers Ruby's normal-
+            # maintenance branches and .NET Framework 4.7/4.8.
+            return SEV_LOW if lag.behind_major else SEV_CURRENT
+        # No support data at all: fall back to distance, but never above MEDIUM,
+        # because "N majors behind" is a poor proxy for runtime risk.
         return SEV_MEDIUM if lag.behind_major else SEV_CURRENT
 
     # Ordering note: the node image branch is deliberately above these checks.

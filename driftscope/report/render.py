@@ -53,6 +53,8 @@ ECO_LABEL = {
     "dotnet-tfm": ".NET target framework",
     "dotnet-sdk": ".NET SDK",
     "jvm-toolchain": "JVM toolchain",
+    "rubygems": "Ruby gem",
+    "ruby-runtime": "Ruby runtime",
 }
 
 
@@ -200,8 +202,11 @@ def _md_vulns(r) -> list[str]:
     for sec in s.sections:
         out.append(f"- **{sec.title}: {sec.count}**")
         for v in sec.shown:
-            out.append(f"  - [{v.cve}]({v.url}) `{v.severity or 'unrated'}` "
-                       f"{v.summary[:120]}")
+            # `--` where no CVSS v3 vector exists: unscored is not the same
+            # claim as harmless, so it must not render as a number.
+            sc = f"{v.score}" if v.score is not None else "--"
+            out.append(f"  - `{sc:>3}/100` [{v.cve}]({v.url}) "
+                       f"`{v.severity or 'unrated'}` {v.summary[:120]}")
         if sec.hidden:
             out.append(f"  - _+{sec.hidden} more not described_")
     if s.upgrade_clears_nothing:

@@ -1,0 +1,24 @@
+{
+  "_comment": "Synthetic: no repository in the recording org had any tags, so this is hand-built to the documented shape. Covers an annotated tag (has an annotatedtags record with date + message) and a lightweight one (objectId points straight at a commit, so no date and no message exist).",
+  "count": 3,
+  "value": [
+    {
+      "name": "refs/tags/v2.4.0",
+      "objectId": "aaaa111111111111111111111111111111111111",
+      "creator": { "displayName": "Build Service" },
+      "url": "https://dev.azure.com/contoso/Platform/_apis/git/repositories/payments/refs/tags/v2.4.0"
+    },
+    {
+      "name": "refs/tags/v2.3.0",
+      "objectId": "bbbb222222222222222222222222222222222222",
+      "creator": { "displayName": "Build Service" },
+      "url": "https://dev.azure.com/contoso/Platform/_apis/git/repositories/payments/refs/tags/v2.3.0"
+    },
+    {
+      "name": "refs/tags/nightly-2026-01-04",
+      "objectId": "cccc333333333333333333333333333333333333",
+      "creator": { "displayName": "Build Service" },
+      "url": "https://dev.azure.com/contoso/Platform/_apis/git/repositories/payments/refs/tags/nightly-2026-01-04"
+    }
+  ]
+}

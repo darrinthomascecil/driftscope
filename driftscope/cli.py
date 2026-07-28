@@ -23,6 +23,8 @@ from .models import (
     NPM,
     NUGET,
     PYPI,
+    RUBYGEMS,
+    RUBY_RUNTIME,
     SEV_CRITICAL,
     SEV_HIGH,
     SEV_LOW,
@@ -58,9 +60,10 @@ ECOSYSTEM_GROUPS = {
     "terraform": {TERRAFORM_PROVIDER, TERRAFORM_MODULE},
     "azure": {AZURE_API},
     "containers": {DOCKER, HELM, K8S_API},
-    "deps": {PYPI, NPM, GO, NUGET, MAVEN},
+    "deps": {PYPI, NPM, GO, NUGET, MAVEN, RUBYGEMS},
     "dotnet": {NUGET, DOTNET_TFM, DOTNET_SDK},
     "jvm": {MAVEN, JVM_TOOLCHAIN},
+    "ruby": {RUBYGEMS, RUBY_RUNTIME},
     "ci": {GH_ACTION},
 }
 
@@ -132,6 +135,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--ref", metavar="REF", help="branch or tag to clone (remote targets only)")
     s.add_argument("--keep-clone", action="store_true", help="do not delete the temporary clone")
+    s.add_argument(
+        "--ado-org", metavar="ORG",
+        help="read a bare project/repo target as Azure DevOps on this organisation "
+             "(a full dev.azure.com URL needs no flag)",
+    )
     s.add_argument(
         "--ecosystem",
         action="append",
@@ -238,7 +246,8 @@ def cmd_ecosystems() -> int:
 
 def cmd_scan(args: argparse.Namespace) -> int:
     try:
-        with open_source(args.path, ref=args.ref, keep=args.keep_clone) as src:
+        with open_source(args.path, ref=args.ref, keep=args.keep_clone,
+                         ado_org=args.ado_org) as src:
             return _scan_source(args, src)
     except CloneError as e:
         print(f"driftscope: {e}", file=sys.stderr)
@@ -383,7 +392,12 @@ def cmd_trend(args: argparse.Namespace) -> int:
         if args.json == "-":
             print(text)
         else:
-            out = resolve_out_path(args.json, src, "json")
+            # `trend` has no Source: it reads a history directory, not a repo.
+            # Passing the undefined `src` here was a NameError on every
+            # `trend --json <file>` -- the path `--json -` never touches.
+            out = Path(args.json).expanduser()
+            if out.is_dir():
+                out = out / f"drift-trend-{directory.name}.json"
             out.write_text(text)
             print(f"wrote {out}", file=sys.stderr)
     else:

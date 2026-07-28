@@ -249,8 +249,19 @@ def resolve_node_image(c: Component, ctx: Context) -> Resolution:
                     f"inferred from AgentBaker release {end.tag}"
                 )
 
+    target = latest or (candidates[-1] if candidates else None)
+    if target is None and not notes:
+        # No AKS-reported upgrade, no AgentBaker index, and nothing odd about the
+        # version string -- so there is neither an answer nor a reason for its
+        # absence, which renders as an unexplained `unknown`. Name the lookup that
+        # was unavailable instead: a finding with no answer still owes a reason.
+        notes.append(
+            "no upgrade target available: AKS reported none and the AgentBaker "
+            "release index could not be read"
+        )
+
     return Resolution(
-        latest_stable=latest or (candidates[-1] if candidates else None),
+        latest_stable=target,
         releases=releases,
         repo="Azure/AgentBaker",
         homepage="https://github.com/Azure/AgentBaker/releases",

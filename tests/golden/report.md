@@ -143,18 +143,18 @@ _issues are filed-in-window signals, not proven regressions; breaking-change not
 **Known vulnerabilities** &middot; 11 affecting `2.15.2` &middot; `com.fasterxml.jackson.core:jackson-databind` via OSV
 
 - **Fixed by upgrading to 2.20.0: 9**
-  - [CVE-2024-1001](https://osv.dev/vulnerability/GHSA-xxxx-0001) `CRITICAL` Advisory number 1 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
-  - [CVE-2024-1002](https://osv.dev/vulnerability/GHSA-xxxx-0002) `HIGH` Advisory number 2 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
-  - [CVE-2024-1003](https://osv.dev/vulnerability/GHSA-xxxx-0003) `MODERATE` Advisory number 3 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
-  - [CVE-2024-1004](https://osv.dev/vulnerability/GHSA-xxxx-0004) `LOW` Advisory number 4 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
-  - [CVE-2024-1005](https://osv.dev/vulnerability/GHSA-xxxx-0005) `unrated` Advisory number 5 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
-  - [CVE-2024-1006](https://osv.dev/vulnerability/GHSA-xxxx-0006) `HIGH` Advisory number 6 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - ` 98/100` [CVE-2024-1001](https://osv.dev/vulnerability/GHSA-xxxx-0001) `CRITICAL` Advisory number 1 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - ` 88/100` [CVE-2024-1002](https://osv.dev/vulnerability/GHSA-xxxx-0002) `HIGH` Advisory number 2 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - ` 75/100` [CVE-2024-1003](https://osv.dev/vulnerability/GHSA-xxxx-0003) `MODERATE` Advisory number 3 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - ` 61/100` [CVE-2024-1004](https://osv.dev/vulnerability/GHSA-xxxx-0004) `LOW` Advisory number 4 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - ` --/100` [CVE-2024-1005](https://osv.dev/vulnerability/GHSA-xxxx-0005) `unrated` Advisory number 5 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - `100/100` [CVE-2024-1006](https://osv.dev/vulnerability/GHSA-xxxx-0006) `HIGH` Advisory number 6 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
   - _+3 more not described_
 - **Still present after upgrade: 2**
-  - [CVE-2024-1020](https://osv.dev/vulnerability/GHSA-xxxx-0020) `HIGH` Advisory number 20 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
-  - [CVE-2024-1021](https://osv.dev/vulnerability/GHSA-xxxx-0021) `MODERATE` Advisory number 21 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - ` 88/100` [CVE-2024-1020](https://osv.dev/vulnerability/GHSA-xxxx-0020) `HIGH` Advisory number 20 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - ` 75/100` [CVE-2024-1021](https://osv.dev/vulnerability/GHSA-xxxx-0021) `MODERATE` Advisory number 21 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
 - **Introduced by the upgrade: 1**
-  - [CVE-2024-1030](https://osv.dev/vulnerability/GHSA-xxxx-0030) `LOW` Advisory number 30 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - `100/100` [CVE-2024-1030](https://osv.dev/vulnerability/GHSA-xxxx-0030) `LOW` Advisory number 30 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
 
 **Upstream velocity** &middot; deteriorating &middot; `FasterXML/jackson-databind` (4 x 90-day windows)
 
@@ -186,10 +186,10 @@ _oldest window excluded from the baseline: the issue walk stopped at page 20 bef
 **Known vulnerabilities** &middot; 72 on record &middot; `redis` via OSV (approximate)
 
 - **Advisories on record: 72**
-  - [CVE-2024-1040](https://osv.dev/vulnerability/GHSA-xxxx-0040) `HIGH` Advisory number 40 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
-  - [CVE-2024-1041](https://osv.dev/vulnerability/GHSA-xxxx-0041) `HIGH` Advisory number 41 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
-  - [CVE-2024-1042](https://osv.dev/vulnerability/GHSA-xxxx-0042) `HIGH` Advisory number 42 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
-  - [CVE-2024-1043](https://osv.dev/vulnerability/GHSA-xxxx-0043) `HIGH` Advisory number 43 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - ` 61/100` [CVE-2024-1040](https://osv.dev/vulnerability/GHSA-xxxx-0040) `HIGH` Advisory number 40 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - ` --/100` [CVE-2024-1041](https://osv.dev/vulnerability/GHSA-xxxx-0041) `HIGH` Advisory number 41 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - `100/100` [CVE-2024-1042](https://osv.dev/vulnerability/GHSA-xxxx-0042) `HIGH` Advisory number 42 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
+  - ` 98/100` [CVE-2024-1043](https://osv.dev/vulnerability/GHSA-xxxx-0043) `HIGH` Advisory number 43 with a summary long enough to exercise the 110- and 120-character truncation in both reporters.
   - _+68 more not described_
 
 _both versions matched the same 72 advisories, so this query did not discriminate between them; distro package versions do not follow image tags. The fixed/remaining split is withheld._

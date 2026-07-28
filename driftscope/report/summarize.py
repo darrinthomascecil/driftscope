@@ -303,3 +303,90 @@ def spark_ratios(values) -> list[float]:
         return []
     peak = max((abs(v) for v in values), default=0) or 1
     return [abs(v) / peak for v in values]
+
+
+# ------------------------------------------------------------------- sections
+
+# A report grouped by ecosystem reads far better than one long severity-sorted
+# list, because the sections map onto who fixes them: a platform team owns the
+# IaC and the images, an application team owns its dependencies and runtime.
+#
+# This is a strict *partition*, deliberately not reusing `cli.ECOSYSTEM_GROUPS`.
+# Those groups overlap on purpose -- `nuget` is in both `deps` and `dotnet` so
+# `--ecosystems dotnet` picks it up -- and a report built on overlapping groups
+# would print the same finding twice.
+SECTIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("iac", "Infrastructure as code",
+     ("terraform-provider", "terraform-module", "azure-api-version")),
+    ("containers", "Containers and orchestration",
+     ("docker-image", "helm-chart", "k8s-api", "k8s-cluster")),
+    ("runtimes", "Runtimes and toolchains",
+     ("dotnet-sdk", "dotnet-tfm", "jvm-toolchain", "ruby-runtime")),
+    ("deps", "Application dependencies",
+     ("npm", "pypi", "maven", "nuget", "go-module", "rubygems")),
+    ("ci", "CI and build", ("github-action",)),
+    ("cloud", "Cloud resources", ("azure-sku", "azure-node-image")),
+)
+
+# Anything not listed above lands here rather than vanishing. A newly registered
+# ecosystem that quietly failed to appear in the report would be the same class
+# of bug the resolver contract test guards against on the other side.
+OTHER_SECTION = ("other", "Other")
+
+_SECTION_OF = {eco: key for key, _, ecos in SECTIONS for eco in ecos}
+_LABELS = {key: label for key, label, _ in SECTIONS} | {OTHER_SECTION[0]: OTHER_SECTION[1]}
+
+
+def section_for(ecosystem: str) -> str:
+    return _SECTION_OF.get(ecosystem, OTHER_SECTION[0])
+
+
+@dataclass(frozen=True)
+class FindingSection:
+    key: str
+    label: str
+    findings: list
+    counts: dict[str, int]
+    worst: str
+
+    @property
+    def actionable(self) -> int:
+        """Findings that are behind -- everything except current and unknown."""
+        return sum(
+            n for s, n in self.counts.items() if s not in ("current", "unknown")
+        )
+
+
+def group_findings(findings, *, severity_rank) -> list[FindingSection]:
+    """Partition findings into report sections, worst section first.
+
+    Ordering is by the section's worst severity, then by how many findings sit
+    at that severity, so the section demanding attention leads. Sections with no
+    findings are omitted entirely: printing "Containers: none" would be a claim
+    about an estate that may simply have no containers in it.
+    """
+    buckets: dict[str, list] = {}
+    for f in findings:
+        buckets.setdefault(section_for(f.component.ecosystem), []).append(f)
+
+    out: list[FindingSection] = []
+    for key, items in buckets.items():
+        counts: dict[str, int] = {}
+        for f in items:
+            counts[f.severity] = counts.get(f.severity, 0) + 1
+        worst = min((f.severity for f in items), key=lambda s: severity_rank(s))
+        out.append(
+            FindingSection(
+                key=key,
+                label=_LABELS.get(key, key),
+                findings=sorted(
+                    items,
+                    key=lambda f: (severity_rank(f.severity), f.component.ecosystem,
+                                   f.component.name),
+                ),
+                counts=counts,
+                worst=worst,
+            )
+        )
+    out.sort(key=lambda s: (severity_rank(s.worst), -s.counts.get(s.worst, 0), s.label))
+    return out

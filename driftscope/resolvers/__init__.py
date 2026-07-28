@@ -26,6 +26,8 @@ from ..models import (
     K8S_CLUSTER,
     NPM,
     PYPI,
+    RUBYGEMS,
+    RUBY_RUNTIME,
     TERRAFORM_MODULE,
     TERRAFORM_PROVIDER,
     Component,
@@ -40,6 +42,15 @@ class Context:
     github: GitHub
     allow_az: bool = True
     now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    # Forge clients keyed by kind. Populated by build_context; resolvers keep using
+    # `.github` directly, which is why adding this breaks nothing.
+    forges: dict = field(default_factory=dict)
+
+    def forge_for(self, kind: str | None):
+        """The client for a resolution's forge, defaulting to GitHub."""
+        from ..forge import resolve_forge
+
+        return resolve_forge(kind, self.forges)
 
 
 def parse_iso(s: str | None) -> datetime | None:
@@ -67,7 +78,8 @@ def parse_iso(s: str | None) -> datetime | None:
 
 
 def resolve(component: Component, ctx: Context) -> Resolution:
-    from . import azure, dotnet_jvm as dj, github_src, oci, packages, terraform as tf
+    from . import (azure, dotnet_jvm as dj, github_src, oci, packages,
+                   ruby as rb, terraform as tf)
 
     table = {
         TERRAFORM_PROVIDER: tf.resolve_provider,
@@ -88,6 +100,8 @@ def resolve(component: Component, ctx: Context) -> Resolution:
         DOTNET_TFM: dj.resolve_dotnet_tfm,
         DOTNET_SDK: dj.resolve_dotnet_sdk,
         JVM_TOOLCHAIN: dj.resolve_jvm_toolchain,
+        RUBYGEMS: rb.resolve_rubygem,
+        RUBY_RUNTIME: rb.resolve_ruby_runtime,
     }
     fn = table.get(component.ecosystem)
     if fn is None:

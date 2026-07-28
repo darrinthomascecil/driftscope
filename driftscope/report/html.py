@@ -18,6 +18,7 @@ import html
 import json
 import re
 from datetime import datetime
+from urllib.parse import urlencode
 
 from ..models import (
     Report,
@@ -29,8 +30,10 @@ from ..models import (
     SEV_UNKNOWN,
     severity_rank,
 )
+from ..source import parse_ado_url
 from .render import ECO_LABEL, _lag_phrase, _plural
 from .summarize import (
+    group_findings,
     spark_ratios,
     summarize_trend,
     summarize_velocity,
@@ -150,6 +153,16 @@ a{color:inherit;text-decoration-color:var(--text-muted);text-underline-offset:2p
   padding-top:16px}
 .empty{color:var(--text-muted);padding:14px 0;font-size:13.5px}
 
+/* sections: one table per domain, so a reader can stop at the part that is theirs */
+.sect{margin:0 0 26px}
+.sect:last-child{margin-bottom:0}
+.secth{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 4px;
+  font-size:15px;font-weight:650;letter-spacing:-.01em}
+.secmeta{font-weight:400;font-size:12.5px;color:var(--text-muted)}
+.secchips{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 8px;font-size:12px;
+  color:var(--text-secondary)}
+.seccount{display:inline-flex;align-items:center;gap:5px}
+
 /* findings rows expand in place: one location per component */
 tr.frow{cursor:pointer}
 th.tog,td.tog{width:26px;padding-left:4px;padding-right:0}
@@ -157,6 +170,14 @@ button.caret{background:none;border:0;padding:2px 4px;cursor:pointer;
   color:var(--text-muted);font-size:11px;line-height:1;border-radius:4px}
 button.caret:hover{color:var(--text-primary);background:var(--surface-2)}
 tr.fdetail>td{border-top:0;padding-top:0;background:var(--surface-1)}
+.cvss{display:inline-block;min-width:30px;padding:1px 6px;margin-right:7px;
+  border-radius:5px;font-size:11.5px;font-weight:600;text-align:center;
+  font-variant-numeric:tabular-nums;border:1px solid var(--rule);
+  color:var(--text-primary);background:var(--surface-2)}
+.cvss.critical{border-color:var(--critical);color:var(--critical)}
+.cvss.warning{border-color:var(--warning)}
+.cvss.low{border-color:var(--good)}
+.cvss.none{color:var(--text-muted);font-weight:400}
 tr.fdetail .detail{padding:2px 0 14px}
 
 /* upstream velocity: sits beneath the finding it qualifies */
@@ -184,7 +205,8 @@ tr.fdetail .detail{padding:2px 0 14px}
 """
 
 _JS = """
-const rows=[...document.querySelectorAll('#findings tbody tr.frow')];
+const rows=[...document.querySelectorAll('table.findings tbody tr.frow')];
+const sections=[...document.querySelectorAll('section.sect')];
 let sev='actionable', eco='all';
 function detailOf(r){ return r.dataset.for ? document.getElementById(r.dataset.for) : null; }
 function want(el){
@@ -200,6 +222,12 @@ function apply(){
     // A detail row is only visible when its own row passes the filter AND the
     // user expanded it; filtering must not silently reveal collapsed guidance.
     if(d) d.hidden = !ok || r.dataset.open!=='1';
+  }
+  // A section whose every row was filtered out becomes a heading over an empty
+  // table, which reads as "nothing wrong here" rather than "nothing matched".
+  for(const sec of sections){
+    const visible=[...sec.querySelectorAll('tbody tr.frow')].some(r=>!r.hidden);
+    sec.hidden=!visible;
   }
   document.getElementById('count').textContent=n+' shown';
   document.getElementById('none').hidden=n>0;
@@ -226,12 +254,21 @@ document.querySelectorAll('button.chip').forEach(b=>b.onclick=()=>{
   sev=b.dataset.v; apply();
 });
 document.getElementById('eco').onchange=ev=>{eco=ev.target.value; apply();};
-document.getElementById('expandall').onclick=()=>{
+const expandBtn=document.getElementById('expandall');
+function syncExpandLabel(){
+  // The button flips both ways, so its label has to follow the rows rather than
+  // stay fixed -- it read "expand all" while everything was already expanded.
+  const anyClosed = rows.some(r=>!r.hidden && detailOf(r) && r.dataset.open!=='1');
+  expandBtn.textContent = anyClosed ? 'expand all' : 'collapse all';
+}
+expandBtn.onclick=()=>{
   const anyClosed = rows.some(r=>!r.hidden && detailOf(r) && r.dataset.open!=='1');
   for(const r of rows){ if(r.hidden||!detailOf(r)) continue;
     if((r.dataset.open==='1') === anyClosed) toggle(r); }
+  syncExpandLabel();
 };
 apply();
+syncExpandLabel();
 """
 
 
@@ -288,8 +325,17 @@ def _vuln_rows(sec) -> str:
         items = []
         for v in sec.shown:
             sev = VSEV_STYLE.get(v.severity, "unknown")
+            # The 0-100 chip is the CVSS v3 base score x10. Advisories with no
+            # usable v3 vector render no chip at all rather than a placeholder --
+            # a number beside a CVE that no source stands behind is worse than a
+            # blank, and "unscored" is a different statement from "harmless".
+            chip = (f"<span class='cvss {sev}' title='CVSS v3 base score "
+                    f"{v.score / 10:.1f} of 10'>{v.score}</span>"
+                    if v.score is not None else
+                    "<span class='cvss none' title='advisory carries no CVSS v3 "
+                    "vector'>&mdash;</span>")
             items.append(
-                f"<div><a href='{e(v.url)}' target='_blank' rel='noopener'>"
+                f"<div>{chip}<a href='{e(v.url)}' target='_blank' rel='noopener'>"
                 f"{e(v.cve)}</a> <span class='badge {sev}'>{e(v.severity or 'unrated')}"
                 f"</span> {e(v.summary[:110])}</div>"
             )
@@ -297,6 +343,67 @@ def _vuln_rows(sec) -> str:
         if sec.hidden:
             out.append(f"<div class='note'>+{sec.hidden} more not described</div>")
     out.append("</td></tr>")
+    return "".join(out)
+
+
+def _registry_notes_block(f) -> str:
+    """What changed between the image running and the one available.
+
+    A private registry has no release notes endpoint, so this is assembled from
+    OCI labels on each image in the gap. Three claims are kept apart because they
+    are answers to different questions: what changed, what breaks, and what is
+    already wrong with the version in production right now.
+    """
+    ex = (f.resolution.extra or {}) if f.resolution else {}
+    if not ex.get("registry"):
+        return ""
+    changelog = ex.get("changelog") or []
+    breaking = ex.get("breaking") or []
+    ahead = ex.get("known_issues") or []
+    current_issue = ex.get("current_known_issues")
+    span = ex.get("span") or []
+    if not (changelog or breaking or ahead or current_issue or span):
+        return ""
+
+    out = []
+    a = out.append
+    a(f"<p><b>Registry notes</b> {e(ex['registry'])}"
+      f"{f' &middot; {len(span)} version(s) ahead' if span else ''}</p>")
+
+    # Deployed-version issues first: this is live in production, not prospective.
+    if current_issue:
+        a(f"<div class='note'><b>Known issue in the deployed version "
+          f"{e(str(f.component.current))}:</b> {e(current_issue)}</div>")
+
+    if breaking:
+        a("<div class='note'><b>Breaking changes in this upgrade</b></div><ul>")
+        for b in breaking[:8]:
+            a(f"<li><code>{e(b['version'])}</code> {e(b['text'])}</li>")
+        a("</ul>")
+
+    if changelog:
+        a("<div class='note'><b>Changelog</b></div><ul>")
+        for entry in changelog[:12]:
+            a(f"<li><code>{e(entry['version'])}</code> {e(entry['text'])}</li>")
+        a("</ul>")
+
+    if ahead:
+        a("<div class='note'><b>Known issues introduced along the way</b> "
+          "&mdash; present in intermediate versions, check whether the target "
+          "still carries them</div><ul>")
+        for k in ahead[:8]:
+            a(f"<li><code>{e(k['version'])}</code> {e(k['text'])}</li>")
+        a("</ul>")
+
+    # Absence of notes is not absence of change, and must not read as one.
+    documented = ex.get("documented_versions", 0)
+    if span and documented < len(span):
+        a(f"<div class='note'>{len(span) - documented} of {len(span)} version(s) "
+          "in this gap carry no changelog label &mdash; what changed in them is "
+          "unrecorded, not empty.</div>")
+    if ex.get("span_truncated"):
+        a("<div class='note'>Older versions in the gap were not opened; the "
+          "changelog above is the most recent portion only.</div>")
     return "".join(out)
 
 
@@ -400,7 +507,7 @@ _REMOTE_RE = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
 
 
 def _blob_url(report, source: str | None, line: int | None) -> str | None:
-    """Permalink a declaration site to GitHub.
+    """Permalink a declaration site to whichever forge the scan came from.
 
     Anchored to the scanned commit rather than a branch, so the link keeps
     pointing at the line that was actually scanned even after the branch moves.
@@ -409,10 +516,23 @@ def _blob_url(report, source: str | None, line: int | None) -> str | None:
     src = getattr(report, "source", None)
     if not src or not source or source.startswith("azure://"):
         return None
-    m = _REMOTE_RE.search(src.get("remote") or "")
+    remote = src.get("remote") or ""
+    ref = src.get("commit") or src.get("ref") or "HEAD"
+
+    ado = parse_ado_url(remote)
+    if ado:
+        # ADO addresses a file by query string, not path segments: `GC` marks the
+        # version as a Git Commit, and `path` must carry a leading slash. The
+        # line range is half-open, hence lineEnd = line + 1.
+        q = {"path": f"/{source}", "version": f"GC{ref}"}
+        if line:
+            q |= {"line": str(line), "lineEnd": str(line + 1),
+                  "lineStartColumn": "1", "lineEndColumn": "1"}
+        return f"{ado.web_base}?{urlencode(q)}"
+
+    m = _REMOTE_RE.search(remote)
     if not m:
         return None
-    ref = src.get("commit") or src.get("ref") or "HEAD"
     url = f"https://github.com/{m.group(1)}/{m.group(2)}/blob/{ref}/{source}"
     return f"{url}#L{line}" if line else url
 
@@ -521,6 +641,7 @@ def _finding_detail(report: Report, f) -> str:
             for ct in adv.cautions:
                 a(f"<li>{e(ct)}</li>")
             a("</ul>")
+    a(_registry_notes_block(f))
     d = f.delta
     if d and (d.breaking_notes or d.bug_issues):
         a(f"<p><b>Upstream delta</b> {e(d.from_ref)} &rarr; {e(d.to_ref)}"
@@ -624,43 +745,65 @@ def to_html(report: Report, *, title: str = "Version drift report") -> str:
     for k in ecos:
         a(f"<option value='{e(k)}'>{e(ECO_LABEL.get(k, k))}</option>")
     a("</select>")
-    a("<button class='chip' id='expandall' style='margin-left:8px'>expand all</button>")
+    a("<button class='chip' id='expandall' style='margin-left:8px'>collapse all</button>")
     a("<span style='margin-left:auto;color:var(--text-muted);font-size:12px' id='count'></span>")
     a("</div>")
 
-    a("<div class='scroll'><table id='findings'><thead><tr>"
-      "<th class='tog'></th>"
-      "<th>Severity</th><th>Component</th><th>Current</th><th>Latest stable</th>"
-      "<th>Behind by</th><th>Declared at</th></tr></thead><tbody>")
-    for i, f in enumerate(findings):
-        c, res = f.component, f.resolution
-        role, glyph, _ = SEV_STYLE.get(f.severity, SEV_STYLE[SEV_UNKNOWN])
-        where = _where(report, c.source, c.line)
-        rid = f"d{i}"
-        attrs = (f"data-sev='{e(f.severity)}' data-rank='{severity_rank(f.severity)}' "
-                 f"data-eco='{e(c.ecosystem)}'")
-        detail = _finding_detail(report, f)
+    # One table per section rather than a single long list. The sections map onto
+    # who fixes them -- a platform team owns the IaC and the images, an
+    # application team owns its dependencies -- so a reader can stop at the part
+    # that is theirs. Worst section first.
+    sections = group_findings(findings, severity_rank=severity_rank)
+    i = 0
+    for sec in sections:
+        chips = " ".join(
+            f"<span class='seccount'><span class='dot {SEV_STYLE.get(sv, SEV_STYLE[SEV_UNKNOWN])[0]}'></span>"
+            f"{n} {e(sv)}</span>"
+            for sv, n in sorted(sec.counts.items(), key=lambda kv: severity_rank(kv[0]))
+        )
+        a(f"<section class='sect' data-section='{e(sec.key)}'>")
+        a(f"<h3 class='secth'>{e(sec.label)}"
+          f"<span class='secmeta'>{sec.actionable} of {len(sec.findings)} behind</span></h3>")
+        a(f"<div class='secchips'>{chips}</div>")
+        a("<div class='scroll'><table class='findings'><thead><tr>"
+          "<th class='tog'></th>"
+          "<th>Severity</th><th>Component</th><th>Current</th><th>Latest stable</th>"
+          "<th>Behind by</th><th>Declared at</th></tr></thead><tbody>")
+        for f in sec.findings:
+            i += 1
+            c, res = f.component, f.resolution
+            role, glyph, _ = SEV_STYLE.get(f.severity, SEV_STYLE[SEV_UNKNOWN])
+            where = _where(report, c.source, c.line)
+            rid = f"d{i}"
+            attrs = (f"data-sev='{e(f.severity)}' data-rank='{severity_rank(f.severity)}' "
+                     f"data-eco='{e(c.ecosystem)}'")
+            detail = _finding_detail(report, f)
 
-        a(f"<tr class='frow' {attrs} data-for='{rid}'>")
-        if detail:
-            a(f"<td class='tog'><button class='caret' aria-expanded='false' "
-              f"aria-controls='{rid}' title='show guidance'>&#9656;</button></td>")
-        else:
-            a("<td class='tog'></td>")
-        a(f"<td><span class='badge {role}'><span class='g'>{glyph}</span>{e(f.severity)}</span></td>")
-        a(f"<td><span class='name'>{e(c.name)}</span><br>"
-          f"<span class='eco'>{e(ECO_LABEL.get(c.ecosystem, c.ecosystem))}</span></td>")
-        a(f"<td class='v'>{e(c.current or '—')}</td>")
-        a(f"<td class='v'>{e(res.latest_stable or '?')}</td>")
-        a(f"<td>{e(_lag_phrase(f))}</td>")
-        a(f"<td class='where'>{where}</td></tr>")
-        # Guidance for this component, in the row beneath it -- so there is one
-        # place per component rather than a table and a separate section to
-        # cross-reference.
-        if detail:
-            a(f"<tr class='fdetail' id='{rid}' {attrs} hidden>"
-              f"<td class='tog'></td><td colspan='6'>{detail}</td></tr>")
-    a("</tbody></table></div>")
+            # Guidance is expanded on open. The report is read once, usually by
+            # someone who did not run the scan, so the upgrade advice is the point --
+            # making them click 20 carets to reach it buries the answer behind the
+            # question. The caret still collapses a row that is not relevant.
+            a(f"<tr class='frow' {attrs} data-for='{rid}' data-open='1'>")
+            if detail:
+                a(f"<td class='tog'><button class='caret' aria-expanded='true' "
+                  f"aria-controls='{rid}' title='hide guidance'>&#9662;</button></td>")
+            else:
+                a("<td class='tog'></td>")
+            a(f"<td><span class='badge {role}'><span class='g'>{glyph}</span>{e(f.severity)}</span></td>")
+            a(f"<td><span class='name'>{e(c.name)}</span><br>"
+              f"<span class='eco'>{e(ECO_LABEL.get(c.ecosystem, c.ecosystem))}</span></td>")
+            a(f"<td class='v'>{e(c.current or '—')}</td>")
+            a(f"<td class='v'>{e(res.latest_stable or '?')}</td>")
+            a(f"<td>{e(_lag_phrase(f))}</td>")
+            a(f"<td class='where'>{where}</td></tr>")
+            # Guidance for this component, in the row beneath it -- so there is one
+            # place per component rather than a table and a separate section to
+            # cross-reference.
+            if detail:
+                a(f"<tr class='fdetail' id='{rid}' {attrs}>"
+                  f"<td class='tog'></td><td colspan='6'>{detail}</td></tr>")
+        a("</tbody></table></div>")
+        a("</section>")
     a("<div class='empty' id='none' hidden>Nothing matches this filter.</div>")
     a("</div>")
 

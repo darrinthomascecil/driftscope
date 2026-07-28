@@ -29,6 +29,8 @@ MAVEN = "maven"
 DOTNET_TFM = "dotnet-tfm"
 DOTNET_SDK = "dotnet-sdk"
 JVM_TOOLCHAIN = "jvm-toolchain"
+RUBYGEMS = "rubygems"
+RUBY_RUNTIME = "ruby-runtime"
 
 SEV_CRITICAL = "critical"
 SEV_HIGH = "high"
@@ -82,7 +84,11 @@ class Resolution:
 
     latest_stable: str | None = None
     releases: list[Release] = field(default_factory=list)
-    repo: str | None = None  # "owner/name" on GitHub, when known
+    # "owner/name" on GitHub, "org/project/repo" on Azure DevOps.
+    repo: str | None = None
+    # Which forge `repo` is addressed on. Defaulting to GitHub means every existing
+    # resolver keeps working untouched, and the JSON schema change is additive.
+    forge: str = "github"
     homepage: str | None = None
     deprecated: bool = False
     note: str | None = None

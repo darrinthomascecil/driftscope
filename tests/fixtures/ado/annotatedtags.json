@@ -1,0 +1,15 @@
+{
+  "_comment": "Keyed by objectId. Only annotated tags have a record here; a lightweight tag's objectId resolves to a commit and this lookup returns nothing, which is why ReleaseRecord.published is None for it.",
+  "aaaa111111111111111111111111111111111111": {
+    "name": "v2.4.0",
+    "objectId": "aaaa111111111111111111111111111111111111",
+    "taggedBy": { "name": "Build Service", "date": "2026-01-10T09:15:00Z" },
+    "message": "BREAKING CHANGES:\n\n* `PaymentClient` - the `legacyMode` flag has been removed\n* minimum required .NET version is now 8.0\n\nENHANCEMENTS:\n\n* faster settlement batching\n"
+  },
+  "bbbb222222222222222222222222222222222222": {
+    "name": "v2.3.0",
+    "objectId": "bbbb222222222222222222222222222222222222",
+    "taggedBy": { "name": "Build Service", "date": "2025-09-02T14:02:00Z" },
+    "message": "ENHANCEMENTS:\n\n* retry policy is now configurable\n"
+  }
+}

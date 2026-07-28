@@ -24,6 +24,7 @@ component, not for everything in the image; a real image scan is a different too
 from __future__ import annotations
 
 import json
+import math
 import re
 import urllib.error
 import urllib.request
@@ -87,6 +88,65 @@ VARIANT_DISTRO = {
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MODERATE": 2, "MEDIUM": 2, "LOW": 3, "": 4}
 
 
+# ---------------------------------------------------------------- CVSS scoring
+
+# CVSS v3.1 base-score metric weights, from the published specification. OSV hands
+# back a vector string rather than a number, so the score is computed here -- it is
+# arithmetic on data the advisory supplied, not an opinion about severity.
+_CVSS_W = {
+    "AV": {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2},
+    "AC": {"L": 0.77, "H": 0.44},
+    "UI": {"N": 0.85, "R": 0.62},
+    "C": {"H": 0.56, "L": 0.22, "N": 0.0},
+    "I": {"H": 0.56, "L": 0.22, "N": 0.0},
+    "A": {"H": 0.56, "L": 0.22, "N": 0.0},
+}
+# Privileges Required is weighted differently when the vulnerability can affect
+# resources beyond its own security scope.
+_CVSS_PR = {False: {"N": 0.85, "L": 0.62, "H": 0.27},
+            True: {"N": 0.85, "L": 0.68, "H": 0.50}}
+
+
+def _cvss_roundup(x: float) -> float:
+    """The spec's own rounding: smallest one-decimal value >= x.
+
+    Ordinary round() disagrees with published scores at the boundaries, which is
+    how a computed 9.8 becomes a 9.7 that matches no advisory anyone can look up.
+    """
+    i = int(round(x * 100000))
+    return i / 100000.0 if i % 10000 == 0 else (math.floor(i / 10000) + 1) / 10.0
+
+
+def cvss_base_score(vector: str | None) -> float | None:
+    """CVSS v3.x base score from a vector string, or None if it cannot be computed.
+
+    None rather than 0.0 for an absent, malformed or non-v3 vector: 0.0 is a real
+    score meaning "no impact", and a missing measurement must not impersonate one.
+    v2 and v4 vectors return None -- they use different formulas, and guessing an
+    equivalent would invent a number.
+    """
+    if not isinstance(vector, str) or not vector:
+        return None
+    try:
+        m = dict(p.split(":", 1) for p in vector.split("/") if ":" in p)
+        if not str(m.get("CVSS", "")).startswith("3"):
+            return None
+        changed = m.get("S") == "C"
+        iss = 1 - ((1 - _CVSS_W["C"][m["C"]])
+                   * (1 - _CVSS_W["I"][m["I"]])
+                   * (1 - _CVSS_W["A"][m["A"]]))
+        impact = ((7.52 * (iss - 0.029) - 3.25 * (iss - 0.02) ** 15) if changed
+                  else 6.42 * iss)
+        if impact <= 0:
+            return 0.0
+        expl = (8.22 * _CVSS_W["AV"][m["AV"]] * _CVSS_W["AC"][m["AC"]]
+                * _CVSS_PR[changed][m["PR"]] * _CVSS_W["UI"][m["UI"]])
+        raw = min(1.08 * (impact + expl), 10.0) if changed else min(impact + expl, 10.0)
+        return _cvss_roundup(raw)
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
 @dataclass
 class Vuln:
     id: str
@@ -96,6 +156,17 @@ class Vuln:
     cvss: str = ""
     fixed_in: list[str] = field(default_factory=list)
     url: str = ""
+
+    @property
+    def score(self) -> int | None:
+        """Danger on 0-100: the CVSS v3 base score x10, nothing invented.
+
+        None when the advisory carries no usable v3 vector. Rendering a default
+        there -- 0, or a midpoint -- would put a number beside a CVE that no
+        source stands behind, which is worse than an honest blank.
+        """
+        base = cvss_base_score(self.cvss)
+        return None if base is None else int(round(base * 10))
 
     @property
     def cve(self) -> str:

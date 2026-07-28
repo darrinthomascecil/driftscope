@@ -1,0 +1,25 @@
+source "https://rubygems.org"
+
+# Deliberately stale: Rails 6.1 went out of support in 2024.
+ruby "3.1.2"
+
+gem "rails", "~> 6.1.7"
+gem "pg", ">= 0.18", "< 2.0"
+gem "puma", "~> 5.6"
+gem "redis", "4.8.0"
+gem "nokogiri", "1.13.10"
+
+# Version comes from a constant -- not a literal, so it must not be guessed at.
+gem "sidekiq", SIDEKIQ_VERSION
+
+# No version at all: whatever bundler resolves.
+gem "rack-cors"
+
+group :development, :test do
+  gem "rspec-rails", "~> 5.1"
+  gem "pry", "0.14.1"
+end
+
+group :test do
+  gem "capybara", "~> 3.37"
+end

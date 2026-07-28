@@ -120,7 +120,8 @@ def scan_tree(
     root: Path, ecosystems: set[str] | None = None
 ) -> tuple[list[Component], int]:
     """Run every scanner over the tree. Returns (components, files_scanned)."""
-    from . import azure_iac, cicd, containers, dotnet, jvm, langdeps, terraform
+    from . import (azure_iac, cicd, containers, dotnet, jvm, langdeps, ruby,
+                   terraform)
 
     scanners = (
         terraform.scan_file,
@@ -130,6 +131,7 @@ def scan_tree(
         cicd.scan_file,
         dotnet.scan_file,
         jvm.scan_file,
+        ruby.scan_file,
     )
     out: list[Component] = []
     n = 0
