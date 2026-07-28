@@ -72,6 +72,121 @@ def _severity_counts(report) -> dict:
     return counts
 
 
+def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
+    """Validate, clone, and scan one repo. Returns (status, Report|None, error|None).
+
+    The report-producing core, split out of scan_request so the multi-repo endpoint
+    reuses the exact same clone -> run_scan path and gets Report objects to compare.
+    """
+    _p = on_progress or (lambda _e: None)
+    repo = req.get("repo") or req.get("url")
+    if not isinstance(repo, str) or not repo.strip():
+        return 400, None, "body must be a JSON object with a 'repo' git URL"
+    if not looks_remote(repo):
+        return 400, None, f"'repo' must be a remote git URL, got {repo!r}"
+    if not _allowed(_host_of(repo), allow_hosts):
+        return 403, None, f"host {_host_of(repo)!r} is not in the clone allowlist"
+    ecosystems = req.get("ecosystems")
+    if ecosystems is not None and not isinstance(ecosystems, list):
+        return 400, None, "'ecosystems' must be a list of ecosystem names"
+
+    from .engine import build_context, run_scan
+
+    _p({"phase": "cloning", "repo": repo})
+    try:
+        with open_source(repo, ref=req.get("ref"), ado_org=req.get("ado_org")) as src:
+            _p({"phase": "cloned", "commit": (src.commit or "")[:12] if src.cloned else None})
+            ctx = build_context(
+                offline=bool(req.get("offline")),
+                no_github=bool(req.get("no_github")),
+                no_az=bool(req.get("no_az")),
+                cache_dir=Path(cache_dir) if cache_dir else None,
+            )
+            report = run_scan(
+                src.path, ctx=ctx,
+                ecosystems=set(ecosystems) if ecosystems else None,
+                include_vulns=bool(req.get("include_vulns", True)),
+                include_velocity=bool(req.get("velocity", False)),
+                progress=on_progress,
+            )
+            report.root = src.display
+            if src.cloned:
+                report.source = {"remote": src.remote, "ref": src.ref, "commit": src.commit}
+    except CloneError as e:
+        return 400, None, str(e)
+    except Exception as e:  # a scan bug must not take the server down
+        return 500, None, f"scan failed: {type(e).__name__}: {e}"
+    return 200, report, None
+
+
+def render_report(report, fmt):
+    """Render a Report to (content_type, body_bytes, headers) for `fmt`."""
+    headers = {"X-Drift-Severity": ",".join(f"{k}={v}" for k, v in _severity_counts(report).items())}
+    commit = report.source.get("commit") if isinstance(report.source, dict) else None
+    if commit:
+        headers["X-Drift-Commit"] = str(commit)[:12]
+    if fmt == "html":
+        from .report import html as html_report
+        return "text/html; charset=utf-8", html_report.to_html(report).encode(), headers
+    content_type, fn = _RENDERERS[fmt]
+    return content_type, fn(report).encode(), headers
+
+
+MAX_REPOS = 12  # a fleet compare clones every repo; cap so one call can't run away
+
+
+def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
+    """Scan several repos and compare them. Returns (repo_results, FleetComparison).
+
+    Sequential on purpose: the disk cache makes later repos cheap (a shared dep is
+    resolved once and reused), and it keeps the streamed progress legible -- one repo
+    at a time. A repo that fails to clone is isolated: its error is recorded and the
+    comparison is built from the repos that succeeded.
+    """
+    from .compare import compare_reports
+
+    _p = on_progress or (lambda _e: None)
+    repos = req.get("repos") or []
+    named, errors, results = [], {}, []
+    for i, url in enumerate(repos):
+        _p({"phase": "repo", "repo_index": i + 1, "repo_total": len(repos), "repo": url})
+        sub = {k: v for k, v in req.items() if k != "repos"}
+        sub["repo"] = url
+        # repo_index/repo_total are added under distinct keys so they don't clobber a
+        # resolution event's own `total` (its component count).
+        _status, report, error = produce_report(
+            sub, cache_dir=cache_dir, allow_hosts=allow_hosts,
+            on_progress=lambda ev: _p({**ev, "repo_index": i + 1, "repo_total": len(repos)}),
+        )
+        if report is not None:
+            commit = (report.source or {}).get("commit") if isinstance(report.source, dict) else None
+            named.append((url, report))
+            results.append({"repo": url, "ok": True, "commit": (commit or "")[:12] or None,
+                            "severity": _severity_counts(report), "report": report})
+        else:
+            errors[url] = error
+            results.append({"repo": url, "ok": False, "error": error})
+    return results, compare_reports(named, errors=errors)
+
+
+def multi_json(results, fc):
+    """Serialise a multi-scan for the non-streaming JSON response (no report bodies)."""
+    return {
+        "repos": [{k: v for k, v in r.items() if k != "report"} for r in results],
+        "comparison": {
+            "repos": fc.repos,
+            "divergent_count": len(fc.divergent),
+            "shared_count": len(fc.shared),
+            "errors": fc.errors,
+            "rows": [{
+                "ecosystem": row.ecosystem, "name": row.name, "latest": row.latest,
+                "diverges": row.diverges, "worst": row.worst,
+                "pins": {repo: pin.versions for repo, pin in row.pins.items()},
+            } for row in fc.rows],
+        },
+    }
+
+
 def scan_request(
     req: dict,
     *,
@@ -94,72 +209,19 @@ def scan_request(
     def err(code: int, message: str):
         return code, "application/json; charset=utf-8", json.dumps({"error": message}).encode(), {}
 
-    repo = req.get("repo") or req.get("url")
-    if not isinstance(repo, str) or not repo.strip():
-        return err(400, "body must be a JSON object with a 'repo' git URL")
-    if not looks_remote(repo):
-        return err(400, f"'repo' must be a remote git URL, got {repo!r}")
-
-    host = _host_of(repo)
-    if not _allowed(host, allow_hosts):
-        return err(403, f"host {host!r} is not in the clone allowlist")
-
     fmt = str(req.get("format") or "json").lower()
     if fmt != "html" and fmt not in _RENDERERS:
         return err(400, f"unknown format {fmt!r}; use json, markdown, html, or text")
 
-    ecosystems = req.get("ecosystems")
-    if ecosystems is not None and not isinstance(ecosystems, list):
-        return err(400, "'ecosystems' must be a list of ecosystem names")
-
-    from .engine import build_context, run_scan
-
-    _p({"phase": "cloning", "repo": repo})
-    try:
-        with open_source(repo, ref=req.get("ref"), ado_org=req.get("ado_org")) as src:
-            _p({"phase": "cloned",
-                "commit": (src.commit or "")[:12] if src.cloned else None})
-            ctx = build_context(
-                offline=bool(req.get("offline")),
-                no_github=bool(req.get("no_github")),
-                no_az=bool(req.get("no_az")),
-                cache_dir=Path(cache_dir) if cache_dir else None,
-            )
-            report = run_scan(
-                src.path,
-                ctx=ctx,
-                ecosystems=set(ecosystems) if ecosystems else None,
-                include_vulns=bool(req.get("include_vulns", True)),
-                # Velocity = the issue open/close rate + release cadence over time.
-                # Opt-in: it walks each top-severity repo's issues (rate-limited), so
-                # a caller asks for it rather than paying the cost on every scan.
-                include_velocity=bool(req.get("velocity", False)),
-                progress=on_progress,
-            )
-            # Attribute to what was asked for, not the temp clone dir -- same as
-            # cmd_scan does, so the report reads identically to the CLI's.
-            report.root = src.display
-            if src.cloned:
-                report.source = {"remote": src.remote, "ref": src.ref, "commit": src.commit}
-    except CloneError as e:
-        # A clone failure is the caller's problem (bad URL, no auth), not a server
-        # fault -- 400, with git's own message.
-        return err(400, str(e))
-    except Exception as e:  # a scan bug must not take the server down
-        return err(500, f"scan failed: {type(e).__name__}: {e}")
-
-    # A compact severity summary in a header lets an agent read the headline
-    # without parsing the body, whatever the body format is.
-    headers = {"X-Drift-Severity": ",".join(f"{k}={v}" for k, v in _severity_counts(report).items())}
-    if src_commit := report.source.get("commit") if isinstance(report.source, dict) else None:
-        headers["X-Drift-Commit"] = str(src_commit)[:12]
+    status, report, error = produce_report(
+        req, cache_dir=cache_dir, allow_hosts=allow_hosts, on_progress=on_progress
+    )
+    if report is None:
+        return err(status, error)
 
     _p({"phase": "rendering", "format": fmt})
-    if fmt == "html":
-        from .report import html as html_report
-        return 200, "text/html; charset=utf-8", html_report.to_html(report).encode(), headers
-    content_type, fn = _RENDERERS[fmt]
-    return 200, content_type, fn(report).encode(), headers
+    content_type, body, headers = render_report(report, fmt)
+    return 200, content_type, body, headers
 
 
 _USAGE = {
@@ -169,6 +231,7 @@ _USAGE = {
         "GET /": "this message (or the browser UI if the client accepts text/html)",
         "GET /ui": "browser UI for running scans",
         "POST /scan": "clone a repo and return a drift report",
+        "POST /scan-multi": "scan several repos {\"repos\":[...]} and compare their drift",
     },
     "POST /scan body": {
         "repo": "https://github.com/org/repo   (required, remote git URL)",
@@ -229,7 +292,7 @@ class _Handler(BaseHTTPRequestHandler):
         parsed = self.path.split("?", 1)
         path = parsed[0].rstrip("/")
         query = parsed[1] if len(parsed) > 1 else ""
-        if path != "/scan":
+        if path not in ("/scan", "/scan-multi"):
             self._json(404, {"error": f"no route {self.path!r}"})
             return
 
@@ -254,7 +317,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(503, {"error": "server busy: too many concurrent scans"})
             return
         try:
-            if "stream=1" in query:
+            stream = "stream=1" in query
+            if path == "/scan-multi":
+                self._scan_multi(req, stream)
+            elif stream:
                 self._scan_streaming(req)
             else:
                 code, content_type, body, headers = scan_request(
@@ -265,6 +331,67 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(code, content_type, body, headers)
         finally:
             sem.release()
+
+    def _scan_multi(self, req, stream):
+        repos = req.get("repos")
+        if not isinstance(repos, list) or not repos:
+            self._json(400, {"error": "body must include a non-empty 'repos' list of git URLs"})
+            return
+        if len(repos) > MAX_REPOS:
+            self._json(400, {"error": f"too many repos: {len(repos)} > {MAX_REPOS}"})
+            return
+        cache_dir = self.server.ds_cache_dir       # type: ignore[attr-defined]
+        allow = self.server.ds_allow_hosts         # type: ignore[attr-defined]
+        if not stream:
+            results, fc = run_multi(req, cache_dir=cache_dir, allow_hosts=allow)
+            self._json(200, multi_json(results, fc))
+            return
+
+        import queue
+        from .report.compare_html import to_comparison_html
+
+        q: queue.Queue = queue.Queue()
+
+        def worker():
+            try:
+                results, fc = run_multi(req, cache_dir=cache_dir, allow_hosts=allow,
+                                        on_progress=lambda ev: q.put(("progress", ev)))
+                repos_out = []
+                for r in results:
+                    if r["ok"]:
+                        _, body, hdrs = render_report(r["report"], "html")
+                        repos_out.append({"repo": r["repo"], "ok": True,
+                                          "html": body.decode("utf-8", "replace"),
+                                          "severity": hdrs.get("X-Drift-Severity"),
+                                          "commit": r.get("commit")})
+                    else:
+                        repos_out.append({"repo": r["repo"], "ok": False, "error": r.get("error")})
+                payload = {"comparison_html": to_comparison_html(fc), "repos": repos_out}
+            except Exception as e:  # a bug must not wedge the stream
+                payload = {"error": f"{type(e).__name__}: {e}"}
+            q.put(("done", payload))
+            q.put(None)
+
+        threading.Thread(target=worker, daemon=True).start()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+
+        def frame(event, data):
+            self.wfile.write(f"event: {event}\ndata: {json.dumps(data)}\n\n".encode())
+            self.wfile.flush()
+
+        try:
+            while True:
+                item = q.get()
+                if item is None:
+                    break
+                frame(item[0], item[1])
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _scan_streaming(self, req):
         """Run the scan in a worker thread, streaming phase events as SSE.
