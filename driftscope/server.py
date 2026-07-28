@@ -476,12 +476,41 @@ def run_server(
     allow_hosts: tuple[str, ...] = (),
     cache_dir: str | None = None,
 ) -> None:
-    """Serve until interrupted. Threaded so a slow scan does not block liveness."""
+    """Serve until interrupted. Threaded so a slow scan does not block liveness.
+
+    Shuts down gracefully on SIGTERM/SIGINT: it stops accepting new work and lets
+    in-flight scans drain (ThreadingHTTPServer joins its request threads on close).
+    That matters under an orchestrator -- Azure Container Apps, Kubernetes -- which
+    sends SIGTERM then SIGKILLs after a grace period; without this, every deploy or
+    scale-in would reset live scans. Orphans from a prior SIGKILL are swept at start.
+    """
+    import signal
+    import sys
+
+    from .source import sweep_stale_clones
+
+    swept = sweep_stale_clones(0)  # nothing can be a live scan before we accept a request
+    if swept:
+        print(f"driftscope: swept {swept} orphaned clone dir(s) at startup", file=sys.stderr)
+
     httpd = ThreadingHTTPServer((host, port), _Handler)
     httpd.ds_sem = threading.Semaphore(max(1, max_concurrent))  # type: ignore[attr-defined]
     httpd.ds_allow_hosts = tuple(allow_hosts)  # type: ignore[attr-defined]
     httpd.ds_cache_dir = cache_dir or os.environ.get("DRIFTSCOPE_CACHE")  # type: ignore[attr-defined]
-    import sys
+
+    def _graceful(signum, _frame):
+        # shutdown() blocks until serve_forever() returns, so it must not run on the
+        # serving thread -- hand it to a helper thread.
+        print(f"driftscope: signal {signum} received; draining in-flight scans...",
+              file=sys.stderr)
+        threading.Thread(target=httpd.shutdown, daemon=True).start()
+
+    for _sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(_sig, _graceful)
+        except ValueError:
+            pass  # not on the main thread (embedded/test harness): skip signal wiring
+
     print(
         f"driftscope serving on http://{host}:{port} "
         f"(max_concurrent={max_concurrent}, "
@@ -491,6 +520,6 @@ def run_server(
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        pass
+        pass  # no signal handler installed (off-main-thread); still drain below
     finally:
-        httpd.server_close()
+        httpd.server_close()  # joins in-flight request threads: the actual drain

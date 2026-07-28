@@ -335,3 +335,53 @@ def test_scan_multi_rejects_empty_and_oversized(live_server):
     assert code == 400 and "non-empty" in json.loads(body)["error"]
     code, body = _post_expect_error(live_server + "/scan-multi", {"repos": ["https://github.com/o/r"] * 99})
     assert code == 400 and "too many" in json.loads(body)["error"]
+
+
+# --------------------------------------------------- graceful shutdown (SIGTERM)
+
+def test_serve_exits_gracefully_on_sigterm():
+    """SIGTERM must drain and exit 0, not leave the process killed by the signal.
+
+    Before the handler, SIGTERM hit Python's default (terminate) and the process
+    exited with -SIGTERM; an orchestrator's every deploy/scale-in would reset live
+    scans. A clean 0 proves serve_forever() stopped and server_close() drained.
+    """
+    import signal
+    import socket
+    import subprocess
+    import sys
+    import time
+    import urllib.request
+    from pathlib import Path
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+
+    repo_root = Path(__file__).resolve().parent.parent
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "driftscope", "serve",
+         "--host", "127.0.0.1", "--port", str(port)],
+        cwd=str(repo_root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    try:
+        up = False
+        for _ in range(60):
+            if proc.poll() is not None:
+                break
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1) as r:
+                    if r.status == 200:
+                        up = True
+                        break
+            except OSError:
+                time.sleep(0.1)
+        assert up, f"server did not come up (exit={proc.poll()})"
+
+        proc.send_signal(signal.SIGTERM)
+        assert proc.wait(timeout=10) == 0  # graceful drain + clean exit
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()

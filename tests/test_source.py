@@ -339,3 +339,63 @@ def test_a_failed_cache_write_never_fails_the_caller(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Path, "write_text", boom)
     cache.put("k", {"a": 1})  # must not raise
+
+
+# ------------------------------------------------ temp-clone cleanup (cloud hygiene)
+
+def test_sweep_stale_clones_removes_orphans_and_leaves_fresh(tmp_path):
+    import os
+    import time
+
+    from driftscope.source import CLONE_PREFIX, sweep_stale_clones
+
+    old = tmp_path / f"{CLONE_PREFIX}old"; old.mkdir()
+    fresh = tmp_path / f"{CLONE_PREFIX}fresh"; fresh.mkdir()
+    unrelated = tmp_path / "something-else"; unrelated.mkdir()
+    past = time.time() - 7200
+    os.utime(old, (past, past))  # age it beyond the cutoff
+
+    removed = sweep_stale_clones(older_than_secs=3600, root=tmp_path)
+
+    assert removed == 1
+    assert not old.exists()           # the orphan is gone
+    assert fresh.exists()             # a possibly-live clone is spared
+    assert unrelated.exists()         # only our own prefix is touched
+
+
+def test_startup_sweep_reaps_everything_present(tmp_path):
+    from driftscope.source import CLONE_PREFIX, sweep_stale_clones
+
+    for n in ("a", "b", "c"):
+        (tmp_path / f"{CLONE_PREFIX}{n}").mkdir()
+    # older_than=0 is how the server sweeps at boot: nothing can be live yet.
+    assert sweep_stale_clones(0, root=tmp_path) == 3
+    assert not list(tmp_path.glob(f"{CLONE_PREFIX}*"))
+
+
+def test_open_source_removes_temp_dir_when_clone_fails(monkeypatch):
+    from driftscope.source import CloneError, open_source
+
+    created = {}
+    real_mkdtemp = src_mod.tempfile.mkdtemp
+
+    def spy(*a, **k):
+        d = real_mkdtemp(*a, **k)
+        created["dir"] = Path(d)
+        return d
+
+    monkeypatch.setattr(src_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(src_mod.tempfile, "mkdtemp", spy)
+
+    class _Failed:
+        returncode = 1
+        stderr = "fatal: repository 'x' not found"
+        stdout = ""
+
+    monkeypatch.setattr(src_mod, "_git", lambda *a, **k: _Failed())
+
+    with pytest.raises(CloneError):
+        with open_source("https://github.com/o/nope"):
+            pass  # pragma: no cover
+
+    assert created["dir"] and not created["dir"].exists()  # cleaned up despite failure
