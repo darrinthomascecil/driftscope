@@ -55,7 +55,7 @@ def _posture(fc) -> str:
     out = ["<div class='sub' style='margin:14px 0 4px;font-weight:600'>Fleet posture</div>",
            "<div class='scroll'><table class='cmp'><thead><tr><th>Repo</th>"]
     for s in _SEV_ORDER:
-        out.append(f"<th class='sev-{s}'>{e(s)}</th>")
+        out.append(f"<th class='num sev-{s}'>{e(s)}</th>")  # num: align header with the counts below
     out.append("</tr></thead><tbody>")
     for repo in fc.repos:
         c = fc.posture.get(repo, {})
