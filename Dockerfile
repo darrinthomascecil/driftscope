@@ -156,6 +156,50 @@ WORKDIR /src
 RUN python -m pytest -q -m "not network"
 
 
+# ------------------------------------------------------------- az-enabled cloud
+# Opt-in variant for running in Azure: `docker build --target cloud -t
+# driftscope:cloud`. The default slim image (414MB) is unchanged and stays the
+# last stage below.
+#
+# Why az is here when the base deliberately omits it: three paths shell to the az
+# CLI, not to an env token -- the --live-azure estate scan (live/azure.py gates on
+# `az account show`), ACR image drift (`az acr login --expose-token`), and the ARM
+# api-version resolver. Bundling az lets all three authenticate through a managed
+# identity with no stored secret, via the entrypoint's `az login --identity`.
+#
+# az is installed from Microsoft's signed apt repo, pinned by the repo GPG key --
+# NOT the `curl https://aka.ms/... | bash` pipe the old `azure` target ran. The
+# `bookworm` suite is deliberate: trixie is not published on the az repo yet, and
+# the azure-cli deb bundles its own Python, so the bookworm package runs on this
+# trixie base unchanged.
+FROM runtime AS cloud
+USER root
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends curl ca-certificates gnupg; \
+    install -d -m 0755 /etc/apt/keyrings; \
+    curl -sLS https://packages.microsoft.com/keys/microsoft.asc \
+      | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg; \
+    chmod go+r /etc/apt/keyrings/microsoft.gpg; \
+    arch="$(dpkg --print-architecture)"; \
+    printf 'Types: deb\nURIs: https://packages.microsoft.com/repos/azure-cli/\nSuites: bookworm\nComponents: main\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/microsoft.gpg\n' "$arch" \
+      > /etc/apt/sources.list.d/azure-cli.sources; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends azure-cli; \
+    apt-get purge -y gnupg; apt-get autoremove -y; \
+    rm -rf /var/lib/apt/lists/*; \
+    az version
+
+COPY docker/cloud-entrypoint.sh /usr/local/bin/cloud-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/cloud-entrypoint.sh
+
+USER drift
+# az writes its token cache under $HOME/.azure; drift owns /home/drift, so a
+# managed-identity login has somewhere to land without extra chown.
+ENTRYPOINT ["cloud-entrypoint.sh"]
+CMD ["--help"]
+
+
 # ----------------------------------------------------------------- default stage
 # This must stay the LAST stage in the file. `docker build` with no `--target`
 # builds the final stage, so ending on anything else silently hands out the wrong
