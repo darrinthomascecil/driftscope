@@ -1,0 +1,23 @@
+# Build context hygiene. The venv alone is larger than the finished image.
+.git
+.venv
+.pytest_cache
+.coverage
+__pycache__
+**/__pycache__
+*.pyc
+
+# Generated reports -- these are outputs, and several are checked in at the repo
+# root from live scans.
+*.html
+*.md
+!README.md
+drift-*.json
+sample-report.*
+
+# tests/, tools/ and fixtures/ are deliberately NOT ignored: the `test` stage
+# copies them, and excluding them here made that stage fail to build while the
+# runtime image looked fine. They total 1.4MB of context and never enter the
+# shipped image, which simply does not COPY them.
+Dockerfile
+.dockerignore
