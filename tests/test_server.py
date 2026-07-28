@@ -209,3 +209,39 @@ def test_post_scan_over_http(live_server):
     assert headers["Content-Type"].startswith("application/json")
     assert json.loads(body)["findings"]
     assert "X-Drift-Severity" in headers
+
+
+def _parse_sse(raw: str):
+    events = []
+    for frame in raw.split("\n\n"):
+        if not frame.strip():
+            continue
+        ev, data = "message", ""
+        for line in frame.split("\n"):
+            if line.startswith("event:"):
+                ev = line[6:].strip()
+            elif line.startswith("data:"):
+                data += line[5:].strip()
+        events.append((ev, json.loads(data) if data else None))
+    return events
+
+
+def test_scan_streaming_emits_progress_phases_then_done(live_server):
+    req = urllib.request.Request(
+        live_server + "/scan?stream=1",
+        data=json.dumps({"repo": "https://github.com/o/r", **HERMETIC}).encode(),
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        assert r.headers["Content-Type"].startswith("text/event-stream")
+        events = _parse_sse(r.read().decode())
+
+    phases = [d.get("phase") for ev, d in events if ev == "progress"]
+    assert "cloning" in phases, phases
+    assert "discovered" in phases, phases
+    assert "resolving" in phases, phases  # per-ecosystem resolution progress
+    # exactly one terminal done event, carrying the rendered report
+    dones = [d for ev, d in events if ev == "done"]
+    assert len(dones) == 1
+    assert dones[0]["status"] == 200 and dones[0]["severity"]
+    assert '"findings"' in dones[0]["body"]  # default format is json

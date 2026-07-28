@@ -77,13 +77,20 @@ def scan_request(
     *,
     cache_dir: str | None = None,
     allow_hosts: tuple[str, ...] = (),
+    on_progress=None,
 ) -> tuple[int, str, bytes, dict]:
     """Clone, scan, and render one request. Returns (status, content_type, body, headers).
 
     Errors come back as JSON with an `error` field and a 4xx/5xx status; a scan
     that ran comes back in the requested `format`. Nothing here raises for a bad
     request -- the HTTP shell must be able to answer every call.
+
+    `on_progress`, if given, is called with `{"phase": ...}` dicts as the scan moves
+    through cloning, per-ecosystem resolution, deltas, vulns, and rendering. The
+    streaming handler forwards these to the client as SSE; the plain path ignores it.
     """
+    _p = on_progress or (lambda _e: None)
+
     def err(code: int, message: str):
         return code, "application/json; charset=utf-8", json.dumps({"error": message}).encode(), {}
 
@@ -107,8 +114,11 @@ def scan_request(
 
     from .engine import build_context, run_scan
 
+    _p({"phase": "cloning", "repo": repo})
     try:
         with open_source(repo, ref=req.get("ref"), ado_org=req.get("ado_org")) as src:
+            _p({"phase": "cloned",
+                "commit": (src.commit or "")[:12] if src.cloned else None})
             ctx = build_context(
                 offline=bool(req.get("offline")),
                 no_github=bool(req.get("no_github")),
@@ -121,6 +131,7 @@ def scan_request(
                 ecosystems=set(ecosystems) if ecosystems else None,
                 include_vulns=bool(req.get("include_vulns", True)),
                 include_velocity=bool(req.get("velocity", False)),
+                progress=on_progress,
             )
             # Attribute to what was asked for, not the temp clone dir -- same as
             # cmd_scan does, so the report reads identically to the CLI's.
@@ -140,6 +151,7 @@ def scan_request(
     if src_commit := report.source.get("commit") if isinstance(report.source, dict) else None:
         headers["X-Drift-Commit"] = str(src_commit)[:12]
 
+    _p({"phase": "rendering", "format": fmt})
     if fmt == "html":
         from .report import html as html_report
         return 200, "text/html; charset=utf-8", html_report.to_html(report).encode(), headers
@@ -211,7 +223,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": f"no route {self.path!r}"})
 
     def do_POST(self):
-        path = self.path.split("?", 1)[0].rstrip("/")
+        parsed = self.path.split("?", 1)
+        path = parsed[0].rstrip("/")
+        query = parsed[1] if len(parsed) > 1 else ""
         if path != "/scan":
             self._json(404, {"error": f"no route {self.path!r}"})
             return
@@ -237,14 +251,75 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(503, {"error": "server busy: too many concurrent scans"})
             return
         try:
-            code, content_type, body, headers = scan_request(
-                req,
-                cache_dir=self.server.ds_cache_dir,  # type: ignore[attr-defined]
-                allow_hosts=self.server.ds_allow_hosts,  # type: ignore[attr-defined]
-            )
+            if "stream=1" in query:
+                self._scan_streaming(req)
+            else:
+                code, content_type, body, headers = scan_request(
+                    req,
+                    cache_dir=self.server.ds_cache_dir,  # type: ignore[attr-defined]
+                    allow_hosts=self.server.ds_allow_hosts,  # type: ignore[attr-defined]
+                )
+                self._send(code, content_type, body, headers)
         finally:
             sem.release()
-        self._send(code, content_type, body, headers)
+
+    def _scan_streaming(self, req):
+        """Run the scan in a worker thread, streaming phase events as SSE.
+
+        Progress events (`cloning`, `resolving` per ecosystem, `deltas`, `vulns`,
+        `rendering`) drive the client's live status; the final `done` event carries
+        the rendered report so the page can display it in place.
+        """
+        import queue
+
+        q: queue.Queue = queue.Queue()
+
+        def worker():
+            try:
+                result = scan_request(
+                    req,
+                    cache_dir=self.server.ds_cache_dir,  # type: ignore[attr-defined]
+                    allow_hosts=self.server.ds_allow_hosts,  # type: ignore[attr-defined]
+                    on_progress=lambda ev: q.put(("progress", ev)),
+                )
+            except Exception as e:  # a scan bug must not wedge the stream
+                result = (500, "application/json",
+                          json.dumps({"error": str(e)}).encode(), {})
+            q.put(("done", result))
+            q.put(None)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+
+        def frame(event, data):
+            self.wfile.write(f"event: {event}\ndata: {json.dumps(data)}\n\n".encode())
+            self.wfile.flush()
+
+        try:
+            while True:
+                item = q.get()
+                if item is None:
+                    break
+                kind, payload = item
+                if kind == "progress":
+                    frame("progress", payload)
+                else:
+                    status, content_type, body, headers = payload
+                    frame("done", {
+                        "status": status,
+                        "content_type": content_type,
+                        "severity": headers.get("X-Drift-Severity"),
+                        "commit": headers.get("X-Drift-Commit"),
+                        "body": body.decode("utf-8", "replace"),
+                    })
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # client disconnected; let the worker finish and be GC'd
 
     def log_message(self, fmt, *args):  # concise one-liner to stderr
         import sys
