@@ -151,7 +151,8 @@ _USAGE = {
     "service": "driftscope",
     "endpoints": {
         "GET /healthz": "liveness probe",
-        "GET /": "this message",
+        "GET /": "this message (or the browser UI if the client accepts text/html)",
+        "GET /ui": "browser UI for running scans",
         "POST /scan": "clone a repo and return a drift report",
     },
     "POST /scan body": {
@@ -188,10 +189,22 @@ class _Handler(BaseHTTPRequestHandler):
     def _json(self, code: int, obj: dict, headers: dict | None = None):
         self._send(code, "application/json; charset=utf-8", json.dumps(obj).encode(), headers)
 
+    def _send_ui(self):
+        from .ui import INDEX_HTML
+
+        self._send(200, "text/html; charset=utf-8", INDEX_HTML.encode())
+
     def do_GET(self):
         path = self.path.split("?", 1)[0].rstrip("/")
-        if path in ("", "/index"):
-            self._json(200, _USAGE)
+        if path == "/ui":
+            self._send_ui()
+        elif path in ("", "/index"):
+            # Same URL, two audiences: a browser (Accept: text/html) gets the visual
+            # UI; curl and agents get the JSON usage doc unchanged.
+            if "text/html" in (self.headers.get("Accept") or ""):
+                self._send_ui()
+            else:
+                self._json(200, _USAGE)
         elif path == "/healthz":
             self._json(200, {"status": "ok"})
         else:

@@ -171,7 +171,33 @@ def _post(url, obj):
 def test_healthz_and_usage(live_server):
     code, body = _get(live_server + "/healthz")
     assert code == 200 and json.loads(body)["status"] == "ok"
+    # No Accept header -> JSON usage (the API/agent path stays unchanged).
     code, body = _get(live_server + "/")
+    assert "POST /scan" in json.loads(body)["endpoints"]
+
+
+def _get_full(url, headers=None):
+    req = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return r.status, dict(r.headers), r.read()
+
+
+def test_ui_page_is_served(live_server):
+    code, hdrs, body = _get_full(live_server + "/ui")
+    assert code == 200
+    assert hdrs["Content-Type"].startswith("text/html")
+    html = body.decode()
+    assert "<form" in html and "DriftScope" in html and "/scan" in html
+
+
+def test_root_serves_ui_to_browsers_json_to_clients(live_server):
+    # A browser (Accept: text/html) gets the UI...
+    code, hdrs, body = _get_full(live_server + "/", {"Accept": "text/html,*/*"})
+    assert code == 200 and hdrs["Content-Type"].startswith("text/html")
+    assert "<form" in body.decode()
+    # ...an API client (Accept: application/json) gets the JSON usage doc.
+    code, hdrs, body = _get_full(live_server + "/", {"Accept": "application/json"})
+    assert hdrs["Content-Type"].startswith("application/json")
     assert "POST /scan" in json.loads(body)["endpoints"]
 
 
