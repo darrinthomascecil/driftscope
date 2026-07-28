@@ -33,6 +33,7 @@ from ..models import (
 from ..source import parse_ado_url
 from .render import ECO_LABEL, _lag_phrase, _plural
 from .summarize import (
+    group_findings,
     spark_ratios,
     summarize_trend,
     summarize_velocity,
@@ -152,6 +153,16 @@ a{color:inherit;text-decoration-color:var(--text-muted);text-underline-offset:2p
   padding-top:16px}
 .empty{color:var(--text-muted);padding:14px 0;font-size:13.5px}
 
+/* sections: one table per domain, so a reader can stop at the part that is theirs */
+.sect{margin:0 0 26px}
+.sect:last-child{margin-bottom:0}
+.secth{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 4px;
+  font-size:15px;font-weight:650;letter-spacing:-.01em}
+.secmeta{font-weight:400;font-size:12.5px;color:var(--text-muted)}
+.secchips{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 8px;font-size:12px;
+  color:var(--text-secondary)}
+.seccount{display:inline-flex;align-items:center;gap:5px}
+
 /* findings rows expand in place: one location per component */
 tr.frow{cursor:pointer}
 th.tog,td.tog{width:26px;padding-left:4px;padding-right:0}
@@ -194,7 +205,8 @@ tr.fdetail .detail{padding:2px 0 14px}
 """
 
 _JS = """
-const rows=[...document.querySelectorAll('#findings tbody tr.frow')];
+const rows=[...document.querySelectorAll('table.findings tbody tr.frow')];
+const sections=[...document.querySelectorAll('section.sect')];
 let sev='actionable', eco='all';
 function detailOf(r){ return r.dataset.for ? document.getElementById(r.dataset.for) : null; }
 function want(el){
@@ -210,6 +222,12 @@ function apply(){
     // A detail row is only visible when its own row passes the filter AND the
     // user expanded it; filtering must not silently reveal collapsed guidance.
     if(d) d.hidden = !ok || r.dataset.open!=='1';
+  }
+  // A section whose every row was filtered out becomes a heading over an empty
+  // table, which reads as "nothing wrong here" rather than "nothing matched".
+  for(const sec of sections){
+    const visible=[...sec.querySelectorAll('tbody tr.frow')].some(r=>!r.hidden);
+    sec.hidden=!visible;
   }
   document.getElementById('count').textContent=n+' shown';
   document.getElementById('none').hidden=n>0;
@@ -731,43 +749,61 @@ def to_html(report: Report, *, title: str = "Version drift report") -> str:
     a("<span style='margin-left:auto;color:var(--text-muted);font-size:12px' id='count'></span>")
     a("</div>")
 
-    a("<div class='scroll'><table id='findings'><thead><tr>"
-      "<th class='tog'></th>"
-      "<th>Severity</th><th>Component</th><th>Current</th><th>Latest stable</th>"
-      "<th>Behind by</th><th>Declared at</th></tr></thead><tbody>")
-    for i, f in enumerate(findings):
-        c, res = f.component, f.resolution
-        role, glyph, _ = SEV_STYLE.get(f.severity, SEV_STYLE[SEV_UNKNOWN])
-        where = _where(report, c.source, c.line)
-        rid = f"d{i}"
-        attrs = (f"data-sev='{e(f.severity)}' data-rank='{severity_rank(f.severity)}' "
-                 f"data-eco='{e(c.ecosystem)}'")
-        detail = _finding_detail(report, f)
+    # One table per section rather than a single long list. The sections map onto
+    # who fixes them -- a platform team owns the IaC and the images, an
+    # application team owns its dependencies -- so a reader can stop at the part
+    # that is theirs. Worst section first.
+    sections = group_findings(findings, severity_rank=severity_rank)
+    i = 0
+    for sec in sections:
+        chips = " ".join(
+            f"<span class='seccount'><span class='dot {SEV_STYLE.get(sv, SEV_STYLE[SEV_UNKNOWN])[0]}'></span>"
+            f"{n} {e(sv)}</span>"
+            for sv, n in sorted(sec.counts.items(), key=lambda kv: severity_rank(kv[0]))
+        )
+        a(f"<section class='sect' data-section='{e(sec.key)}'>")
+        a(f"<h3 class='secth'>{e(sec.label)}"
+          f"<span class='secmeta'>{sec.actionable} of {len(sec.findings)} behind</span></h3>")
+        a(f"<div class='secchips'>{chips}</div>")
+        a("<div class='scroll'><table class='findings'><thead><tr>"
+          "<th class='tog'></th>"
+          "<th>Severity</th><th>Component</th><th>Current</th><th>Latest stable</th>"
+          "<th>Behind by</th><th>Declared at</th></tr></thead><tbody>")
+        for f in sec.findings:
+            i += 1
+            c, res = f.component, f.resolution
+            role, glyph, _ = SEV_STYLE.get(f.severity, SEV_STYLE[SEV_UNKNOWN])
+            where = _where(report, c.source, c.line)
+            rid = f"d{i}"
+            attrs = (f"data-sev='{e(f.severity)}' data-rank='{severity_rank(f.severity)}' "
+                     f"data-eco='{e(c.ecosystem)}'")
+            detail = _finding_detail(report, f)
 
-        # Guidance is expanded on open. The report is read once, usually by
-        # someone who did not run the scan, so the upgrade advice is the point --
-        # making them click 20 carets to reach it buries the answer behind the
-        # question. The caret still collapses a row that is not relevant.
-        a(f"<tr class='frow' {attrs} data-for='{rid}' data-open='1'>")
-        if detail:
-            a(f"<td class='tog'><button class='caret' aria-expanded='true' "
-              f"aria-controls='{rid}' title='hide guidance'>&#9662;</button></td>")
-        else:
-            a("<td class='tog'></td>")
-        a(f"<td><span class='badge {role}'><span class='g'>{glyph}</span>{e(f.severity)}</span></td>")
-        a(f"<td><span class='name'>{e(c.name)}</span><br>"
-          f"<span class='eco'>{e(ECO_LABEL.get(c.ecosystem, c.ecosystem))}</span></td>")
-        a(f"<td class='v'>{e(c.current or '—')}</td>")
-        a(f"<td class='v'>{e(res.latest_stable or '?')}</td>")
-        a(f"<td>{e(_lag_phrase(f))}</td>")
-        a(f"<td class='where'>{where}</td></tr>")
-        # Guidance for this component, in the row beneath it -- so there is one
-        # place per component rather than a table and a separate section to
-        # cross-reference.
-        if detail:
-            a(f"<tr class='fdetail' id='{rid}' {attrs}>"
-              f"<td class='tog'></td><td colspan='6'>{detail}</td></tr>")
-    a("</tbody></table></div>")
+            # Guidance is expanded on open. The report is read once, usually by
+            # someone who did not run the scan, so the upgrade advice is the point --
+            # making them click 20 carets to reach it buries the answer behind the
+            # question. The caret still collapses a row that is not relevant.
+            a(f"<tr class='frow' {attrs} data-for='{rid}' data-open='1'>")
+            if detail:
+                a(f"<td class='tog'><button class='caret' aria-expanded='true' "
+                  f"aria-controls='{rid}' title='hide guidance'>&#9662;</button></td>")
+            else:
+                a("<td class='tog'></td>")
+            a(f"<td><span class='badge {role}'><span class='g'>{glyph}</span>{e(f.severity)}</span></td>")
+            a(f"<td><span class='name'>{e(c.name)}</span><br>"
+              f"<span class='eco'>{e(ECO_LABEL.get(c.ecosystem, c.ecosystem))}</span></td>")
+            a(f"<td class='v'>{e(c.current or '—')}</td>")
+            a(f"<td class='v'>{e(res.latest_stable or '?')}</td>")
+            a(f"<td>{e(_lag_phrase(f))}</td>")
+            a(f"<td class='where'>{where}</td></tr>")
+            # Guidance for this component, in the row beneath it -- so there is one
+            # place per component rather than a table and a separate section to
+            # cross-reference.
+            if detail:
+                a(f"<tr class='fdetail' id='{rid}' {attrs}>"
+                  f"<td class='tog'></td><td colspan='6'>{detail}</td></tr>")
+        a("</tbody></table></div>")
+        a("</section>")
     a("<div class='empty' id='none' hidden>Nothing matches this filter.</div>")
     a("</div>")
 
