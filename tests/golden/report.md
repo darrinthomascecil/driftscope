@@ -78,6 +78,11 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 
 ### CRITICAL - `hashicorp/azurerm` (Terraform provider)
 
+**Should you upgrade? — PLAN A STAGED UPGRADE**
+
+- _Why upgrade:_ 2 major versions behind; 4 years old
+- _Why wait:_ crosses 2 major versions -- stage the upgrade
+
 - **Current:** `2.99.0` (constraint `~> 2.99`)
 - **Latest stable:** `4.81.0`
 - **Behind by:** 2 major, 220 releases, 1586 days
@@ -98,6 +103,11 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 - Provider major bumps can force resource replacement
 
 ### CRITICAL - `com.fasterxml.jackson.core:jackson-databind` (Maven artifact)
+
+**Should you upgrade? — PLAN A STAGED UPGRADE**
+
+- _Why upgrade:_ 9 known vulnerabilities cleared by upgrading (3 critical/high); 3 years old
+- _Why wait:_ 3 breaking-change notes quoted from the release notes; the target introduces 1 new vulnerability
 
 - **Current:** `2.15.2`
 - **Latest stable:** `2.20.0`
@@ -132,7 +142,7 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 - 2.17.0: removed support for the legacy `JsonSerializable` interface
 - 2.18.0: minimum required Java version is now 17
 
-**Bug-labelled issues filed in this window** (14 open of 61 total)
+**Bug activity in the version window** (14 open of 61 filed) — a rough signal, not scoped to a specific version
 
 - [#4100](https://github.com/FasterXML/jackson-databind/issues/4100) Deserialisation regression #0
 - [#4101](https://github.com/FasterXML/jackson-databind/issues/4101) Deserialisation regression #1
@@ -172,6 +182,11 @@ _oldest window excluded from the baseline: the issue walk stopped at page 20 bef
 
 ### HIGH - `redis` (Container image)
 
+**Should you upgrade? — PLAN A STAGED UPGRADE**
+
+- _Why upgrade:_ 3 major versions behind; 6 years old
+- _Why wait:_ crosses 3 major versions -- stage the upgrade
+
 - **Current:** `5`
 - **Latest stable:** `8.8.1`
 - **Behind by:** 3 major, 2100 days
@@ -198,6 +213,11 @@ _both versions matched the same 72 advisories, so this query did not discriminat
 
 ### HIGH - `postgres` (Container image)
 
+**Should you upgrade? — PLAN A STAGED UPGRADE**
+
+- _Why upgrade:_ 3 major versions behind; 3 years old
+- _Why wait:_ crosses 3 major versions -- stage the upgrade
+
 - **Current:** `15`
 - **Latest stable:** `18.2`
 - **Behind by:** 3 major, 1100 days
@@ -211,6 +231,11 @@ _Vulnerability lookup: the guessed distro/package/version triple returned no adv
 
 ### MEDIUM - `Microsoft.CognitiveServices/accounts` (Azure API version)
 
+**Should you upgrade? — PLAN A STAGED UPGRADE**
+
+- _Why upgrade:_ 3 major versions behind
+- _Why wait:_ crosses 3 major versions -- stage the upgrade
+
 - **Current:** `2023-05-01`
 - **Latest stable:** `2026-05-01`
 - **Behind by:** 3 years, 4 api-versions, 1096 days
@@ -219,6 +244,10 @@ _Vulnerability lookup: the guessed distro/package/version triple returned no adv
 **Strategy.** Bump the apiVersion and re-deploy.
 
 ### MEDIUM - `github.com/spf13/cobra` (Go module)
+
+**Should you upgrade? — UPGRADE NOW**
+
+- _Why upgrade:_ 2 years old
 
 - **Current:** `v1.4.0`
 - **Latest stable:** `v1.8.1`

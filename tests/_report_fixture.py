@@ -344,6 +344,13 @@ def build_report() -> Report:
         note="matched 24 of 26 components across the two runs",
     )
 
+    # Populate the upgrade verdict exactly as the engine does, so the goldens cover
+    # the "should you upgrade?" rendering across the finding mix.
+    from driftscope import advisor
+
+    for f in findings:
+        f.verdict = advisor.upgrade_verdict(f.resolution, f.lag, f.delta, f.vulns, f.severity)
+
     return Report(
         root="/tmp/estate",
         findings=findings,

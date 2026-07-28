@@ -342,6 +342,7 @@ def run_scan(
         f.advice = advisor.advise(
             f.component, f.resolution, f.lag, f.severity, f.delta
         )
+        f.verdict = advisor.upgrade_verdict(f.resolution, f.lag, f.delta, f.vulns, f.severity)
 
     report.findings = findings
     report.stats.github_queries = ctx.github.queries

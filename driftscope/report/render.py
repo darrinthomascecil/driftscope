@@ -14,8 +14,19 @@ from ..models import (
     SEV_LOW,
     SEV_MEDIUM,
     SEV_UNKNOWN,
+    VERDICT_HOLD,
+    VERDICT_LOW,
+    VERDICT_PLAN,
+    VERDICT_UPGRADE,
     severity_rank,
 )
+
+_VERDICT_MD = {
+    VERDICT_UPGRADE: "UPGRADE NOW",
+    VERDICT_PLAN: "PLAN A STAGED UPGRADE",
+    VERDICT_HOLD: "HOLD",
+    VERDICT_LOW: "LOW PRIORITY",
+}
 from .summarize import (
     spark_ratios,
     summarize_trend,
@@ -334,6 +345,14 @@ def to_markdown(report: Report, *, max_detail: int = 40) -> str:
         c, res, adv = f.component, f.resolution, f.advice
         a(f"### {_BADGE[f.severity]} - `{c.name}` ({ECO_LABEL.get(c.ecosystem, c.ecosystem)})")
         a("")
+        if f.verdict:
+            a(f"**Should you upgrade? — {_VERDICT_MD.get(f.verdict.verdict, f.verdict.verdict)}**")
+            a("")
+            if f.verdict.move_reasons:
+                a(f"- _Why upgrade:_ {'; '.join(f.verdict.move_reasons)}")
+            if f.verdict.wait_reasons:
+                a(f"- _Why wait:_ {'; '.join(f.verdict.wait_reasons)}")
+            a("")
         a(f"- **Current:** `{c.current or 'unpinned'}`" + (f" (constraint `{c.raw}`)" if c.raw and c.raw != c.current else ""))
         a(f"- **Latest stable:** `{res.latest_stable or 'unknown'}`")
         a(f"- **Behind by:** {_lag_phrase(f)}")
@@ -392,8 +411,9 @@ def to_markdown(report: Report, *, max_detail: int = 40) -> str:
                     a(f"- {n}")
                 a("")
             if d.total_bug_count or d.bug_issues:
-                a(f"**Bug-labelled issues filed in this window** "
-                  f"({d.open_bug_count} open of {d.total_bug_count} total)")
+                a(f"**Bug activity in the version window** "
+                  f"({d.open_bug_count} open of {d.total_bug_count} filed) — a rough "
+                  f"signal, not scoped to a specific version")
                 a("")
                 for i in d.bug_issues[:10]:
                     a(f"- [#{i.number}]({i.url}) {i.title}")

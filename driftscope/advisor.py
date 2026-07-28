@@ -45,8 +45,84 @@ from .models import (
     GitHubDelta,
     Lag,
     Resolution,
+    UpgradeVerdict,
+    VERDICT_HOLD,
+    VERDICT_LOW,
+    VERDICT_PLAN,
+    VERDICT_UPGRADE,
 )
 from .scanners.cicd import GH_ACTION
+
+
+def upgrade_verdict(res: Resolution, lag: Lag, delta, vulns,
+                    severity: str = SEV_UNKNOWN) -> UpgradeVerdict | None:
+    """Weigh the cost of staying against the cost of moving, and call it.
+
+    Built from the version-scoped, trustworthy inputs -- vulnerabilities (from OSV)
+    and breaking-change notes (mined from release bodies) -- not the loose
+    issue-window count, which cannot say whether its bugs are in the version you are
+    on or the one you would move to. Returns None when there is nothing to weigh.
+    """
+    move: list[str] = []  # cost of staying -> reasons to upgrade
+    wait: list[str] = []  # cost of moving -> reasons to be careful
+
+    fixed_count = fixed_high = 0
+    if vulns is not None and vulns.upgrade_effect_known and vulns.fixed_count:
+        fixed_count = vulns.fixed_count
+        fixed_high = sum(1 for v in vulns.fixed_by_upgrade if v.severity in ("CRITICAL", "HIGH"))
+        extra = f" ({fixed_high} critical/high)" if fixed_high else ""
+        noun = "vulnerability" if fixed_count == 1 else "vulnerabilities"
+        move.append(f"{fixed_count} known {noun} cleared by upgrading{extra}")
+    if res.deprecated:
+        move.append("current version is deprecated / end-of-life upstream")
+    behind = lag.behind_major or 0
+    if behind >= 2:
+        move.append(f"{behind} major versions behind")
+    elif behind == 1:
+        move.append("one major version behind")
+    years = (lag.current_age_days or 0) // 365
+    if years >= 2:
+        move.append(f"{years} years old")
+
+    breaking = len(delta.breaking_notes) if (delta and delta.breaking_notes) else 0
+    if breaking:
+        wait.append(f"{breaking} breaking-change note{'' if breaking == 1 else 's'} "
+                    "quoted from the release notes")
+    if behind >= 2:
+        wait.append(f"crosses {behind} major versions -- stage the upgrade")
+    elif behind == 1:
+        wait.append("crosses a major version")
+    introduced_high = 0
+    if vulns is not None and vulns.upgrade_effect_known and vulns.introduced_count:
+        introduced_high = sum(
+            1 for v in vulns.introduced_by_upgrade if v.severity in ("CRITICAL", "HIGH")
+        )
+        extra = f" ({introduced_high} critical/high)" if introduced_high else ""
+        noun = "vulnerability" if vulns.introduced_count == 1 else "vulnerabilities"
+        wait.append(f"the target introduces {vulns.introduced_count} new {noun}{extra}")
+
+    if not move and not wait:
+        return None
+
+    # The severity score already weighs support windows (LTS runtimes, AKS node
+    # images), so a low/current score means "no rush" whatever the raw version
+    # distance -- don't let a distance-based call overstate it.
+    if severity in (SEV_CURRENT, SEV_LOW):
+        return UpgradeVerdict(VERDICT_LOW, move, wait)
+
+    urgent = bool(fixed_high or res.deprecated)     # security / EOL: real reason to move
+    staged = behind >= 2 or breaking >= 3           # cannot be a one-step bump
+    some_pressure = urgent or bool(fixed_count) or behind >= 1 or years >= 2
+
+    if introduced_high and not urgent:
+        verdict = VERDICT_HOLD          # target adds serious risk with no urgent reason to take it
+    elif staged:
+        verdict = VERDICT_PLAN          # worth doing, but multi-major / breaking -> stage it
+    elif some_pressure:
+        verdict = VERDICT_UPGRADE       # meaningful pressure, low friction: just do it
+    else:
+        verdict = VERDICT_LOW
+    return UpgradeVerdict(verdict, move, wait)
 
 # Days-behind thresholds
 STALE_DAYS_HIGH = 730  # two years
