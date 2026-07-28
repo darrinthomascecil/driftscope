@@ -185,3 +185,59 @@ def test_current_needs_no_advice():
     c, r, lag = mk(PYPI, "x", "2.0.0", "2.0.0")
     a = advise(c, r, lag, SEV_CURRENT)
     assert a.steps == [] and "No action" in a.strategy
+
+
+# --------------------------------------------------------- upgrade verdict
+
+from driftscope.advisor import upgrade_verdict
+from driftscope.models import (
+    Lag,
+    Resolution,
+    VERDICT_HOLD,
+    VERDICT_LOW,
+    VERDICT_PLAN,
+    VERDICT_UPGRADE,
+)
+from driftscope.vuln import Vuln, VulnReport
+
+
+def _vr(fixed=(), introduced=(), target="2.0.0"):
+    return VulnReport(
+        package="p", target_version=target,
+        fixed_count=len(fixed), introduced_count=len(introduced),
+        fixed_by_upgrade=[Vuln(id=f"f{i}", severity=s) for i, s in enumerate(fixed)],
+        introduced_by_upgrade=[Vuln(id=f"i{i}", severity=s) for i, s in enumerate(introduced)],
+    )
+
+
+def test_verdict_upgrade_now_when_pressure_and_low_friction():
+    v = upgrade_verdict(Resolution(latest_stable="2.0.0"),
+                        Lag(behind_major=0, current_age_days=800),
+                        None, _vr(fixed=("HIGH",)), SEV_HIGH)
+    assert v.verdict == VERDICT_UPGRADE
+    assert any("cleared by upgrading" in r for r in v.move_reasons)
+
+
+def test_verdict_plans_a_staged_upgrade_across_majors():
+    v = upgrade_verdict(Resolution(latest_stable="4.0.0"),
+                        Lag(behind_major=2), None, None, SEV_HIGH)
+    assert v.verdict == VERDICT_PLAN
+    assert any("major" in r for r in v.wait_reasons)
+
+
+def test_verdict_holds_when_target_adds_risk_without_pressure():
+    v = upgrade_verdict(Resolution(latest_stable="2.0.0"),
+                        Lag(behind_major=1), None, _vr(introduced=("CRITICAL",)), SEV_MEDIUM)
+    assert v.verdict == VERDICT_HOLD
+
+
+def test_verdict_is_low_priority_when_severity_is_low():
+    # 4 majors behind, but a low severity (e.g. a supported LTS) must not overstate.
+    v = upgrade_verdict(Resolution(latest_stable="25"),
+                        Lag(behind_major=4), None, None, SEV_LOW)
+    assert v.verdict == VERDICT_LOW
+
+
+def test_no_verdict_when_there_is_nothing_to_weigh():
+    assert upgrade_verdict(Resolution(latest_stable="1.0.0"),
+                           Lag(behind_major=0), None, None, SEV_MEDIUM) is None

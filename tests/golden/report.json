@@ -267,7 +267,17 @@
       },
       "delta": null,
       "velocity": null,
-      "vulns": null
+      "vulns": null,
+      "verdict": {
+        "verdict": "plan",
+        "move_reasons": [
+          "2 major versions behind",
+          "4 years old"
+        ],
+        "wait_reasons": [
+          "crosses 2 major versions -- stage the upgrade"
+        ]
+      }
     },
     {
       "component": {
@@ -461,6 +471,23 @@
             "comments_per_issue": 7.428571428571429
           }
         ],
+        "by_release": [
+          {
+            "version": "2.18.0",
+            "opened": 90,
+            "still_open": 35
+          },
+          {
+            "version": "2.17.0",
+            "opened": 75,
+            "still_open": 12
+          },
+          {
+            "version": "2.16.0",
+            "opened": 60,
+            "still_open": 3
+          }
+        ],
         "window_days": 90,
         "issue_trend": "deteriorating",
         "sentiment_trend": "deteriorating",
@@ -612,6 +639,17 @@
         "unmatched": false,
         "note": null,
         "error": null
+      },
+      "verdict": {
+        "verdict": "plan",
+        "move_reasons": [
+          "9 known vulnerabilities cleared by upgrading (3 critical/high)",
+          "3 years old"
+        ],
+        "wait_reasons": [
+          "3 breaking-change notes quoted from the release notes",
+          "the target introduces 1 new vulnerability"
+        ]
       }
     },
     {
@@ -732,6 +770,16 @@
         "unmatched": false,
         "note": "both versions matched the same 72 advisories, so this query did not discriminate between them; distro package versions do not follow image tags. The fixed/remaining split is withheld.",
         "error": null
+      },
+      "verdict": {
+        "verdict": "plan",
+        "move_reasons": [
+          "3 major versions behind",
+          "6 years old"
+        ],
+        "wait_reasons": [
+          "crosses 3 major versions -- stage the upgrade"
+        ]
       }
     },
     {
@@ -794,6 +842,16 @@
         "unmatched": true,
         "note": "the guessed distro/package/version triple returned no advisories, which means the mapping found nothing -- not that the image is clean",
         "error": null
+      },
+      "verdict": {
+        "verdict": "plan",
+        "move_reasons": [
+          "3 major versions behind",
+          "3 years old"
+        ],
+        "wait_reasons": [
+          "crosses 3 major versions -- stage the upgrade"
+        ]
       }
     },
     {
@@ -843,7 +901,16 @@
       },
       "delta": null,
       "velocity": null,
-      "vulns": null
+      "vulns": null,
+      "verdict": {
+        "verdict": "plan",
+        "move_reasons": [
+          "3 major versions behind"
+        ],
+        "wait_reasons": [
+          "crosses 3 major versions -- stage the upgrade"
+        ]
+      }
     },
     {
       "component": {
@@ -894,7 +961,14 @@
       },
       "delta": null,
       "velocity": null,
-      "vulns": null
+      "vulns": null,
+      "verdict": {
+        "verdict": "upgrade-now",
+        "move_reasons": [
+          "2 years old"
+        ],
+        "wait_reasons": []
+      }
     },
     {
       "component": {
@@ -943,7 +1017,16 @@
       },
       "delta": null,
       "velocity": null,
-      "vulns": null
+      "vulns": null,
+      "verdict": {
+        "verdict": "low-priority",
+        "move_reasons": [
+          "4 major versions behind"
+        ],
+        "wait_reasons": [
+          "crosses 4 major versions -- stage the upgrade"
+        ]
+      }
     },
     {
       "component": {
@@ -989,7 +1072,8 @@
       },
       "delta": null,
       "velocity": null,
-      "vulns": null
+      "vulns": null,
+      "verdict": null
     },
     {
       "component": {
@@ -1035,7 +1119,8 @@
       },
       "delta": null,
       "velocity": null,
-      "vulns": null
+      "vulns": null,
+      "verdict": null
     },
     {
       "component": {
@@ -1083,7 +1168,8 @@
       },
       "delta": null,
       "velocity": null,
-      "vulns": null
+      "vulns": null,
+      "verdict": null
     }
   ]
 }

@@ -78,12 +78,18 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 
 ### CRITICAL - `hashicorp/azurerm` (Terraform provider)
 
+**Should you upgrade? — PLAN A STAGED UPGRADE**
+
+- _Why upgrade:_ 2 major versions behind; 4 years old
+- _Why wait:_ crosses 2 major versions -- stage the upgrade
+
 - **Current:** `2.99.0` (constraint `~> 2.99`)
 - **Latest stable:** `4.81.0`
 - **Behind by:** 2 major, 220 releases, 1586 days
 - **Age of your version:** 4.4 years (1598 days since publish)
 - **Declared at:** `.terraform.lock.hcl`:12
 - **Source:** https://github.com/hashicorp/terraform-provider-azurerm
+- **Checked against:** [Terraform Registry](https://registry.terraform.io)
 
 **Strategy.** Staged upgrade. Do not jump 2.99.0 -> 4.81.0 in one change.
 
@@ -99,6 +105,11 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 
 ### CRITICAL - `com.fasterxml.jackson.core:jackson-databind` (Maven artifact)
 
+**Should you upgrade? — PLAN A STAGED UPGRADE**
+
+- _Why upgrade:_ 9 known vulnerabilities cleared by upgrading (3 critical/high); 3 years old
+- _Why wait:_ 3 breaking-change notes quoted from the release notes; the target introduces 1 new vulnerability
+
 - **Current:** `2.15.2`
 - **Latest stable:** `2.20.0`
 - **Behind by:** 5 minor, 38 releases, 900 days
@@ -107,6 +118,7 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 - **Also at:** `service-a/pom.xml`, `service-b/pom.xml`
 - **Source:** https://github.com/FasterXML/jackson-databind
 - **Docs:** https://github.com/FasterXML/jackson-databind
+- **Checked against:** [Maven Central](https://search.maven.org)
 
 **Strategy.** Staged upgrade. Step through 2.17.x so each minor's serialisation changes are isolated and revertible.
 
@@ -132,7 +144,7 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 - 2.17.0: removed support for the legacy `JsonSerializable` interface
 - 2.18.0: minimum required Java version is now 17
 
-**Open bug-labelled issues filed in this window** (14 open of 61 total)
+**Bug activity in the version window** (14 open of 61 filed) — a rough signal, not scoped to a specific version
 
 - [#4100](https://github.com/FasterXML/jackson-databind/issues/4100) Deserialisation regression #0
 - [#4101](https://github.com/FasterXML/jackson-databind/issues/4101) Deserialisation regression #1
@@ -168,9 +180,22 @@ _issues are filed-in-window signals, not proven regressions; breaking-change not
 
 _Latest window 2025-10-01..2026-01-01: 90 opened, 30 closed, 0 reactions across 35 sampled issues, 1 release(s)._
 
+**Open issues by release** — opened while each version was latest (a proxy, not a version tag):
+
+| Release | Opened | Still open | Closed |
+|---|---:|---:|---:|
+| `2.18.0` | 90 | 35 | 61% |
+| `2.17.0` | 75 | 12 | 84% |
+| `2.16.0` | 60 | 3 | 95% |
+
 _oldest window excluded from the baseline: the issue walk stopped at page 20 before covering it_
 
 ### HIGH - `redis` (Container image)
+
+**Should you upgrade? — PLAN A STAGED UPGRADE**
+
+- _Why upgrade:_ 3 major versions behind; 6 years old
+- _Why wait:_ crosses 3 major versions -- stage the upgrade
 
 - **Current:** `5`
 - **Latest stable:** `8.8.1`
@@ -178,6 +203,7 @@ _oldest window excluded from the baseline: the issue walk stopped at page 20 bef
 - **Age of your version:** at least 6.6 years — this version predates the registry's version window, so its exact publish date is unavailable
 - **Declared at:** `docker-compose.yml`:7
 - **Source:** https://github.com/redis/redis
+- **Checked against:** [GitHub releases (redis/redis)](https://github.com/redis/redis/releases)
 
 **Strategy.** Rebuild against the 8.x tag.
 
@@ -198,12 +224,18 @@ _both versions matched the same 72 advisories, so this query did not discriminat
 
 ### HIGH - `postgres` (Container image)
 
+**Should you upgrade? — PLAN A STAGED UPGRADE**
+
+- _Why upgrade:_ 3 major versions behind; 3 years old
+- _Why wait:_ crosses 3 major versions -- stage the upgrade
+
 - **Current:** `15`
 - **Latest stable:** `18.2`
 - **Behind by:** 3 major, 1100 days
 - **Age of your version:** 3.1 years (1150 days since publish)
 - **Declared at:** `docker-compose.yml`:15
 - **Source:** https://github.com/postgres/postgres
+- **Checked against:** [GitHub releases (postgres/postgres)](https://github.com/postgres/postgres/releases)
 
 **Strategy.** Plan a major-version data migration.
 
@@ -211,14 +243,24 @@ _Vulnerability lookup: the guessed distro/package/version triple returned no adv
 
 ### MEDIUM - `Microsoft.CognitiveServices/accounts` (Azure API version)
 
+**Should you upgrade? — PLAN A STAGED UPGRADE**
+
+- _Why upgrade:_ 3 major versions behind
+- _Why wait:_ crosses 3 major versions -- stage the upgrade
+
 - **Current:** `2023-05-01`
 - **Latest stable:** `2026-05-01`
 - **Behind by:** 3 years, 4 api-versions, 1096 days
 - **Declared at:** `main.bicep`:21
+- **Checked against:** [Azure Resource Manager provider metadata](https://learn.microsoft.com/rest/api/resources/providers/list)
 
 **Strategy.** Bump the apiVersion and re-deploy.
 
 ### MEDIUM - `github.com/spf13/cobra` (Go module)
+
+**Should you upgrade? — UPGRADE NOW**
+
+- _Why upgrade:_ 2 years old
 
 - **Current:** `v1.4.0`
 - **Latest stable:** `v1.8.1`
@@ -227,6 +269,7 @@ _Vulnerability lookup: the guessed distro/package/version triple returned no adv
 - **Declared at:** `svc/go.mod`:6
 - **Source:** https://github.com/spf13/cobra
 - **Docs:** https://pkg.go.dev/github.com/spf13/cobra
+- **Checked against:** [Go module proxy](https://proxy.golang.org)
 
 **Strategy.** Bump the require line and reconcile the module graph.
 

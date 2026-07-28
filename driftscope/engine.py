@@ -7,10 +7,12 @@ findings that matter, controlled by --delta-threshold.
 
 from __future__ import annotations
 
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from . import advisor
 from .ghub import delta as ghdelta
@@ -33,6 +35,13 @@ from .models import K8S_API
 
 def _hint_for(ecosystem: str) -> str | None:
     return K8SAPI if ecosystem == K8S_API else None
+
+
+def _eco_counts(components) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for c in components:
+        out[c.ecosystem] = out.get(c.ecosystem, 0) + 1
+    return out
 
 
 def _oldest_dated(releases):
@@ -99,9 +108,11 @@ def run_scan(
     velocity_window_days: int = 90,
     velocity_max_pages: int = 20,
     max_velocity: int = 6,
+    progress: Callable[[dict], None] | None = None,
 ) -> Report:
     started = time.monotonic()
     report = Report(root=str(root), stats=ScanStats())
+    emit = progress or (lambda _event: None)
 
     components, files = scan_tree(root, ecosystems)
     report.stats.files_scanned = files
@@ -123,8 +134,14 @@ def run_scan(
     if ecosystems:
         components = [c for c in components if c.ecosystem in ecosystems]
     report.stats.components_found = len(components)
+    emit({"phase": "discovered", "components": len(components),
+          "ecosystems": _eco_counts(components)})
 
     now = datetime.now(timezone.utc)
+    # Thread-safe counter so the resolution fan-out below can report per-ecosystem
+    # progress from its worker threads without racing.
+    _resolved = [0]
+    _resolve_lock = threading.Lock()
 
     def work(c):
         res = resolve(c, ctx)
@@ -158,6 +175,12 @@ def run_scan(
         )
         lag.age_lower_bound = bound
         sev = advisor.score(c, res, lag)
+        if progress:
+            with _resolve_lock:
+                _resolved[0] += 1
+                done = _resolved[0]
+            emit({"phase": "resolving", "ecosystem": c.ecosystem,
+                  "done": done, "total": len(components)})
         return Finding(component=c, resolution=res, lag=lag, severity=sev)
 
     findings: list[Finding] = []
@@ -197,6 +220,8 @@ def run_scan(
     ]
     candidates.sort(key=lambda f: (severity_rank(f.severity), -(f.lag.behind_major or 0)))
     candidates = candidates[:max_delta]
+    if candidates:
+        emit({"phase": "deltas", "count": len(candidates)})
 
     if candidates and ctx.github.enabled:
         def do_delta(f: Finding):
@@ -235,6 +260,7 @@ def run_scan(
     # target version, so "what would upgrading fix" is a set difference over
     # advisory data rather than an inference from version numbers.
     if include_vulns:
+        emit({"phase": "vulns"})
         from . import vuln as vuln_mod
 
         pairs = [
@@ -316,6 +342,7 @@ def run_scan(
         f.advice = advisor.advise(
             f.component, f.resolution, f.lag, f.severity, f.delta
         )
+        f.verdict = advisor.upgrade_verdict(f.resolution, f.lag, f.delta, f.vulns, f.severity)
 
     report.findings = findings
     report.stats.github_queries = ctx.github.queries

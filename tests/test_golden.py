@@ -128,3 +128,16 @@ def test_fixture_covers_every_branch(report):
     assert report.trend is not None
     assert len(report.trend.worsened) > 12, "12-row cap not exercised"
     assert report.source and report.source.get("commit"), "blob permalinks not exercised"
+
+
+def test_findings_cite_their_source(report):
+    """Every resolvable finding shows where 'how far behind' was determined -- the
+    k8s one must point at the Kubernetes deprecation guide specifically."""
+    from driftscope.report.render import source_of
+
+    k8s = [f for f in report.findings if f.component.ecosystem == "k8s-api"][0]
+    label, url = source_of(k8s.component, k8s.resolution)
+    assert "deprecat" in label.lower() and "kubernetes.io" in url
+
+    go = [f for f in report.findings if f.component.ecosystem == "go-module"][0]
+    assert source_of(go.component, go.resolution)[1] == "https://proxy.golang.org"

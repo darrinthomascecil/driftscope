@@ -1,0 +1,40 @@
+# Dev inner-loop for the driftscope HTTP service: build the image, run it on
+# localhost, and rebuild + restart it whenever source changes.
+#
+#   docker compose -f compose.dev.yaml up --build --watch
+#
+# `--watch` rebuilds the image and recreates the container on any change to a path
+# under `develop.watch`. The Docker layer cache keeps each rebuild to a few seconds
+# (only the source COPY + wheel build re-run; base / git / gh layers are cached).
+# The named volume keeps the HTTP cache warm across restarts. Ctrl-C stops it.
+services:
+  driftscope:
+    build:
+      context: .
+      # target: cloud          # uncomment to test the az-enabled image instead
+    image: driftscope:dev
+    command:
+      - serve
+      - --host=0.0.0.0         # inside the container; the port map below is localhost-only
+      - --port=8080
+      - --allow-host=github.com
+      - --allow-host=dev.azure.com
+    ports:
+      - "127.0.0.1:8080:8080"  # bound to loopback only -- not exposed on the network
+    environment:
+      DRIFTSCOPE_CACHE: /cache
+      # GITHUB_TOKEN: "${GITHUB_TOKEN:-}"        # uncomment to enable the GitHub delta
+      # AZURE_DEVOPS_TOKEN: "${AZURE_DEVOPS_TOKEN:-}"   # uncomment to scan ADO repos
+    volumes:
+      - driftscope-cache:/cache
+    develop:
+      watch:
+        - path: ./driftscope    # any source change -> rebuild the image
+          action: rebuild
+        - path: ./pyproject.toml
+          action: rebuild
+        - path: ./Dockerfile
+          action: rebuild
+
+volumes:
+  driftscope-cache:

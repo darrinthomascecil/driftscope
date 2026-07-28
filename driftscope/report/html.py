@@ -28,10 +28,14 @@ from ..models import (
     SEV_LOW,
     SEV_MEDIUM,
     SEV_UNKNOWN,
+    VERDICT_HOLD,
+    VERDICT_LOW,
+    VERDICT_PLAN,
+    VERDICT_UPGRADE,
     severity_rank,
 )
 from ..source import parse_ado_url
-from .render import ECO_LABEL, _lag_phrase, _plural
+from .render import ECO_LABEL, _lag_phrase, _plural, source_of
 from .summarize import (
     group_findings,
     spark_ratios,
@@ -202,6 +206,13 @@ tr.fdetail .detail{padding:2px 0 14px}
 .spark.low{color:var(--st-low)}.spark.unknown{color:var(--st-unknown)}
 .good-ink{color:var(--st-good)}.critical-ink{color:var(--st-critical)}
 .low-ink{color:var(--text-secondary)}.unknown-ink{color:var(--text-muted)}
+.verdict{display:inline-block;padding:3px 10px;border-radius:6px;font-size:12px;margin:2px 0 8px;border:1px solid currentColor}
+.verdict b{font-weight:700}
+.v-up{color:var(--st-good)}.v-plan{color:var(--st-warning)}.v-hold{color:var(--st-critical)}.v-low{color:var(--text-secondary)}
+.weigh{display:flex;flex-wrap:wrap;gap:22px;margin:0 0 10px}
+.weigh .wl{font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted)}
+.weigh ul{margin:3px 0 0;padding-left:16px}
+.weigh li{font-size:12.5px;color:var(--text-secondary)}
 """
 
 _JS = """
@@ -584,6 +595,20 @@ def _velocity_block(v) -> str:
             f"{latest.total_reactions} reactions across {latest.sampled_issues} "
             f"sampled issues, {latest.releases} release(s).</div>"
         )
+    if getattr(v, "by_release", None):
+        out.append("<div class='note' style='margin-top:8px'><b>Open issues by "
+                   "release</b> &mdash; opened while each version was latest (a proxy, "
+                   "not a version tag)</div>")
+        out.append("<table class='veltable'><tbody>")
+        for st in v.by_release[:10]:
+            crs = f"{st.close_ratio * 100:.0f}% closed" if st.close_ratio is not None else "&mdash;"
+            out.append(
+                f"<tr><th>{e(st.version)}</th>"
+                f"<td class='v'>{st.opened} opened</td>"
+                f"<td class='v'>{st.still_open} still open</td>"
+                f"<td class='v'>{crs}</td></tr>"
+            )
+        out.append("</tbody></table>")
     for n in s.notes:
         out.append(f"<div class='note'>{e(n)}</div>")
     out.append(
@@ -594,11 +619,39 @@ def _velocity_block(v) -> str:
     return "".join(out)
 
 
+_VERDICT_LABEL = {
+    VERDICT_UPGRADE: ("Upgrade now", "v-up"),
+    VERDICT_PLAN: ("Plan a staged upgrade", "v-plan"),
+    VERDICT_HOLD: ("Hold", "v-hold"),
+    VERDICT_LOW: ("Low priority", "v-low"),
+}
+
+
+def _verdict_block(v) -> str:
+    """The 'should you upgrade?' badge plus the two-sided why-move / why-wait lists."""
+    if v is None:
+        return ""
+    label, cls = _VERDICT_LABEL.get(v.verdict, (v.verdict, "v-low"))
+    out = [f"<div class='verdict {cls}'>Should you upgrade? &nbsp;<b>{e(label)}</b></div>"]
+    cols = []
+    if v.move_reasons:
+        cols.append("<div><div class='wl'>Why upgrade</div><ul>"
+                    + "".join(f"<li>{e(r)}</li>" for r in v.move_reasons) + "</ul></div>")
+    if v.wait_reasons:
+        cols.append("<div><div class='wl'>Why wait</div><ul>"
+                    + "".join(f"<li>{e(r)}</li>" for r in v.wait_reasons) + "</ul></div>")
+    if cols:
+        out.append("<div class='weigh'>" + "".join(cols) + "</div>")
+    return "".join(out)
+
+
 def _finding_detail(report: Report, f) -> str:
     """The guidance body for one finding, rendered for its expandable row."""
     c, res, adv = f.component, f.resolution, f.advice
     out: list[str] = []
     a = out.append
+
+    a(_verdict_block(f.verdict))
 
     if f.lag.current_age_days:
         yrs = f.lag.current_age_days / 365.25
@@ -624,6 +677,12 @@ def _finding_detail(report: Report, f) -> str:
     if res.homepage:
         a(f"<div><b>Docs:</b> <a href='{e(res.homepage)}' target='_blank' "
           f"rel='noopener'>{e(res.homepage)}</a></div>")
+    src = source_of(c, res)
+    if src:
+        label, url = src
+        shown = (f"<a href='{e(url)}' target='_blank' rel='noopener'>{e(label)}</a>"
+                 if url else e(label))
+        a(f"<div><b>Checked against:</b> {shown}</div>")
     if adv:
         if adv.strategy:
             a(f"<p><b>Strategy.</b> {e(adv.strategy)}</p>")
@@ -645,7 +704,7 @@ def _finding_detail(report: Report, f) -> str:
             a("</ul>")
     a(_registry_notes_block(f))
     d = f.delta
-    if d and (d.breaking_notes or d.bug_issues):
+    if d and (d.breaking_notes or d.bug_issues or d.total_bug_count):
         a(f"<p><b>Upstream delta</b> {e(d.from_ref)} &rarr; {e(d.to_ref)}"
           f"{f' &middot; {len(d.releases_in_window)} releases' if d.releases_in_window else ''}</p>")
         if d.breaking_notes:
@@ -653,13 +712,19 @@ def _finding_detail(report: Report, f) -> str:
             for n in d.breaking_notes[:8]:
                 a(f"<li>{e(n)}</li>")
             a("</ul>")
-        if d.bug_issues:
-            a(f"<div class='note'>{d.open_bug_count} open bug-labelled issue(s) "
-              f"filed in this window, of {d.total_bug_count} total</div><ul>")
-            for i in d.bug_issues[:6]:
-                a(f"<li><a href='{e(i.url)}' target='_blank' rel='noopener'>"
-                  f"#{i.number}</a> {e(i.title)}</li>")
-            a("</ul>")
+        # Show the count whenever the window had any bug-labelled issues, not only
+        # when there are still-open ones to list -- a window with 9 filed and 0 open
+        # is a real signal that used to render as nothing.
+        if d.total_bug_count or d.bug_issues:
+            a(f"<div class='note'>Bug activity in the version window "
+              f"(a rough signal &mdash; not scoped to a specific version): "
+              f"{d.open_bug_count} open of {d.total_bug_count} bug-labelled issue(s) filed</div>")
+            if d.bug_issues:
+                a("<ul>")
+                for i in d.bug_issues[:6]:
+                    a(f"<li><a href='{e(i.url)}' target='_blank' rel='noopener'>"
+                      f"#{i.number}</a> {e(i.title)}</li>")
+                a("</ul>")
         if d.note:
             a(f"<div class='note'>{e(d.note)}</div>")
     if f.vulns is not None and f.vulns.has_data:

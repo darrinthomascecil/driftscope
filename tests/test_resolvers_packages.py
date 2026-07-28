@@ -298,6 +298,34 @@ def test_go_reads_the_version_list_and_dates_the_latest():
     assert r.repo == "gorilla/mux"
 
 
+def test_go_incompatible_pin_does_not_resolve_to_an_older_clean_tag():
+    """moby/Docker never adopted /vN paths, so its real releases are all
+    +incompatible. Excluding them picked an ancient clean-semver tag (v1.13.1) as
+    "latest", inverting the comparison into a downgrade. The pinned +incompatible
+    line must win."""
+    ctx = Ctx(StubClient(
+        json_map={"@latest": {"Version": "v1.13.1", "Time": "2017-02-08T10:00:00Z"}},
+        text_map={"@v/list": "v1.12.0\nv1.13.1\nv20.10.0+incompatible\nv28.5.2+incompatible\n"},
+    ))
+    r = resolve_go(comp("github.com/moby/moby", "v28.5.2+incompatible", ecosystem="go-module"), ctx)
+    assert r.latest_stable == "v28.5.2+incompatible"
+
+    # A genuinely-behind +incompatible pin still gets the real newest target.
+    r2 = resolve_go(comp("github.com/moby/moby", "v20.10.0+incompatible", ecosystem="go-module"), ctx)
+    assert r2.latest_stable == "v28.5.2+incompatible"
+
+
+def test_go_clean_semver_pin_still_ignores_incompatible_tags():
+    """A module on a proper semver line must not be dragged onto a stray
+    +incompatible tag."""
+    ctx = Ctx(StubClient(
+        json_map={"@latest": {"Version": "v1.8.1", "Time": "2023-10-18T10:00:00Z"}},
+        text_map={"@v/list": "v1.7.0\nv1.8.1\nv2.0.0+incompatible\n"},
+    ))
+    r = resolve_go(comp("github.com/gorilla/mux", "v1.7.0", ecosystem="go-module"), ctx)
+    assert r.latest_stable == "v1.8.1"
+
+
 def test_go_fetches_the_date_of_the_pinned_version_specifically():
     """The proxy dates only @latest, so "how old is what we ship" needs one
     extra call -- but only one, not one per version."""

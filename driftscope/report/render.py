@@ -14,8 +14,68 @@ from ..models import (
     SEV_LOW,
     SEV_MEDIUM,
     SEV_UNKNOWN,
+    VERDICT_HOLD,
+    VERDICT_LOW,
+    VERDICT_PLAN,
+    VERDICT_UPGRADE,
     severity_rank,
 )
+
+_VERDICT_MD = {
+    VERDICT_UPGRADE: "UPGRADE NOW",
+    VERDICT_PLAN: "PLAN A STAGED UPGRADE",
+    VERDICT_HOLD: "HOLD",
+    VERDICT_LOW: "LOW PRIORITY",
+}
+
+# Where each ecosystem's "how far behind / how old" judgement comes from -- the
+# authority driftscope actually queried, surfaced so a reader can see and re-check
+# the basis for a finding rather than trust a bare number. Keyed by the ecosystem
+# string; a few (containers, actions) resolve their source per-finding below.
+_SOURCE = {
+    "go-module": ("Go module proxy", "https://proxy.golang.org"),
+    "npm": ("npm registry", "https://registry.npmjs.org"),
+    "pypi": ("PyPI", "https://pypi.org"),
+    "rubygems": ("RubyGems", "https://rubygems.org"),
+    "ruby-runtime": ("Ruby release history", "https://www.ruby-lang.org/en/downloads/releases/"),
+    "nuget": ("NuGet gallery", "https://www.nuget.org"),
+    "maven": ("Maven Central", "https://search.maven.org"),
+    "terraform-provider": ("Terraform Registry", "https://registry.terraform.io"),
+    "terraform-module": ("Terraform Registry", "https://registry.terraform.io"),
+    "azure-api-version": ("Azure Resource Manager provider metadata",
+                          "https://learn.microsoft.com/rest/api/resources/providers/list"),
+    "k8s-api": ("Kubernetes deprecated-API migration guide",
+                "https://kubernetes.io/docs/reference/using-api/deprecation-guide/"),
+    "jvm-toolchain": ("OpenJDK / Adoptium release history",
+                      "https://adoptium.net/temurin/releases/"),
+    "dotnet-tfm": (".NET target-framework metadata",
+                   "https://learn.microsoft.com/dotnet/standard/frameworks"),
+    "dotnet-sdk": (".NET SDK release notes", "https://dotnet.microsoft.com/download/dotnet"),
+    "azure-node-image": ("AKS / AgentBaker release history",
+                         "https://github.com/Azure/AgentBaker/releases"),
+    "helm-chart": ("Helm chart repository index", None),
+}
+
+
+def source_of(component, resolution):
+    """(label, url) naming where 'how far behind' was determined, or None."""
+    eco = component.ecosystem
+    ex = resolution.extra or {}
+    if eco == "docker-image":
+        if ex.get("registry"):
+            return f"private registry {ex['registry']}", f"https://{ex['registry']}"
+        if ex.get("dates_are_push_times"):
+            return "Docker Hub tag list", "https://hub.docker.com"
+        if resolution.repo:
+            return (f"GitHub releases ({resolution.repo})",
+                    f"https://github.com/{resolution.repo}/releases")
+        return "container registry tags", None
+    if eco == "github-action":
+        if resolution.repo:
+            return (f"GitHub releases/tags ({resolution.repo})",
+                    f"https://github.com/{resolution.repo}/releases")
+        return "GitHub releases/tags", None
+    return _SOURCE.get(eco)
 from .summarize import (
     spark_ratios,
     summarize_trend,
@@ -242,6 +302,16 @@ def _md_velocity(v) -> list[str]:
             f"{latest.sampled_issues} sampled issues, {latest.releases} release(s)._"
         )
         out.append("")
+    if getattr(v, "by_release", None):
+        out.append("**Open issues by release** — opened while each version was "
+                   "latest (a proxy, not a version tag):")
+        out.append("")
+        out.append("| Release | Opened | Still open | Closed |")
+        out.append("|---|---:|---:|---:|")
+        for st in v.by_release[:10]:
+            cr = f"{st.close_ratio * 100:.0f}%" if st.close_ratio is not None else "—"
+            out.append(f"| `{st.version}` | {st.opened} | {st.still_open} | {cr} |")
+        out.append("")
     for n in s.notes:
         out.append(f"_{n}_")
         out.append("")
@@ -334,6 +404,14 @@ def to_markdown(report: Report, *, max_detail: int = 40) -> str:
         c, res, adv = f.component, f.resolution, f.advice
         a(f"### {_BADGE[f.severity]} - `{c.name}` ({ECO_LABEL.get(c.ecosystem, c.ecosystem)})")
         a("")
+        if f.verdict:
+            a(f"**Should you upgrade? — {_VERDICT_MD.get(f.verdict.verdict, f.verdict.verdict)}**")
+            a("")
+            if f.verdict.move_reasons:
+                a(f"- _Why upgrade:_ {'; '.join(f.verdict.move_reasons)}")
+            if f.verdict.wait_reasons:
+                a(f"- _Why wait:_ {'; '.join(f.verdict.wait_reasons)}")
+            a("")
         a(f"- **Current:** `{c.current or 'unpinned'}`" + (f" (constraint `{c.raw}`)" if c.raw and c.raw != c.current else ""))
         a(f"- **Latest stable:** `{res.latest_stable or 'unknown'}`")
         a(f"- **Behind by:** {_lag_phrase(f)}")
@@ -358,6 +436,9 @@ def to_markdown(report: Report, *, max_detail: int = 40) -> str:
             a(f"- **Source:** {forge_web_url(res.forge, res.repo)}")
         if res.homepage:
             a(f"- **Docs:** {res.homepage}")
+        _src = source_of(c, res)
+        if _src:
+            a("- **Checked against:** " + (f"[{_src[0]}]({_src[1]})" if _src[1] else _src[0]))
         a("")
         if adv:
             a(f"**Strategy.** {adv.strategy}")
@@ -391,9 +472,10 @@ def to_markdown(report: Report, *, max_detail: int = 40) -> str:
                 for n in d.breaking_notes[:12]:
                     a(f"- {n}")
                 a("")
-            if d.bug_issues:
-                a(f"**Open bug-labelled issues filed in this window** "
-                  f"({d.open_bug_count} open of {d.total_bug_count} total)")
+            if d.total_bug_count or d.bug_issues:
+                a(f"**Bug activity in the version window** "
+                  f"({d.open_bug_count} open of {d.total_bug_count} filed) — a rough "
+                  f"signal, not scoped to a specific version")
                 a("")
                 for i in d.bug_issues[:10]:
                     a(f"- [#{i.number}]({i.url}) {i.title}")

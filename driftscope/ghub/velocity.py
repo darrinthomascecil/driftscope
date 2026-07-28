@@ -39,6 +39,7 @@ from ..models import (
     TREND_IMPROVING,
     TREND_STEADY,
     TREND_UNKNOWN,
+    ReleaseIssueStat,
     Velocity,
     Window,
 )
@@ -88,8 +89,8 @@ def measure(
         return v
 
     today = now or datetime.now(timezone.utc).date()
-    release_dates = [r.published.date() for r in forge.releases(repo)
-                     if r.published]
+    release_records = forge.releases(repo)
+    release_dates = [r.published.date() for r in release_records if r.published]
 
     bounds = _windows(today, windows, window_days)
     v.windows = [Window(start=s, end=e) for s, e in bounds]
@@ -130,6 +131,28 @@ def measure(
 
     for w in v.windows:
         w.releases = sum(1 for d in release_dates if w.start <= d <= w.end)
+
+    # Issues bucketed by the release that was current when they were filed -- a
+    # per-version activity view. A proxy, not a version tag (see ReleaseIssueStat):
+    # only releases inside the issue walk's horizon (bounds[0][0]) can be populated,
+    # and an issue "opened while vX was latest" is not necessarily about vX.
+    dated_rels = sorted((r for r in release_records if r.published and r.tag),
+                        key=lambda r: r.published)
+    horizon = bounds[0][0]
+    for i, r in enumerate(dated_rels):
+        start = r.published.date()
+        if start < horizon:
+            continue
+        end = dated_rels[i + 1].published.date() if i + 1 < len(dated_rels) else today
+        stat = ReleaseIssueStat(version=r.tag)
+        for it in walk.items:
+            if it.created and start <= it.created < end:
+                stat.opened += 1
+                if it.closed is None:
+                    stat.still_open += 1
+        if stat.opened:
+            v.by_release.append(stat)
+    v.by_release.reverse()  # newest release first
 
     truncated, oldest_seen = walk.truncated, walk.oldest_seen
     if truncated and oldest_seen:

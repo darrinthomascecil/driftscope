@@ -212,9 +212,28 @@ class Window:
 
 
 @dataclass
+class ReleaseIssueStat:
+    """Issues bucketed by the release that was current when they were filed.
+
+    A proxy, NOT a version tag: GitHub issues carry no affected-version field, so
+    this is "opened while <version> was the latest", not "affects <version>". The
+    report labels it that way. `still_open` is how many of those remain open now.
+    """
+
+    version: str
+    opened: int = 0
+    still_open: int = 0
+
+    @property
+    def close_ratio(self) -> float | None:
+        return None if not self.opened else (self.opened - self.still_open) / self.opened
+
+
+@dataclass
 class Velocity:
     repo: str
     windows: list[Window] = field(default_factory=list)
+    by_release: list[ReleaseIssueStat] = field(default_factory=list)
     window_days: int = 90
     issue_trend: str = TREND_UNKNOWN
     sentiment_trend: str = TREND_UNKNOWN
@@ -250,6 +269,25 @@ class Advice:
     intermediate_versions: list[str] = field(default_factory=list)
 
 
+# A digestible "should you upgrade?" call. The point is to separate the two forces
+# a reader is actually weighing -- the cost of NOT upgrading (vulns fixed, staleness,
+# EOL) from the cost of upgrading (breaking changes, major jumps, vulns the target
+# introduces) -- and derive a verdict from them, instead of leaving it implied by a
+# raw issue count. It is built from the version-scoped, reliable inputs (vulns +
+# release-note breaking changes), not the loose issue-window signal.
+VERDICT_UPGRADE = "upgrade-now"
+VERDICT_PLAN = "plan"          # worth doing, but breaking / multi-major: stage it
+VERDICT_LOW = "low-priority"   # little pressure to move
+VERDICT_HOLD = "hold"          # upgrading adds risk you don't currently need to take
+
+
+@dataclass
+class UpgradeVerdict:
+    verdict: str
+    move_reasons: list[str] = field(default_factory=list)  # cost of staying -> why upgrade
+    wait_reasons: list[str] = field(default_factory=list)  # cost of moving -> why be careful
+
+
 @dataclass
 class Finding:
     component: Component
@@ -260,6 +298,7 @@ class Finding:
     delta: GitHubDelta | None = None
     velocity: Velocity | None = None
     vulns: Any | None = None  # vuln.VulnReport
+    verdict: UpgradeVerdict | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

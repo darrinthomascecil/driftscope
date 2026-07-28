@@ -190,12 +190,24 @@ def resolve_go(c: Component, ctx: Context) -> Resolution:
                 except HttpError:
                     pass
                 break
+    # `+incompatible` versions are real releases: a module that never adopted a
+    # /vN module path (moby/Docker, and many pre-modules projects) publishes EVERY
+    # v2+ release this way. Excluding them unconditionally meant a pin of
+    # v28.5.2+incompatible resolved its "latest" to an ancient clean-semver tag
+    # (v1.13.1), inverting the whole comparison into a downgrade -- and the vuln
+    # pass then "introduced" the years of CVEs that separate the two. Keep them
+    # when the pin itself is one, which is exactly the import path the user is on.
+    keep_incompat = "+incompatible" in (c.current or "")
+    pool = versions if keep_incompat else [v for v in versions if "+incompatible" not in v]
+    note = "Go proxy exposes dates only for the latest version"
+    if keep_incompat:
+        note += "; module uses +incompatible versions (no /vN module path)"
     return Resolution(
-        latest_stable=latest_stable([v for v in versions if "+incompatible" not in v]) or latest_v,
+        latest_stable=latest_stable(pool) or latest_v,
         releases=releases,
         repo=_go_repo(c.name),
         homepage=f"https://pkg.go.dev/{c.name}",
-        note="Go proxy exposes dates only for the latest version",
+        note=note,
     )
 
 
