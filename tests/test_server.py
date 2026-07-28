@@ -245,3 +245,67 @@ def test_scan_streaming_emits_progress_phases_then_done(live_server):
     assert len(dones) == 1
     assert dones[0]["status"] == 200 and dones[0]["severity"]
     assert '"findings"' in dones[0]["body"]  # default format is json
+
+
+# ------------------------------------------------------- multi-repo compare
+
+def test_scan_multi_json_compares_repos(monkeypatch):
+    from driftscope import server
+    from driftscope.models import Report, Finding, Component, Resolution, Lag, ScanStats, SEV_HIGH
+
+    def fake_produce(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
+        # repo-a pins ioredis 4.3, repo-b pins 4.4 -> divergence
+        ver = "4.3.0" if req["repo"].endswith("a") else "4.4.0"
+        f = Finding(component=Component(ecosystem="npm", name="ioredis", current=ver, source="p"),
+                    resolution=Resolution(latest_stable="5.4.1"), lag=Lag(), severity=SEV_HIGH)
+        r = Report(root=req["repo"], findings=[f], stats=ScanStats())
+        return 200, r, None
+
+    monkeypatch.setattr(server, "produce_report", fake_produce)
+    results, fc = server.run_multi(
+        {"repos": ["https://github.com/o/repo-a", "https://github.com/o/repo-b"]},
+    )
+    out = server.multi_json(results, fc)
+    assert [r["ok"] for r in out["repos"]] == [True, True]
+    assert out["comparison"]["divergent_count"] == 1
+    row = out["comparison"]["rows"][0]
+    assert row["name"] == "ioredis" and row["diverges"]
+    assert row["pins"]["https://github.com/o/repo-a"] == ["4.3.0"]
+    assert row["pins"]["https://github.com/o/repo-b"] == ["4.4.0"]
+
+
+def test_scan_multi_isolates_a_failed_repo(monkeypatch):
+    from driftscope import server
+    from driftscope.models import Report, Finding, Component, Resolution, Lag, ScanStats, SEV_HIGH
+
+    def fake_produce(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
+        if req["repo"].endswith("bad"):
+            return 400, None, "repo not found"
+        f = Finding(component=Component(ecosystem="npm", name="x", current="1.0", source="p"),
+                    resolution=Resolution(latest_stable="2.0"), lag=Lag(), severity=SEV_HIGH)
+        return 200, Report(root=req["repo"], findings=[f], stats=ScanStats()), None
+
+    monkeypatch.setattr(server, "produce_report", fake_produce)
+    results, fc = server.run_multi({"repos": ["https://github.com/o/ok", "https://github.com/o/bad"]})
+    assert results[0]["ok"] and not results[1]["ok"]
+    assert "https://github.com/o/bad" in fc.errors  # comparison still built from the good one
+    assert any(r.name == "x" for r in fc.rows)
+
+
+def _post_expect_error(url, obj):
+    import urllib.error
+    req = urllib.request.Request(
+        url, data=json.dumps(obj).encode(), headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+def test_scan_multi_rejects_empty_and_oversized(live_server):
+    code, body = _post_expect_error(live_server + "/scan-multi", {"repos": []})
+    assert code == 400 and "non-empty" in json.loads(body)["error"]
+    code, body = _post_expect_error(live_server + "/scan-multi", {"repos": ["https://github.com/o/r"] * 99})
+    assert code == 400 and "too many" in json.loads(body)["error"]

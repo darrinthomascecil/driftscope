@@ -53,6 +53,17 @@ INDEX_HTML = """<!doctype html>
   iframe { width: 100%; height: 72vh; border: 1px solid var(--bd); border-radius: 10px; margin-top: 8px; background: #fff; }
   pre { overflow: auto; padding: 14px; border: 1px solid var(--bd); border-radius: 10px; font-size: .82rem; }
   footer { color: var(--mut); font-size: .78rem; padding: 0 24px 24px; }
+  .more { margin: 8px 0 0; }
+  .more summary { cursor: pointer; color: var(--mut); font-size: .85rem; }
+  .more textarea { width: 100%; margin-top: 6px; padding: 9px 10px; border: 1px solid var(--bd);
+                   border-radius: 8px; background: transparent; color: inherit; font: inherit;
+                   font-size: .85rem; resize: vertical; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 0; border-bottom: 1px solid var(--bd); }
+  .tab { padding: 7px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0;
+         cursor: pointer; font-size: .85rem; color: var(--mut); }
+  .tab.active { color: inherit; border-color: var(--bd); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .tab .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+  .tab.fail { color: #d9534f; }
 </style>
 </head>
 <body>
@@ -74,6 +85,10 @@ INDEX_HTML = """<!doctype html>
     <label class="chk" title="issue open/close rate + release cadence for the top repos (slower)"><input type="checkbox" id="velocity"> issue&nbsp;history</label>
     <button id="go" type="submit">Scan</button>
   </form>
+  <details class="more">
+    <summary>+ compare multiple repos</summary>
+    <textarea id="morerepos" rows="3" placeholder="one more repo URL per line &mdash; scans all of them and compares their drift"></textarea>
+  </details>
   <div id="status"><span id="spin" class="spin" hidden></span><span id="stext"></span></div>
   <div id="ecos"></div>
   <div id="summary"></div>
@@ -102,13 +117,27 @@ INDEX_HTML = """<!doctype html>
     });
   }
 
+  function renderInto(container, content, isHtml) {
+    if (isHtml) {
+      var fr = document.createElement('iframe');
+      fr.setAttribute('sandbox', 'allow-scripts');   // report's filter/collapse need JS
+      fr.srcdoc = content; container.appendChild(fr);
+    } else {
+      var pre = document.createElement('pre'); pre.textContent = content; container.appendChild(pre);
+    }
+  }
+  function shortName(url) { return url.replace(/\\/+$/, '').split('/').pop() || url; }
+
   f.addEventListener('submit', async function (e) {
     e.preventDefault();
     var repo = document.getElementById('repo').value.trim();
     if (!repo) return;
+    var more = document.getElementById('morerepos').value.split('\\n')
+                 .map(function (s) { return s.trim(); }).filter(Boolean);
+    var repos = [repo].concat(more);
+    var multi = repos.length > 1;
     var format = document.getElementById('format').value;
-    var body = {
-      repo: repo, format: format,
+    var opts = {
       no_az: document.getElementById('no_az').checked,
       no_github: document.getElementById('no_github').checked,
       velocity: document.getElementById('velocity').checked
@@ -130,22 +159,26 @@ INDEX_HTML = """<!doctype html>
     }
 
     function onProgress(p) {
-      if (p.phase === 'cloning') setStatus('Cloning ' + p.repo + ' …', true);
-      else if (p.phase === 'cloned') setStatus('Cloned' + (p.commit ? ' @ ' + p.commit : '') + '; scanning files …', true);
+      var pre = p.repo_total ? ('Repo ' + p.repo_index + '/' + p.repo_total + ' · ') : '';
+      if (p.phase === 'repo') {
+        ecos.innerHTML = ''; ecoDone = {}; ecoTotal = {};
+        setStatus('Repo ' + p.repo_index + '/' + p.repo_total + ': ' + shortName(p.repo) + ' …', true);
+      } else if (p.phase === 'cloning') setStatus(pre + 'Cloning ' + shortName(p.repo) + ' …', true);
+      else if (p.phase === 'cloned') setStatus(pre + 'Cloned' + (p.commit ? ' @ ' + p.commit : '') + '; scanning …', true);
       else if (p.phase === 'discovered') {
-        ecoTotal = p.ecosystems || {}; ecoDone = {};
+        ecoTotal = p.ecosystems || {}; ecoDone = {}; ecos.innerHTML = '';
         Object.keys(ecoTotal).sort().forEach(ecoChip);
-        setStatus('Found ' + p.components + ' components across ' + Object.keys(ecoTotal).length + ' ecosystems; resolving …', true);
+        setStatus(pre + 'Found ' + p.components + ' components; resolving …', true);
       } else if (p.phase === 'resolving') {
         ecoDone[p.ecosystem] = (ecoDone[p.ecosystem] || 0) + 1;
         ecoChip(p.ecosystem);
-        setStatus('Resolving ' + p.ecosystem + ' … ' + p.done + '/' + p.total, true);
-      } else if (p.phase === 'deltas') setStatus('Analyzing upstream deltas for ' + p.count + ' findings …', true);
-      else if (p.phase === 'vulns') setStatus('Checking known vulnerabilities …', true);
-      else if (p.phase === 'rendering') setStatus('Rendering report …', true);
+        setStatus(pre + 'Resolving ' + p.ecosystem + ' … ' + p.done + '/' + p.total, true);
+      } else if (p.phase === 'deltas') setStatus(pre + 'Analyzing upstream deltas …', true);
+      else if (p.phase === 'vulns') setStatus(pre + 'Checking known vulnerabilities …', true);
+      else if (p.phase === 'rendering') setStatus(pre + 'Rendering report …', true);
     }
 
-    function onDone(r) {
+    function onDoneSingle(r) {
       if (r.status >= 400) {
         var msg = r.body; try { msg = JSON.parse(r.body).error || r.body; } catch (_) {}
         setStatus('Error ' + r.status + ': ' + msg, false, 'err'); ecos.innerHTML = '';
@@ -153,25 +186,54 @@ INDEX_HTML = """<!doctype html>
       }
       sevChips(r.severity);
       var secs = ((performance.now() - t0) / 1000).toFixed(1);
-      setStatus('✓ Scanned ' + repo + (r.commit ? ' @ ' + r.commit : '') + ' in ' + secs + 's', false, 'done');
-      if (format === 'html') {
-        var iframe = document.createElement('iframe');
-        iframe.setAttribute('sandbox', 'allow-scripts');   // report's filter/collapse need JS
-        iframe.srcdoc = r.body; out.appendChild(iframe);
-      } else {
-        var pre = document.createElement('pre'); pre.textContent = r.body; out.appendChild(pre);
-      }
+      setStatus('✓ Scanned ' + shortName(repo) + (r.commit ? ' @ ' + r.commit : '') + ' in ' + secs + 's', false, 'done');
+      renderInto(out, r.body, format === 'html');
     }
 
+    function onDoneMulti(payload) {
+      if (payload.error) { setStatus('Error: ' + payload.error, false, 'err'); return; }
+      ecos.innerHTML = ''; summary.innerHTML = '';
+      var okN = payload.repos.filter(function (x) { return x.ok; }).length;
+      var secs = ((performance.now() - t0) / 1000).toFixed(1);
+      setStatus('✓ Compared ' + payload.repos.length + ' repos (' + okN + ' ok) in ' + secs + 's', false, 'done');
+
+      var bar = document.createElement('div'); bar.className = 'tabs';
+      var panes = document.createElement('div');
+      function addTab(labelHtml, cls, build) {
+        var tab = document.createElement('div'); tab.className = 'tab ' + (cls || ''); tab.innerHTML = labelHtml;
+        var pane = document.createElement('div'); pane.style.display = 'none'; build(pane);
+        tab.addEventListener('click', function () {
+          [].forEach.call(bar.children, function (c) { c.classList.remove('active'); });
+          [].forEach.call(panes.children, function (c) { c.style.display = 'none'; });
+          tab.classList.add('active'); pane.style.display = '';
+        });
+        bar.appendChild(tab); panes.appendChild(pane); return tab;
+      }
+      var first = addTab('Comparison', '', function (pane) { renderInto(pane, payload.comparison_html, true); });
+      payload.repos.forEach(function (rp) {
+        var dot = "<span class='dot' style='background:" + (rp.ok ? '#2e7d32' : '#d9534f') + "'></span>";
+        addTab(dot + shortName(rp.repo), rp.ok ? '' : 'fail', function (pane) {
+          if (rp.ok) renderInto(pane, rp.html, true);
+          else {
+            var d = document.createElement('div'); d.style.padding = '14px'; d.className = 'note';
+            d.textContent = 'Could not scan: ' + (rp.error || 'unknown'); pane.appendChild(d);
+          }
+        });
+      });
+      out.appendChild(bar); out.appendChild(panes); first.click();
+    }
+
+    var url = multi ? '/scan-multi?stream=1' : '/scan?stream=1';
+    var reqBody = multi ? Object.assign({ repos: repos }, opts)
+                        : Object.assign({ repo: repo, format: format }, opts);
     try {
-      var res = await fetch('/scan?stream=1', {
+      var res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(reqBody)
       });
-      // Pre-scan errors (503 busy, 400 bad body) come back as plain JSON, not a stream.
       var ctype = res.headers.get('Content-Type') || '';
-      if (ctype.indexOf('text/event-stream') < 0) {
+      if (ctype.indexOf('text/event-stream') < 0) {  // 400/503 come back as plain JSON
         var t = await res.text(); var m = t; try { m = JSON.parse(t).error || t; } catch (_) {}
         setStatus('Error ' + res.status + ': ' + m, false, 'err'); return;
       }
@@ -191,7 +253,7 @@ INDEX_HTML = """<!doctype html>
           if (!data) continue;
           var payload = JSON.parse(data);
           if (ev === 'progress') onProgress(payload);
-          else if (ev === 'done') onDone(payload);
+          else if (ev === 'done') { multi ? onDoneMulti(payload) : onDoneSingle(payload); }
         }
       }
     } catch (err) {

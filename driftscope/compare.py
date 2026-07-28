@@ -1,0 +1,115 @@
+"""Fleet comparison: how drift differs across several repos.
+
+Given the per-repo Reports the single-repo scanner already produces, join their
+findings by `(ecosystem, name)` and surface where the repos *disagree* -- the same
+component pinned to different versions in different repos (the "one repo on ioredis
+4.3, another on 4.4" case). Pure aggregation over existing data: no scanning,
+network, or resolver logic lives here.
+
+Honesty carries over from the rest of the tool: this compares the *declared* pin
+(`component.current`) per repo and flags divergence, but it does not claim which pin
+is "older" unless the version scheme is comparable -- the same caution that the Go
+`+incompatible` inversion taught. A repo can also pin one component at several
+versions internally (a monorepo), so a repo's entry is a *set* of versions, not one.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from .models import Report, SEV_UNKNOWN, severity_rank
+from .version import comparable as _comparable, compare as _compare, parse as _parse
+
+
+@dataclass
+class RepoPin:
+    """What one repo pins for one component."""
+
+    versions: list[str] = field(default_factory=list)  # distinct, in first-seen order
+    severity: str = SEV_UNKNOWN                         # worst severity for it in this repo
+
+
+@dataclass
+class ComponentRow:
+    ecosystem: str
+    name: str
+    latest: str | None
+    pins: dict[str, RepoPin]   # repo label -> pin; only repos that use the component
+    diverges: bool             # repos pin more than one distinct version between them
+    worst: str                 # worst severity across the repos that use it
+
+    @property
+    def repo_count(self) -> int:
+        return len(self.pins)
+
+
+@dataclass
+class FleetComparison:
+    repos: list[str]                      # repo labels, in input order
+    rows: list[ComponentRow]              # sorted: divergent first, then by severity
+    errors: dict[str, str] = field(default_factory=dict)  # repo label -> failure reason
+
+    @property
+    def divergent(self) -> list[ComponentRow]:
+        return [r for r in self.rows if r.diverges]
+
+    @property
+    def shared(self) -> list[ComponentRow]:
+        return [r for r in self.rows if r.repo_count > 1]
+
+
+def _all_versions(row_repos: dict[str, RepoPin]) -> set[str]:
+    return {v for rp in row_repos.values() for v in rp.versions}
+
+
+def newest_pin(versions, ecosystem: str) -> str | None:
+    """The most-current pin among a set, or None when the scheme is not comparable.
+
+    Used only to point out which repo is furthest behind; when versions cannot be
+    ordered on the same scheme (calver, floating tags, +incompatible mixes) it
+    returns None and the report says "differs" rather than asserting an order.
+    """
+    parsed = []
+    for v in versions:
+        p = _parse(v)
+        if not p.valid:
+            return None
+        parsed.append((v, p))
+    for i in range(1, len(parsed)):
+        ok, _ = _comparable(parsed[0][1], parsed[i][1])
+        if not ok:
+            return None
+    return max(parsed, key=lambda t: t[1].sort_key())[0]
+
+
+def compare_reports(named_reports, errors=None) -> FleetComparison:
+    """Build the fleet comparison from `[(repo_label, Report), ...]`."""
+    repos = [name for name, _ in named_reports]
+    groups: dict[tuple[str, str], dict] = {}
+    for name, report in named_reports:
+        for f in report.findings:
+            key = (f.component.ecosystem, f.component.name)
+            g = groups.setdefault(key, {"latest": None, "repos": {}})
+            if f.resolution.latest_stable and not g["latest"]:
+                g["latest"] = f.resolution.latest_stable
+            rp = g["repos"].setdefault(name, RepoPin())
+            cur = f.component.current or "unpinned"
+            if cur not in rp.versions:
+                rp.versions.append(cur)
+            if severity_rank(f.severity) < severity_rank(rp.severity):
+                rp.severity = f.severity
+
+    rows: list[ComponentRow] = []
+    for (eco, nm), g in groups.items():
+        all_vers = _all_versions(g["repos"])
+        worst = min((rp.severity for rp in g["repos"].values()), key=severity_rank)
+        rows.append(ComponentRow(
+            ecosystem=eco, name=nm, latest=g["latest"], pins=g["repos"],
+            diverges=len(all_vers) > 1, worst=worst,
+        ))
+
+    # Divergent components first (the point of the view), then by severity, then by
+    # how many repos are affected, then name for stability.
+    rows.sort(key=lambda r: (0 if r.diverges else 1, severity_rank(r.worst),
+                             -r.repo_count, r.name))
+    return FleetComparison(repos=repos, rows=rows, errors=errors or {})
