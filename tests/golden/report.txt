@@ -1,10 +1,11 @@
-9 components in 41 files -> CRITICAL:2  HIGH:2  MEDIUM:1  LOW:1  current:1  unknown:2
+10 components in 41 files -> CRITICAL:2  HIGH:2  MEDIUM:2  LOW:1  current:1  unknown:2
 
 [CRITICAL] terraform-provider   hashicorp/azurerm                            2.99.0           -> 4.81.0           (2 major, 220 releases, 1586 days)  .terraform.lock.hcl:12
 [CRITICAL] maven                com.fasterxml.jackson.core:jackson-databind  2.15.2           -> 2.20.0           (5 minor, 38 releases, 900 days)  pom.xml:34
 [HIGH    ] docker-image         redis                                        5                -> 8.8.1            (3 major, 2100 days)  docker-compose.yml:7
 [HIGH    ] docker-image         postgres                                     15               -> 18.2             (3 major, 1100 days)  docker-compose.yml:15
 [MEDIUM  ] azure-api-version    Microsoft.CognitiveServices/accounts         2023-05-01       -> 2026-05-01       (3 years, 4 api-versions, 1096 days)  main.bicep:21
+[MEDIUM  ] go-module            github.com/spf13/cobra                       v1.4.0           -> v1.8.1           (4 minor, 13 releases, 760 days)  svc/go.mod:6
 
 errors:
   - velocity: measured 6 of 11 eligible repos (--max-velocity); the rest were skipped
