@@ -302,6 +302,16 @@ def _md_velocity(v) -> list[str]:
             f"{latest.sampled_issues} sampled issues, {latest.releases} release(s)._"
         )
         out.append("")
+    if getattr(v, "by_release", None):
+        out.append("**Open issues by release** — opened while each version was "
+                   "latest (a proxy, not a version tag):")
+        out.append("")
+        out.append("| Release | Opened | Still open | Closed |")
+        out.append("|---|---:|---:|---:|")
+        for st in v.by_release[:10]:
+            cr = f"{st.close_ratio * 100:.0f}%" if st.close_ratio is not None else "—"
+            out.append(f"| `{st.version}` | {st.opened} | {st.still_open} | {cr} |")
+        out.append("")
     for n in s.notes:
         out.append(f"_{n}_")
         out.append("")

@@ -212,9 +212,28 @@ class Window:
 
 
 @dataclass
+class ReleaseIssueStat:
+    """Issues bucketed by the release that was current when they were filed.
+
+    A proxy, NOT a version tag: GitHub issues carry no affected-version field, so
+    this is "opened while <version> was the latest", not "affects <version>". The
+    report labels it that way. `still_open` is how many of those remain open now.
+    """
+
+    version: str
+    opened: int = 0
+    still_open: int = 0
+
+    @property
+    def close_ratio(self) -> float | None:
+        return None if not self.opened else (self.opened - self.still_open) / self.opened
+
+
+@dataclass
 class Velocity:
     repo: str
     windows: list[Window] = field(default_factory=list)
+    by_release: list[ReleaseIssueStat] = field(default_factory=list)
     window_days: int = 90
     issue_trend: str = TREND_UNKNOWN
     sentiment_trend: str = TREND_UNKNOWN

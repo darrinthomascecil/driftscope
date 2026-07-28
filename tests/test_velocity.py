@@ -322,3 +322,49 @@ def test_issue_walk_uses_the_core_endpoint_not_search():
     assert calls, "expected API calls"
     assert not any("search/" in c for c in calls), "must not hit the search endpoint"
     assert any("/issues?" in c for c in calls)
+
+
+# --------------------------------------------------- issues bucketed by release
+
+from datetime import datetime, timezone
+
+from driftscope.forge import IssueRecord, IssueWalk, ReleaseRecord
+
+
+class _FakeForge:
+    kind, enabled, queries = "github", True, 0
+
+    def __init__(self, releases, issues):
+        self._rels, self._issues = releases, issues
+
+    def releases(self, repo):
+        return self._rels
+
+    def issues_since(self, repo, since, *, max_pages=20):
+        return IssueWalk(items=[i for i in self._issues if i.created and i.created >= since],
+                         oldest_seen=since)
+
+    def issue_counts(self, *a, **k):
+        return (0, 0)
+
+    def web_url(self, repo):
+        return "x"
+
+
+def test_velocity_buckets_open_issues_by_release():
+    def dt(s):
+        return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+
+    rels = [ReleaseRecord(tag="v2.0.0", published=dt("2026-05-01T00:00:00")),
+            ReleaseRecord(tag="v2.1.0", published=dt("2026-06-15T00:00:00"))]
+    issues = [
+        IssueRecord(number=1, title="a", url="", state="open", created=date(2026, 5, 10), closed=None),
+        IssueRecord(number=2, title="b", url="", state="closed", created=date(2026, 5, 20), closed=date(2026, 6, 1)),
+        IssueRecord(number=3, title="c", url="", state="open", created=date(2026, 6, 20), closed=None),
+    ]
+    v = vel.measure(_FakeForge(rels, issues), "o/r", now=date(2026, 7, 1))
+    got = {s.version: (s.opened, s.still_open) for s in v.by_release}
+    assert got["v2.0.0"] == (2, 1)   # #1 (open) + #2 (closed) filed in v2.0.0's window
+    assert got["v2.1.0"] == (1, 1)   # #3 filed after v2.1.0
+    # newest release first
+    assert v.by_release[0].version == "v2.1.0"

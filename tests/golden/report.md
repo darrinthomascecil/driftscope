@@ -180,6 +180,14 @@ _issues are filed-in-window signals, not proven regressions; breaking-change not
 
 _Latest window 2025-10-01..2026-01-01: 90 opened, 30 closed, 0 reactions across 35 sampled issues, 1 release(s)._
 
+**Open issues by release** — opened while each version was latest (a proxy, not a version tag):
+
+| Release | Opened | Still open | Closed |
+|---|---:|---:|---:|
+| `2.18.0` | 90 | 35 | 61% |
+| `2.17.0` | 75 | 12 | 84% |
+| `2.16.0` | 60 | 3 | 95% |
+
 _oldest window excluded from the baseline: the issue walk stopped at page 20 before covering it_
 
 ### HIGH - `redis` (Container image)

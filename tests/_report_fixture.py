@@ -42,6 +42,7 @@ from driftscope.models import (
     IssueSignal,
     Lag,
     Release,
+    ReleaseIssueStat,
     Report,
     Resolution,
     ScanStats,
@@ -176,6 +177,11 @@ def build_report() -> Report:
             backlog_change_abs=42.0, backlog_change_pct=180.0,
             frustration_change_pts=11.0, frustration_change_pct=64.0,
             release_change_pct=-77.0,
+            by_release=[
+                ReleaseIssueStat(version="2.18.0", opened=90, still_open=35),
+                ReleaseIssueStat(version="2.17.0", opened=75, still_open=12),
+                ReleaseIssueStat(version="2.16.0", opened=60, still_open=3),
+            ],
             notes=["oldest window excluded from the baseline: the issue walk stopped "
                    "at page 20 before covering it"],
         ),

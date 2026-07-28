@@ -595,6 +595,20 @@ def _velocity_block(v) -> str:
             f"{latest.total_reactions} reactions across {latest.sampled_issues} "
             f"sampled issues, {latest.releases} release(s).</div>"
         )
+    if getattr(v, "by_release", None):
+        out.append("<div class='note' style='margin-top:8px'><b>Open issues by "
+                   "release</b> &mdash; opened while each version was latest (a proxy, "
+                   "not a version tag)</div>")
+        out.append("<table class='veltable'><tbody>")
+        for st in v.by_release[:10]:
+            crs = f"{st.close_ratio * 100:.0f}% closed" if st.close_ratio is not None else "&mdash;"
+            out.append(
+                f"<tr><th>{e(st.version)}</th>"
+                f"<td class='v'>{st.opened} opened</td>"
+                f"<td class='v'>{st.still_open} still open</td>"
+                f"<td class='v'>{crs}</td></tr>"
+            )
+        out.append("</tbody></table>")
     for n in s.notes:
         out.append(f"<div class='note'>{e(n)}</div>")
     out.append(
