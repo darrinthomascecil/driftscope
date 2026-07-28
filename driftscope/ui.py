@@ -27,9 +27,10 @@ INDEX_HTML = """<!doctype html>
   main { padding: 12px 24px 40px; max-width: 1100px; }
   form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
          padding: 14px; border: 1px solid var(--bd); border-radius: 10px; }
-  input[type=text], select { padding: 8px 10px; border: 1px solid var(--bd);
+  input[type=text], select, #repos { padding: 8px 10px; border: 1px solid var(--bd);
          border-radius: 7px; background: transparent; color: inherit; font: inherit; }
-  #repo { flex: 1 1 340px; min-width: 240px; }
+  #repos { flex: 1 1 340px; min-width: 240px; min-height: 38px; line-height: 1.4;
+           resize: vertical; overflow: hidden; }
   label.chk { display: inline-flex; gap: 5px; align-items: center; font-size: .85rem; color: var(--mut); }
   button { padding: 8px 18px; border: 0; border-radius: 7px; background: var(--accent);
            color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
@@ -73,7 +74,8 @@ INDEX_HTML = """<!doctype html>
 </header>
 <main>
   <form id="f">
-    <input type="text" id="repo" placeholder="https://github.com/org/repo" required autocomplete="off" autofocus>
+    <textarea id="repos" rows="1" autofocus autocomplete="off"
+      placeholder="https://github.com/org/repo &mdash; add more (one per line) to compare across repos"></textarea>
     <select id="format" title="report format">
       <option value="html" selected>HTML report</option>
       <option value="markdown">Markdown</option>
@@ -85,10 +87,6 @@ INDEX_HTML = """<!doctype html>
     <label class="chk" title="issue open/close rate + release cadence for the top repos (slower)"><input type="checkbox" id="velocity"> issue&nbsp;history</label>
     <button id="go" type="submit">Scan</button>
   </form>
-  <details class="more">
-    <summary>+ compare multiple repos</summary>
-    <textarea id="morerepos" rows="3" placeholder="one more repo URL per line &mdash; scans all of them and compares their drift"></textarea>
-  </details>
   <div id="status"><span id="spin" class="spin" hidden></span><span id="stext"></span></div>
   <div id="ecos"></div>
   <div id="summary"></div>
@@ -101,6 +99,14 @@ INDEX_HTML = """<!doctype html>
       statusEl = document.getElementById('status'), spin = document.getElementById('spin'),
       stext = document.getElementById('stext'), ecos = document.getElementById('ecos'),
       summary = document.getElementById('summary'), out = document.getElementById('out');
+
+  var reposEl = document.getElementById('repos');
+  reposEl.addEventListener('input', function () {   // grow with the number of URLs
+    reposEl.style.height = 'auto'; reposEl.style.height = reposEl.scrollHeight + 'px';
+  });
+  reposEl.addEventListener('keydown', function (ev) {   // Cmd/Ctrl+Enter submits
+    if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') { ev.preventDefault(); f.requestSubmit(); }
+  });
 
   function setStatus(text, busy, cls) {
     stext.textContent = text; spin.hidden = !busy;
@@ -130,11 +136,12 @@ INDEX_HTML = """<!doctype html>
 
   f.addEventListener('submit', async function (e) {
     e.preventDefault();
-    var repo = document.getElementById('repo').value.trim();
-    if (!repo) return;
-    var more = document.getElementById('morerepos').value.split('\\n')
-                 .map(function (s) { return s.trim(); }).filter(Boolean);
-    var repos = [repo].concat(more);
+    // One box, one-or-many: split on any whitespace/comma (URLs contain neither),
+    // so a single URL scans one repo and several (any layout) compare them.
+    var repos = document.getElementById('repos').value
+                  .split(/[\\s,]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    if (!repos.length) { setStatus('Enter at least one repo URL.', false, 'err'); return; }
+    var repo = repos[0];
     var multi = repos.length > 1;
     var format = document.getElementById('format').value;
     var opts = {

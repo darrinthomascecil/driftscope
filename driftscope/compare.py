@@ -37,6 +37,8 @@ class ComponentRow:
     pins: dict[str, RepoPin]   # repo label -> pin; only repos that use the component
     diverges: bool             # repos pin more than one distinct version between them
     worst: str                 # worst severity across the repos that use it
+    align_to: str | None = None  # the newest pin already in the fleet: a proven
+                                 # consensus target for the laggards (None if not orderable)
 
     @property
     def repo_count(self) -> int:
@@ -48,6 +50,7 @@ class FleetComparison:
     repos: list[str]                      # repo labels, in input order
     rows: list[ComponentRow]              # sorted: divergent first, then by severity
     errors: dict[str, str] = field(default_factory=dict)  # repo label -> failure reason
+    posture: dict[str, dict[str, int]] = field(default_factory=dict)  # repo -> {severity: count}
 
     @property
     def divergent(self) -> list[ComponentRow]:
@@ -85,9 +88,12 @@ def newest_pin(versions, ecosystem: str) -> str | None:
 def compare_reports(named_reports, errors=None) -> FleetComparison:
     """Build the fleet comparison from `[(repo_label, Report), ...]`."""
     repos = [name for name, _ in named_reports]
+    posture: dict[str, dict[str, int]] = {}
     groups: dict[tuple[str, str], dict] = {}
     for name, report in named_reports:
+        counts = posture.setdefault(name, {})
         for f in report.findings:
+            counts[f.severity] = counts.get(f.severity, 0) + 1
             key = (f.component.ecosystem, f.component.name)
             g = groups.setdefault(key, {"latest": None, "repos": {}})
             if f.resolution.latest_stable and not g["latest"]:
@@ -103,13 +109,15 @@ def compare_reports(named_reports, errors=None) -> FleetComparison:
     for (eco, nm), g in groups.items():
         all_vers = _all_versions(g["repos"])
         worst = min((rp.severity for rp in g["repos"].values()), key=severity_rank)
+        diverges = len(all_vers) > 1
         rows.append(ComponentRow(
             ecosystem=eco, name=nm, latest=g["latest"], pins=g["repos"],
-            diverges=len(all_vers) > 1, worst=worst,
+            diverges=diverges, worst=worst,
+            align_to=newest_pin(all_vers, eco) if diverges else None,
         ))
 
     # Divergent components first (the point of the view), then by severity, then by
     # how many repos are affected, then name for stability.
     rows.sort(key=lambda r: (0 if r.diverges else 1, severity_rank(r.worst),
                              -r.repo_count, r.name))
-    return FleetComparison(repos=repos, rows=rows, errors=errors or {})
+    return FleetComparison(repos=repos, rows=rows, errors=errors or {}, posture=posture)
