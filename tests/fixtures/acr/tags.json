@@ -1,0 +1,58 @@
+{
+ "registry": "driftscopetestacr.azurecr.io",
+ "imageName": "internal/webapp",
+ "tags": [
+  {
+   "name": "2.1.0",
+   "digest": "sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d",
+   "createdTime": "2026-07-28T00:41:35.6375548Z",
+   "lastUpdateTime": "2026-07-28T00:41:35.6375548Z",
+   "signed": false,
+   "changeableAttributes": {
+    "deleteEnabled": true,
+    "writeEnabled": true,
+    "readEnabled": true,
+    "listEnabled": true
+   }
+  },
+  {
+   "name": "2.0.0",
+   "digest": "sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc",
+   "createdTime": "2026-07-28T00:41:19.2483662Z",
+   "lastUpdateTime": "2026-07-28T00:41:19.2483662Z",
+   "signed": false,
+   "changeableAttributes": {
+    "deleteEnabled": true,
+    "writeEnabled": true,
+    "readEnabled": true,
+    "listEnabled": true
+   }
+  },
+  {
+   "name": "1.1.0",
+   "digest": "sha256:6baf43584bcb78f2e5847d1de515f23499913ac9f12bdf834811a3145eb11ca1",
+   "createdTime": "2026-07-28T00:41:04.9566606Z",
+   "lastUpdateTime": "2026-07-28T00:41:04.9566606Z",
+   "signed": false,
+   "changeableAttributes": {
+    "deleteEnabled": true,
+    "writeEnabled": true,
+    "readEnabled": true,
+    "listEnabled": true
+   }
+  },
+  {
+   "name": "1.0.0",
+   "digest": "sha256:de0eb0b3f2a47ba1eb89389859a9bd88b28e82f5826b6969ad604979713c2d4f",
+   "createdTime": "2026-07-28T00:40:53.842254Z",
+   "lastUpdateTime": "2026-07-28T00:40:53.842254Z",
+   "signed": false,
+   "changeableAttributes": {
+    "deleteEnabled": true,
+    "writeEnabled": true,
+    "readEnabled": true,
+    "listEnabled": true
+   }
+  }
+ ]
+}

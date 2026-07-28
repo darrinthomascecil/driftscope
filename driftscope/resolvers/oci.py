@@ -56,6 +56,16 @@ def _hub_repo_path(name: str) -> str | None:
 
 
 def resolve_image(c: Component, ctx: Context) -> Resolution:
+    # A private registry answers for itself. Checked before the Docker Hub path
+    # because `_hub_repo_path` rejects any host with a dot and would otherwise
+    # send an internal image down the GitHub-releases fallback, which cannot
+    # know anything about it.
+    from .acr import resolve_acr_image
+
+    private = resolve_acr_image(c, ctx)
+    if private is not None:
+        return private
+
     repo_hint = IMAGE_REPOS.get(c.name) or IMAGE_REPOS.get(c.name.split("/")[-1])
 
     if c.meta.get("digest") and not c.current:
