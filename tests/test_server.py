@@ -247,6 +247,32 @@ def test_scan_streaming_emits_progress_phases_then_done(live_server):
     assert '"findings"' in dones[0]["body"]  # default format is json
 
 
+def test_sse_heartbeats_keep_a_quiet_scan_alive(live_server, monkeypatch):
+    """A scan that goes quiet (a slow clone) still writes heartbeats, so an idle-based
+    proxy won't sever the connection before the done event arrives."""
+    import time
+
+    monkeypatch.setattr(server, "SSE_HEARTBEAT_SECS", 0.05)
+
+    def slow_scan(req, **kw):  # no progress events, just a stall then a result
+        time.sleep(0.3)
+        return (200, "application/json", b'{"findings": []}',
+                {"X-Drift-Severity": "current=1"})
+
+    monkeypatch.setattr(server, "scan_request", slow_scan)
+
+    req = urllib.request.Request(
+        live_server + "/scan?stream=1",
+        data=json.dumps({"repo": "https://github.com/o/r"}).encode(),
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as r:
+        raw = r.read().decode()
+
+    assert ": heartbeat" in raw  # at least one keepalive during the quiet stretch
+    assert any(ev == "done" for ev, _ in _parse_sse(raw))  # and the result still lands
+
+
 # ------------------------------------------------------- multi-repo compare
 
 def test_scan_multi_json_compares_repos(monkeypatch):

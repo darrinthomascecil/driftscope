@@ -134,6 +134,13 @@ def render_report(report, fmt):
 
 MAX_REPOS = 12  # a fleet compare clones every repo; cap so one call can't run away
 
+# How often to send an SSE comment during quiet stretches (a slow clone, a stalled
+# registry). Idle-based proxies -- nginx/ALB, and the Envoy in front of Azure
+# Container Apps -- sever a connection that goes silent; a heartbeat keeps a healthy
+# scan alive. It does NOT defeat a *total* request cap (Container Apps' ~240s): that
+# still needs the async job model. Kept well under a typical 60s idle window.
+SSE_HEARTBEAT_SECS = 15
+
 
 def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
     """Scan several repos and compare them. Returns (repo_results, FleetComparison).
@@ -376,6 +383,18 @@ class _Handler(BaseHTTPRequestHandler):
             q.put(None)
 
         threading.Thread(target=worker, daemon=True).start()
+        self._sse_stream(q, lambda frame, item: frame(item[0], item[1]))
+
+    def _sse_stream(self, q, handle):
+        """Send SSE headers, then pump the queue to the wire until a queued `None`.
+
+        During quiet stretches -- a slow clone, a stalled registry -- it emits an SSE
+        comment (`: heartbeat`) every SSE_HEARTBEAT_SECS so an idle-based proxy does
+        not sever a healthy scan. `handle(frame, item)` renders the frames for one
+        queued item; `frame(event, data)` writes one SSE event.
+        """
+        import queue
+
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
@@ -389,12 +408,17 @@ class _Handler(BaseHTTPRequestHandler):
 
         try:
             while True:
-                item = q.get()
+                try:
+                    item = q.get(timeout=SSE_HEARTBEAT_SECS)
+                except queue.Empty:
+                    self.wfile.write(b": heartbeat\n\n")  # comment line; clients ignore it
+                    self.wfile.flush()
+                    continue
                 if item is None:
                     break
-                frame(item[0], item[1])
+                handle(frame, item)
         except (BrokenPipeError, ConnectionResetError):
-            pass
+            pass  # client disconnected; let the worker finish and be GC'd
 
     def _scan_streaming(self, req):
         """Run the scan in a worker thread, streaming phase events as SSE.
@@ -423,36 +447,21 @@ class _Handler(BaseHTTPRequestHandler):
 
         threading.Thread(target=worker, daemon=True).start()
 
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "close")
-        self.end_headers()
-        self.close_connection = True
+        def handle(frame, item):
+            kind, payload = item
+            if kind == "progress":
+                frame("progress", payload)
+            else:
+                status, content_type, body, headers = payload
+                frame("done", {
+                    "status": status,
+                    "content_type": content_type,
+                    "severity": headers.get("X-Drift-Severity"),
+                    "commit": headers.get("X-Drift-Commit"),
+                    "body": body.decode("utf-8", "replace"),
+                })
 
-        def frame(event, data):
-            self.wfile.write(f"event: {event}\ndata: {json.dumps(data)}\n\n".encode())
-            self.wfile.flush()
-
-        try:
-            while True:
-                item = q.get()
-                if item is None:
-                    break
-                kind, payload = item
-                if kind == "progress":
-                    frame("progress", payload)
-                else:
-                    status, content_type, body, headers = payload
-                    frame("done", {
-                        "status": status,
-                        "content_type": content_type,
-                        "severity": headers.get("X-Drift-Severity"),
-                        "commit": headers.get("X-Drift-Commit"),
-                        "body": body.decode("utf-8", "replace"),
-                    })
-        except (BrokenPipeError, ConnectionResetError):
-            pass  # client disconnected; let the worker finish and be GC'd
+        self._sse_stream(q, handle)
 
     def log_message(self, fmt, *args):  # concise one-liner to stderr
         import sys
