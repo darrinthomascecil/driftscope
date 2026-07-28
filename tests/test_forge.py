@@ -27,6 +27,7 @@ from driftscope.forge import (
     resolve_forge,
 )
 from driftscope.forge.ado import NON_ISSUE_TYPES, AdoForge
+from driftscope.source import AdoCredential
 from driftscope.http import Cache
 
 FIX = Path(__file__).parent / "fixtures" / "ado"
@@ -40,7 +41,10 @@ def load(name: str):
 def ado(tmp_path, monkeypatch):
     """An AdoForge whose transport replays the recorded payloads."""
     forge = AdoForge(Cache(root=tmp_path / "cache"), enabled=True)
-    monkeypatch.setattr("driftscope.forge.ado.ado_token", lambda: "TOKEN")
+    # No credential is stubbed here on purpose: `_call` is replaced wholesale
+    # below, so nothing in this fixture reaches the auth path. The header itself
+    # is covered by the transport tests at the end of this file, which drive the
+    # real `_call`.
 
     states = load("states")
     tags = load("refs-tags")
@@ -393,3 +397,68 @@ def test_ado_delta_failure_leaves_counts_unavailable(ado, monkeypatch):
     d = compute_delta(ado, "contoso/Platform/payments", "2.3.0", "2.4.0",
                       Resolution(forge=AZURE_DEVOPS))
     assert d.counts_available is False, "a failed count is unknown, never zero"
+
+
+# ------------------------------------------------------------------- transport
+
+# These drive the real `AdoClient._call`, which every other test in this file
+# stubs out. The Authorization header is the one piece of the client that no
+# recorded fixture can exercise, and it is now scheme-dependent.
+
+
+@pytest.fixture
+def capture_request(monkeypatch):
+    """Run the real `_call`, capturing the urllib Request instead of sending it."""
+    sent = []
+
+    class FakeResponse:
+        def read(self):
+            return b'{"value": []}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        sent.append(req)
+        return FakeResponse()
+
+    monkeypatch.setattr("driftscope.forge.ado.urllib.request.urlopen", fake_urlopen)
+    return sent
+
+
+def _call_once(tmp_path, cred, monkeypatch, captured):
+    forge = AdoForge(Cache(root=tmp_path / "cache"), enabled=True)
+    monkeypatch.setattr("driftscope.forge.ado.ado_credential", lambda: cred)
+    forge._call("https://dev.azure.com/org/proj/_apis/git/repositories/r/refs")
+    assert captured, "the request was never issued"
+    return captured[0]
+
+
+def test_a_bearer_credential_is_sent_as_bearer(tmp_path, monkeypatch, capture_request):
+    req = _call_once(tmp_path, AdoCredential("JWT", "Bearer", "az"),
+                     monkeypatch, capture_request)
+    assert req.get_header("Authorization") == "Bearer JWT"
+
+
+def test_a_pat_credential_is_sent_as_basic(tmp_path, monkeypatch, capture_request):
+    """A PAT sent as Bearer gets a 401, which `_call` converts to None -- so this
+    reaching the wire wrong would read as an empty project, not as a failure."""
+    import base64
+
+    req = _call_once(tmp_path, AdoCredential("mypat", "Basic", "AZURE_DEVOPS_EXT_PAT"),
+                     monkeypatch, capture_request)
+    value = req.get_header("Authorization")
+    assert value.startswith("Basic ")
+    assert base64.b64decode(value.split(" ", 1)[1]).decode() == ":mypat"
+
+
+def test_no_credential_means_no_request_at_all(tmp_path, monkeypatch, capture_request):
+    """Better to make no call than an unauthenticated one: ADO answers those with
+    a sign-in redirect that parses as neither an error nor data."""
+    forge = AdoForge(Cache(root=tmp_path / "cache"), enabled=True)
+    monkeypatch.setattr("driftscope.forge.ado.ado_credential", lambda: None)
+    assert forge._call("https://dev.azure.com/org/proj/_apis/git/repositories/r/refs") is None
+    assert capture_request == []

@@ -22,7 +22,8 @@ as such rather than dated from its commit.
 **Reactions live on comments**, one call per work item, so they are not sampled by
 default -- see NOT_SAMPLED in the package docstring.
 
-Auth reuses `source.ado_token()`: the token already on the machine from `az login`,
+Auth reuses `source.ado_credential()`: a token already on the machine or in the
+environment -- an AAD bearer token or a PAT, each sent with its own scheme,
 read once per process. No PAT.
 """
 
@@ -37,7 +38,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from ..http import USER_AGENT, Cache
-from ..source import ado_token, parse_ado_url
+from ..source import ado_credential, parse_ado_url
 from . import AZURE_DEVOPS, Forge, IssueRecord, IssueWalk, ReleaseRecord
 
 API = "7.1"
@@ -128,15 +129,15 @@ class AdoForge(Forge):
         if self.offline or not self.enabled:
             return self.cache.get(key, ignore_ttl=True)
 
-        token = ado_token()
-        if not token:
+        cred = ado_credential()
+        if not cred:
             return None
 
         payload = json.dumps(body).encode() if body is not None else None
         for attempt in range(self.retries + 1):
             req = urllib.request.Request(url, data=payload,
                                          method="POST" if body is not None else "GET")
-            req.add_header("Authorization", f"Bearer {token}")
+            req.add_header("Authorization", cred.header)
             req.add_header("Accept", "application/json")
             req.add_header("User-Agent", USER_AGENT)
             if payload is not None:

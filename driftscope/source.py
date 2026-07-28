@@ -10,6 +10,8 @@ disabled explicitly so a hostile repo cannot run anything during clone.
 
 from __future__ import annotations
 
+import base64
+import os
 import re
 import shutil
 import subprocess
@@ -154,21 +156,96 @@ def normalize_remote(target: str, *, ado_org: str | None = None) -> str:
 # mints a token scoped to ADO, which is how a private repo is cloned without a PAT.
 ADO_RESOURCE = "499b84ac-1321-427f-aa17-267ca6975798"
 
-_ADO_TOKEN: str | None | bool = False  # False = not yet looked up
+@dataclass(frozen=True)
+class AdoCredential:
+    """An Azure DevOps credential together with *how* it must be presented.
 
+    The scheme is not decoration. Azure DevOps accepts two kinds of credential
+    and authenticates them differently:
 
-def ado_token() -> str | None:
-    """An Azure DevOps access token from the already-signed-in `az`, read once.
+        AAD / OAuth access token  ->  Authorization: Bearer {token}
+        Personal Access Token     ->  Authorization: Basic base64(":" + pat)
 
-    Mirrors `http.gh_token()`: the credential already exists on the machine, so
-    there is no PAT to manage and nothing to put in a config file. Returns None
-    when `az` is missing or not logged in, in which case the caller falls back to
-    whatever git credentials the user has configured.
+    Sending a PAT as a Bearer token returns 401. That matters more here than it
+    would elsewhere, because `AdoClient._call` turns a 401 into `None`, which
+    propagates as `counts_available = False` -- so the mistake surfaces as a
+    report with fewer findings rather than as an error. Carrying the scheme
+    alongside the token is what keeps that from being a guess.
+
+    `origin` records which rule supplied the credential, so a failure can be
+    diagnosed without re-deriving the precedence order.
     """
-    global _ADO_TOKEN
-    if _ADO_TOKEN is not False:
-        return _ADO_TOKEN  # type: ignore[return-value]
-    _ADO_TOKEN = None
+
+    token: str
+    scheme: str  # "Bearer" | "Basic"
+    origin: str  # "az" | the environment variable name
+
+    @property
+    def header(self) -> str:
+        """The full `Authorization` header value."""
+        if self.scheme == "Basic":
+            # ADO expects an empty username and the PAT as the password.
+            return "Basic " + base64.b64encode(f":{self.token}".encode()).decode()
+        return f"Bearer {self.token}"
+
+
+# Azure DevOps' fixed application ID. `az account get-access-token --resource <this>`
+# mints a token scoped to ADO, which is how a private repo is cloned without a PAT.
+ADO_RESOURCE = "499b84ac-1321-427f-aa17-267ca6975798"
+
+# Environment variables checked before shelling out to `az`, in this order, with
+# the scheme each one implies.
+#
+# Explicit environment beats `az` deliberately. Setting one of these is an act of
+# intent -- in a container or a CI job there may be no `az` at all, and probing a
+# logged-out `az` costs a 30-second timeout before returning nothing.
+#
+#   AZURE_DEVOPS_EXT_PAT  what the `az devops` CLI extension reads; always a PAT
+#   SYSTEM_ACCESSTOKEN    Azure Pipelines' built-in OAuth token, when a job opts in
+#   AZURE_DEVOPS_TOKEN    no single owner defines this one, so its scheme is
+#                         detected from the token's shape rather than assumed
+_ADO_ENV_VARS: tuple[tuple[str, str | None], ...] = (
+    ("AZURE_DEVOPS_EXT_PAT", "Basic"),
+    ("SYSTEM_ACCESSTOKEN", "Bearer"),
+    ("AZURE_DEVOPS_TOKEN", None),
+)
+
+_ADO_CRED: AdoCredential | None | bool = False  # False = not yet looked up
+
+
+def _scheme_for(token: str) -> str:
+    """Bearer or Basic, from the token's own shape.
+
+    An AAD access token is a JWT: three base64url segments separated by dots,
+    the first decoding to a JSON header, so it always begins `eyJ`. A PAT is an
+    opaque string with no dots. The two are therefore distinguishable by
+    inspection, which is why the ambiguous variable can be supported at all --
+    were they not, the honest option would be to refuse it rather than pick.
+    """
+    return "Bearer" if token.startswith("eyJ") and token.count(".") == 2 else "Basic"
+
+
+def ado_credential() -> AdoCredential | None:
+    """The Azure DevOps credential for this process, resolved once.
+
+    Mirrors `http.gh_token()`: prefer a credential that already exists on the
+    machine so there is nothing to configure. Returns None when nothing supplies
+    one, in which case the caller falls back to whatever git credentials the user
+    has configured -- never a header built from an empty token.
+    """
+    global _ADO_CRED
+    if _ADO_CRED is not False:
+        return _ADO_CRED  # type: ignore[return-value]
+    _ADO_CRED = None
+
+    for name, scheme in _ADO_ENV_VARS:
+        # CI systems routinely export a variable as the empty string; that means
+        # "unset", not "authenticate with nothing".
+        raw = (os.environ.get(name) or "").strip()
+        if raw:
+            _ADO_CRED = AdoCredential(raw, scheme or _scheme_for(raw), name)
+            return _ADO_CRED
+
     if shutil.which("az"):
         try:
             r = subprocess.run(
@@ -177,10 +254,16 @@ def ado_token() -> str | None:
                 capture_output=True, text=True, timeout=30,
             )
             if r.returncode == 0 and r.stdout.strip():
-                _ADO_TOKEN = r.stdout.strip()
+                _ADO_CRED = AdoCredential(r.stdout.strip(), "Bearer", "az")
         except (subprocess.SubprocessError, OSError):
             pass
-    return _ADO_TOKEN  # type: ignore[return-value]
+    return _ADO_CRED  # type: ignore[return-value]
+
+
+def ado_token() -> str | None:
+    """The raw token, for callers that do not build a header themselves."""
+    cred = ado_credential()
+    return cred.token if cred else None
 
 
 def _auth_env_for(remote: str) -> dict[str, str]:
@@ -194,13 +277,13 @@ def _auth_env_for(remote: str) -> dict[str, str]:
     """
     if not parse_ado_url(remote):
         return {}
-    token = ado_token()
-    if not token:
+    cred = ado_credential()
+    if not cred:
         return {}
     return {
         "GIT_CONFIG_COUNT": "1",
         "GIT_CONFIG_KEY_0": "http.extraheader",
-        "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {token}",
+        "GIT_CONFIG_VALUE_0": f"Authorization: {cred.header}",
     }
 
 

@@ -5,12 +5,15 @@ No network and no cloning -- these are all pure string functions.
 
 from __future__ import annotations
 
+import base64
+
 import pytest
 
 from pathlib import Path
 
 from driftscope import source as src_mod
 from driftscope.source import (
+    AdoCredential,
     AdoRef,
     _auth_env_for,
     looks_remote,
@@ -139,14 +142,20 @@ def test_ado_url_looks_remote():
 # ------------------------------------------------------------------ clone auth
 
 
+ADO_URL = "https://dev.azure.com/contoso/Platform/_git/payments"
+
+
 @pytest.fixture
 def fake_token(monkeypatch):
     """Stand in for `az account get-access-token` -- tests never shell out."""
-    monkeypatch.setattr(src_mod, "ado_token", lambda: "TOKEN123")
+    monkeypatch.setattr(
+        src_mod, "ado_credential",
+        lambda: AdoCredential("TOKEN123", "Bearer", "az"),
+    )
 
 
 def test_ado_clone_gets_a_bearer_header(fake_token):
-    env = _auth_env_for("https://dev.azure.com/contoso/Platform/_git/payments")
+    env = _auth_env_for(ADO_URL)
     assert env["GIT_CONFIG_COUNT"] == "1"
     assert env["GIT_CONFIG_KEY_0"] == "http.extraheader"
     assert env["GIT_CONFIG_VALUE_0"] == "Authorization: Bearer TOKEN123"
@@ -155,7 +164,7 @@ def test_ado_clone_gets_a_bearer_header(fake_token):
 def test_token_never_reaches_argv(fake_token):
     """argv is world-readable via `ps`; environment is not. The token must travel
     in GIT_CONFIG_VALUE_0, never as a `-c` argument."""
-    env = _auth_env_for("https://dev.azure.com/contoso/Platform/_git/payments")
+    env = _auth_env_for(ADO_URL)
     assert not any(k.startswith("-c") or "TOKEN123" in k for k in env)
     assert "TOKEN123" in env["GIT_CONFIG_VALUE_0"]
 
@@ -169,8 +178,110 @@ def test_github_clone_gets_no_injected_auth(fake_token):
 def test_no_token_means_no_auth_env(monkeypatch):
     """`az` missing or logged out falls back to whatever git is configured with,
     rather than producing a header with an empty token."""
-    monkeypatch.setattr(src_mod, "ado_token", lambda: None)
-    assert _auth_env_for("https://dev.azure.com/contoso/Platform/_git/payments") == {}
+    monkeypatch.setattr(src_mod, "ado_credential", lambda: None)
+    assert _auth_env_for(ADO_URL) == {}
+
+
+# ------------------------------------------------------- credential resolution
+
+# A structurally valid JWT: `{"alg":"none"}` / `{"sub":"x"}` / empty signature.
+# Only the shape matters -- nothing here verifies or decodes it.
+JWT = ("eyJhbGciOiJub25lIn0.eyJzdWIiOiJ4In0.")
+PAT = "abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnop"
+
+
+@pytest.fixture(autouse=True)
+def clear_cred_cache(monkeypatch):
+    """`ado_credential` memoises for the process; each test resolves afresh."""
+    monkeypatch.setattr(src_mod, "_ADO_CRED", False)
+    for name, _ in src_mod._ADO_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture
+def no_az(monkeypatch):
+    """No `az` on PATH, so only the environment can supply a credential."""
+    monkeypatch.setattr(src_mod.shutil, "which", lambda _: None)
+
+
+def test_a_pat_authenticates_as_basic_not_bearer(monkeypatch, no_az):
+    """The bug this whole type exists to prevent. ADO answers a PAT-as-Bearer
+    with 401, and `AdoClient._call` turns 401 into None -- so getting this wrong
+    produces a report with fewer findings instead of an error anyone would see."""
+    monkeypatch.setenv("AZURE_DEVOPS_EXT_PAT", PAT)
+    cred = src_mod.ado_credential()
+    assert cred.scheme == "Basic"
+    assert cred.header.startswith("Basic ")
+    # Empty username, PAT as password -- what ADO expects.
+    assert base64.b64decode(cred.header.split(" ", 1)[1]).decode() == f":{PAT}"
+
+
+def test_pipelines_system_accesstoken_is_a_bearer_token(monkeypatch, no_az):
+    monkeypatch.setenv("SYSTEM_ACCESSTOKEN", JWT)
+    cred = src_mod.ado_credential()
+    assert (cred.scheme, cred.origin) == ("Bearer", "SYSTEM_ACCESSTOKEN")
+    assert cred.header == f"Bearer {JWT}"
+
+
+@pytest.mark.parametrize("token,scheme", [(JWT, "Bearer"), (PAT, "Basic")])
+def test_the_ambiguous_variable_is_detected_not_assumed(monkeypatch, no_az, token, scheme):
+    """AZURE_DEVOPS_TOKEN has no single owner defining its meaning, so the scheme
+    comes from the token's own shape -- a JWT is an AAD token, anything else is
+    treated as a PAT."""
+    monkeypatch.setenv("AZURE_DEVOPS_TOKEN", token)
+    assert src_mod.ado_credential().scheme == scheme
+
+
+def test_env_beats_az(monkeypatch):
+    """Setting the variable is an act of intent, and probing a logged-out `az`
+    costs a 30s timeout to learn nothing."""
+    monkeypatch.setenv("SYSTEM_ACCESSTOKEN", JWT)
+
+    def explode(*a, **k):  # pragma: no cover -- reaching this is the failure
+        raise AssertionError("shelled out to az despite an env credential")
+
+    monkeypatch.setattr(src_mod.shutil, "which", lambda _: "/usr/bin/az")
+    monkeypatch.setattr(src_mod.subprocess, "run", explode)
+    assert src_mod.ado_credential().origin == "SYSTEM_ACCESSTOKEN"
+
+
+def test_precedence_among_env_vars(monkeypatch, no_az):
+    monkeypatch.setenv("AZURE_DEVOPS_EXT_PAT", PAT)
+    monkeypatch.setenv("SYSTEM_ACCESSTOKEN", JWT)
+    monkeypatch.setenv("AZURE_DEVOPS_TOKEN", JWT)
+    assert src_mod.ado_credential().origin == "AZURE_DEVOPS_EXT_PAT"
+
+
+@pytest.mark.parametrize("value", ["", "   ", "\n"])
+def test_an_empty_variable_means_unset(monkeypatch, no_az, value):
+    """CI systems export variables as the empty string constantly. That is
+    "nothing supplied it", not "authenticate with nothing" -- a header built from
+    it would 401 and read as a permissions problem."""
+    monkeypatch.setenv("SYSTEM_ACCESSTOKEN", value)
+    assert src_mod.ado_credential() is None
+
+
+def test_surrounding_whitespace_is_stripped(monkeypatch, no_az):
+    """A token piped through a file or a shell substitution keeps its newline."""
+    monkeypatch.setenv("SYSTEM_ACCESSTOKEN", f"  {JWT}\n")
+    assert src_mod.ado_credential().token == JWT
+
+
+def test_nothing_anywhere_yields_none(no_az):
+    assert src_mod.ado_credential() is None
+    assert src_mod.ado_token() is None
+
+
+def test_ado_token_still_returns_the_raw_value(monkeypatch, no_az):
+    monkeypatch.setenv("SYSTEM_ACCESSTOKEN", JWT)
+    assert src_mod.ado_token() == JWT
+
+
+def test_resolution_is_cached_for_the_process(monkeypatch, no_az):
+    monkeypatch.setenv("SYSTEM_ACCESSTOKEN", JWT)
+    first = src_mod.ado_credential()
+    monkeypatch.delenv("SYSTEM_ACCESSTOKEN")
+    assert src_mod.ado_credential() is first
 
 
 # --------------------------------------------------------------- cache writes
