@@ -232,6 +232,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="list the names accepted by --ecosystem",
         description="List ecosystem groups and the individual ecosystems they cover.",
     )
+
+    sv = sub.add_parser(
+        "serve",
+        help="run driftscope as an HTTP service (POST a repo URL, get a report)",
+        description="Start an HTTP server exposing POST /scan: clone a repo, run the "
+                    "scan, return the report. Zero extra dependencies -- stdlib only.",
+    )
+    sv.add_argument("--host", default="0.0.0.0", help="bind address (default 0.0.0.0)")
+    sv.add_argument("--port", type=int, default=8080, help="port (default 8080)")
+    sv.add_argument("--max-concurrent", type=int, default=4,
+                    help="scans allowed to run at once; excess is rejected 503 (default 4)")
+    sv.add_argument("--allow-host", action="append", default=None, metavar="HOST",
+                    help="restrict which hosts may be cloned (repeatable). Also reads "
+                         "DRIFTSCOPE_ALLOW_HOSTS (comma-separated). Default: allow all.")
+    sv.add_argument("--cache-dir", default=None,
+                    help="shared on-disk HTTP cache (defaults to $DRIFTSCOPE_CACHE)")
     return p
 
 
@@ -417,7 +433,29 @@ def main(argv: list[str] | None = None) -> int:
         except KeyboardInterrupt:
             print("\ninterrupted", file=sys.stderr)
             return 130
+    if args.command == "serve":
+        return cmd_serve(args)
     return 2
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    import os
+
+    from .server import run_server
+
+    # An allowlist can arrive on the flag or in the environment; merge both, since
+    # a container typically sets the env and an operator may add one more by hand.
+    hosts: list[str] = list(args.allow_host or [])
+    env_hosts = os.environ.get("DRIFTSCOPE_ALLOW_HOSTS", "")
+    hosts += [h.strip() for h in env_hosts.split(",") if h.strip()]
+    run_server(
+        host=args.host,
+        port=args.port,
+        max_concurrent=args.max_concurrent,
+        allow_hosts=tuple(dict.fromkeys(hosts)),
+        cache_dir=args.cache_dir,
+    )
+    return 0
 
 
 if __name__ == "__main__":
