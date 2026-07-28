@@ -392,7 +392,12 @@ def cmd_trend(args: argparse.Namespace) -> int:
         if args.json == "-":
             print(text)
         else:
-            out = resolve_out_path(args.json, src, "json")
+            # `trend` has no Source: it reads a history directory, not a repo.
+            # Passing the undefined `src` here was a NameError on every
+            # `trend --json <file>` -- the path `--json -` never touches.
+            out = Path(args.json).expanduser()
+            if out.is_dir():
+                out = out / f"drift-trend-{directory.name}.json"
             out.write_text(text)
             print(f"wrote {out}", file=sys.stderr)
     else:
