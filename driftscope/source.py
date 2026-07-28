@@ -308,6 +308,37 @@ def _git(args: list[str], cwd: Path | None = None, timeout: int = 300,
     )
 
 
+CLONE_PREFIX = "driftscope-clone-"
+
+
+def sweep_stale_clones(older_than_secs: float = 3600, root=None) -> int:
+    """Remove clone temp dirs abandoned by a killed process, returning the count.
+
+    open_source cleans up its own clone in a `finally`, but a SIGKILL runs no
+    `finally` -- a container scaled in or evicted mid-scan leaves its clone behind,
+    and on a persistent/mounted temp those accumulate until the disk fills. Sweep any
+    `driftscope-clone-*` older than `older_than_secs`; called at server startup with
+    0 (nothing can be a live scan before the server accepts a request).
+    """
+    import time
+
+    base = Path(root) if root is not None else Path(tempfile.gettempdir())
+    cutoff = time.time() - older_than_secs
+    removed = 0
+    try:
+        candidates = list(base.glob(f"{CLONE_PREFIX}*"))
+    except OSError:
+        return 0
+    for d in candidates:
+        try:
+            if d.is_dir() and d.stat().st_mtime <= cutoff:
+                shutil.rmtree(d, ignore_errors=True)
+                removed += 1
+        except OSError:
+            continue
+    return removed
+
+
 @contextmanager
 def open_source(
     target: str,
@@ -328,16 +359,18 @@ def open_source(
         raise CloneError("git is not installed, cannot scan a remote repository")
 
     remote = normalize_remote(target, ado_org=ado_org)
-    tmp = Path(tempfile.mkdtemp(prefix="driftscope-clone-"))
-    dest = tmp / "repo"
-    args = ["clone", "--depth", "1", "--single-branch", "--no-tags", "-c",
-            "core.hooksPath=/dev/null"]
-    if ref:
-        args += ["--branch", ref]
-    args += [remote, str(dest)]
-
     auth_env = _auth_env_for(remote)
+    # Create the temp dir last, and wrap everything after it in try/finally, so no
+    # code path between its creation and the cleanup guard can leak it.
+    tmp = Path(tempfile.mkdtemp(prefix=CLONE_PREFIX))
     try:
+        dest = tmp / "repo"
+        args = ["clone", "--depth", "1", "--single-branch", "--no-tags", "-c",
+                "core.hooksPath=/dev/null"]
+        if ref:
+            args += ["--branch", ref]
+        args += [remote, str(dest)]
+
         r = _git(args, extra_env=auth_env)
         if r.returncode != 0:
             err = (r.stderr or r.stdout or "").strip().splitlines()

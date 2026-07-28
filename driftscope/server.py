@@ -134,6 +134,13 @@ def render_report(report, fmt):
 
 MAX_REPOS = 12  # a fleet compare clones every repo; cap so one call can't run away
 
+# How often to send an SSE comment during quiet stretches (a slow clone, a stalled
+# registry). Idle-based proxies -- nginx/ALB, and the Envoy in front of Azure
+# Container Apps -- sever a connection that goes silent; a heartbeat keeps a healthy
+# scan alive. It does NOT defeat a *total* request cap (Container Apps' ~240s): that
+# still needs the async job model. Kept well under a typical 60s idle window.
+SSE_HEARTBEAT_SECS = 15
+
 
 def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
     """Scan several repos and compare them. Returns (repo_results, FleetComparison).
@@ -376,6 +383,18 @@ class _Handler(BaseHTTPRequestHandler):
             q.put(None)
 
         threading.Thread(target=worker, daemon=True).start()
+        self._sse_stream(q, lambda frame, item: frame(item[0], item[1]))
+
+    def _sse_stream(self, q, handle):
+        """Send SSE headers, then pump the queue to the wire until a queued `None`.
+
+        During quiet stretches -- a slow clone, a stalled registry -- it emits an SSE
+        comment (`: heartbeat`) every SSE_HEARTBEAT_SECS so an idle-based proxy does
+        not sever a healthy scan. `handle(frame, item)` renders the frames for one
+        queued item; `frame(event, data)` writes one SSE event.
+        """
+        import queue
+
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
@@ -389,12 +408,17 @@ class _Handler(BaseHTTPRequestHandler):
 
         try:
             while True:
-                item = q.get()
+                try:
+                    item = q.get(timeout=SSE_HEARTBEAT_SECS)
+                except queue.Empty:
+                    self.wfile.write(b": heartbeat\n\n")  # comment line; clients ignore it
+                    self.wfile.flush()
+                    continue
                 if item is None:
                     break
-                frame(item[0], item[1])
+                handle(frame, item)
         except (BrokenPipeError, ConnectionResetError):
-            pass
+            pass  # client disconnected; let the worker finish and be GC'd
 
     def _scan_streaming(self, req):
         """Run the scan in a worker thread, streaming phase events as SSE.
@@ -423,36 +447,21 @@ class _Handler(BaseHTTPRequestHandler):
 
         threading.Thread(target=worker, daemon=True).start()
 
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "close")
-        self.end_headers()
-        self.close_connection = True
+        def handle(frame, item):
+            kind, payload = item
+            if kind == "progress":
+                frame("progress", payload)
+            else:
+                status, content_type, body, headers = payload
+                frame("done", {
+                    "status": status,
+                    "content_type": content_type,
+                    "severity": headers.get("X-Drift-Severity"),
+                    "commit": headers.get("X-Drift-Commit"),
+                    "body": body.decode("utf-8", "replace"),
+                })
 
-        def frame(event, data):
-            self.wfile.write(f"event: {event}\ndata: {json.dumps(data)}\n\n".encode())
-            self.wfile.flush()
-
-        try:
-            while True:
-                item = q.get()
-                if item is None:
-                    break
-                kind, payload = item
-                if kind == "progress":
-                    frame("progress", payload)
-                else:
-                    status, content_type, body, headers = payload
-                    frame("done", {
-                        "status": status,
-                        "content_type": content_type,
-                        "severity": headers.get("X-Drift-Severity"),
-                        "commit": headers.get("X-Drift-Commit"),
-                        "body": body.decode("utf-8", "replace"),
-                    })
-        except (BrokenPipeError, ConnectionResetError):
-            pass  # client disconnected; let the worker finish and be GC'd
+        self._sse_stream(q, handle)
 
     def log_message(self, fmt, *args):  # concise one-liner to stderr
         import sys
@@ -467,12 +476,41 @@ def run_server(
     allow_hosts: tuple[str, ...] = (),
     cache_dir: str | None = None,
 ) -> None:
-    """Serve until interrupted. Threaded so a slow scan does not block liveness."""
+    """Serve until interrupted. Threaded so a slow scan does not block liveness.
+
+    Shuts down gracefully on SIGTERM/SIGINT: it stops accepting new work and lets
+    in-flight scans drain (ThreadingHTTPServer joins its request threads on close).
+    That matters under an orchestrator -- Azure Container Apps, Kubernetes -- which
+    sends SIGTERM then SIGKILLs after a grace period; without this, every deploy or
+    scale-in would reset live scans. Orphans from a prior SIGKILL are swept at start.
+    """
+    import signal
+    import sys
+
+    from .source import sweep_stale_clones
+
+    swept = sweep_stale_clones(0)  # nothing can be a live scan before we accept a request
+    if swept:
+        print(f"driftscope: swept {swept} orphaned clone dir(s) at startup", file=sys.stderr)
+
     httpd = ThreadingHTTPServer((host, port), _Handler)
     httpd.ds_sem = threading.Semaphore(max(1, max_concurrent))  # type: ignore[attr-defined]
     httpd.ds_allow_hosts = tuple(allow_hosts)  # type: ignore[attr-defined]
     httpd.ds_cache_dir = cache_dir or os.environ.get("DRIFTSCOPE_CACHE")  # type: ignore[attr-defined]
-    import sys
+
+    def _graceful(signum, _frame):
+        # shutdown() blocks until serve_forever() returns, so it must not run on the
+        # serving thread -- hand it to a helper thread.
+        print(f"driftscope: signal {signum} received; draining in-flight scans...",
+              file=sys.stderr)
+        threading.Thread(target=httpd.shutdown, daemon=True).start()
+
+    for _sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(_sig, _graceful)
+        except ValueError:
+            pass  # not on the main thread (embedded/test harness): skip signal wiring
+
     print(
         f"driftscope serving on http://{host}:{port} "
         f"(max_concurrent={max_concurrent}, "
@@ -482,6 +520,6 @@ def run_server(
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        pass
+        pass  # no signal handler installed (off-main-thread); still drain below
     finally:
-        httpd.server_close()
+        httpd.server_close()  # joins in-flight request threads: the actual drain

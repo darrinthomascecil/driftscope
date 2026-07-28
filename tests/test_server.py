@@ -247,6 +247,32 @@ def test_scan_streaming_emits_progress_phases_then_done(live_server):
     assert '"findings"' in dones[0]["body"]  # default format is json
 
 
+def test_sse_heartbeats_keep_a_quiet_scan_alive(live_server, monkeypatch):
+    """A scan that goes quiet (a slow clone) still writes heartbeats, so an idle-based
+    proxy won't sever the connection before the done event arrives."""
+    import time
+
+    monkeypatch.setattr(server, "SSE_HEARTBEAT_SECS", 0.05)
+
+    def slow_scan(req, **kw):  # no progress events, just a stall then a result
+        time.sleep(0.3)
+        return (200, "application/json", b'{"findings": []}',
+                {"X-Drift-Severity": "current=1"})
+
+    monkeypatch.setattr(server, "scan_request", slow_scan)
+
+    req = urllib.request.Request(
+        live_server + "/scan?stream=1",
+        data=json.dumps({"repo": "https://github.com/o/r"}).encode(),
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as r:
+        raw = r.read().decode()
+
+    assert ": heartbeat" in raw  # at least one keepalive during the quiet stretch
+    assert any(ev == "done" for ev, _ in _parse_sse(raw))  # and the result still lands
+
+
 # ------------------------------------------------------- multi-repo compare
 
 def test_scan_multi_json_compares_repos(monkeypatch):
@@ -309,3 +335,53 @@ def test_scan_multi_rejects_empty_and_oversized(live_server):
     assert code == 400 and "non-empty" in json.loads(body)["error"]
     code, body = _post_expect_error(live_server + "/scan-multi", {"repos": ["https://github.com/o/r"] * 99})
     assert code == 400 and "too many" in json.loads(body)["error"]
+
+
+# --------------------------------------------------- graceful shutdown (SIGTERM)
+
+def test_serve_exits_gracefully_on_sigterm():
+    """SIGTERM must drain and exit 0, not leave the process killed by the signal.
+
+    Before the handler, SIGTERM hit Python's default (terminate) and the process
+    exited with -SIGTERM; an orchestrator's every deploy/scale-in would reset live
+    scans. A clean 0 proves serve_forever() stopped and server_close() drained.
+    """
+    import signal
+    import socket
+    import subprocess
+    import sys
+    import time
+    import urllib.request
+    from pathlib import Path
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+
+    repo_root = Path(__file__).resolve().parent.parent
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "driftscope", "serve",
+         "--host", "127.0.0.1", "--port", str(port)],
+        cwd=str(repo_root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    try:
+        up = False
+        for _ in range(60):
+            if proc.poll() is not None:
+                break
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1) as r:
+                    if r.status == 200:
+                        up = True
+                        break
+            except OSError:
+                time.sleep(0.1)
+        assert up, f"server did not come up (exit={proc.poll()})"
+
+        proc.send_signal(signal.SIGTERM)
+        assert proc.wait(timeout=10) == 0  # graceful drain + clean exit
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
