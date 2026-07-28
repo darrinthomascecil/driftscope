@@ -24,6 +24,8 @@ from driftscope.forge import (
     IssueRecord,
     IssueWalk,
     ReleaseRecord,
+    forge_ref_from_url,
+    forge_web_url,
     resolve_forge,
 )
 from driftscope.forge.ado import NON_ISSUE_TYPES, AdoForge
@@ -90,6 +92,43 @@ def test_resolution_without_a_forge_routes_to_github():
     assert resolve_forge(None, forges) == "gh-client"
     assert resolve_forge(GITHUB, forges) == "gh-client"
     assert resolve_forge(AZURE_DEVOPS, forges) == "ado-client"
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        # GitHub, in the shapes a source label actually uses.
+        ("https://github.com/contoso/payments", (GITHUB, "contoso/payments")),
+        ("https://github.com/contoso/payments.git", (GITHUB, "contoso/payments")),
+        ("git@github.com:contoso/payments.git", (GITHUB, "contoso/payments")),
+        # Azure DevOps modern and legacy hosts -> org/project/repo.
+        (
+            "https://dev.azure.com/contoso/Platform/_git/payments",
+            (AZURE_DEVOPS, "contoso/Platform/payments"),
+        ),
+        (
+            "https://contoso.visualstudio.com/Platform/_git/payments",
+            (AZURE_DEVOPS, "contoso/Platform/payments"),
+        ),
+        # Neither forge, and nothing at all.
+        ("https://gitlab.com/contoso/payments", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_source_url_resolves_to_a_forge_and_repo(url, expected):
+    """The label on a private image points at one of two forges or neither, and
+    each forge needs its repo in its own shape."""
+    assert forge_ref_from_url(url) == expected
+
+
+def test_web_url_follows_the_forge_the_repo_lives_on():
+    """A hardcoded github.com prefix prints a dead link for an ADO repo."""
+    assert forge_web_url(GITHUB, "contoso/payments") == "https://github.com/contoso/payments"
+    assert (
+        forge_web_url(AZURE_DEVOPS, "contoso/Platform/payments")
+        == "https://dev.azure.com/contoso/Platform/_git/payments"
+    )
 
 
 def test_unknown_forge_is_none_not_a_wrong_client():

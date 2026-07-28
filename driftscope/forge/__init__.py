@@ -26,12 +26,19 @@ so, and the type system is where that gets enforced.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Protocol, runtime_checkable
 
 GITHUB = "github"
 AZURE_DEVOPS = "azure-devops"
+
+# `github.com/owner/name`, tolerating an `.git` suffix and any trailing path. The
+# same shape `resolvers/packages.py` mines from package metadata -- kept here too
+# because a private image's `org.opencontainers.image.source` is the other place a
+# forge URL arrives, and both need to become the same `owner/name`.
+_GITHUB_SOURCE_RE = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+)", re.I)
 
 # Sentinel for a reaction count that was never sampled. Azure DevOps keeps
 # reactions on work-item *comments*, one API call per item, so a velocity run does
@@ -158,3 +165,44 @@ def resolve_forge(kind: str | None, forges: dict[str, Forge]) -> Forge | None:
     ~20 existing `repo=` assignments across `resolvers/` need no edits.
     """
     return forges.get(kind or GITHUB)
+
+
+def forge_ref_from_url(url: str | None) -> tuple[str, str] | None:
+    """Map a source URL to `(forge_kind, repo)`, or None if it hosts neither.
+
+    `repo` is returned in the shape that forge's own client expects: `owner/name`
+    for GitHub, `org/project/repo` for Azure DevOps. This is the wire that turns a
+    private image's embedded `org.opencontainers.image.source` label into a real
+    release-and-issue lookup: without it, an internal image knows where its source
+    lives but nothing asks that project what changed or what broke.
+
+    Azure DevOps is tried first because its URLs are the more constrained shape; a
+    github.com URL cannot match the ADO patterns, so order only matters for clarity.
+    """
+    if not url:
+        return None
+    from ..source import parse_ado_url
+
+    ado = parse_ado_url(url)
+    if ado is not None:
+        return AZURE_DEVOPS, f"{ado.org}/{ado.project}/{ado.repo}"
+    m = _GITHUB_SOURCE_RE.search(url)
+    if m:
+        return GITHUB, f"{m.group(1)}/{m.group(2).removesuffix('.git')}"
+    return None
+
+
+def forge_web_url(kind: str | None, repo: str) -> str:
+    """A browser URL for `repo` on the forge that hosts it.
+
+    The report used to hardcode `https://github.com/{repo}` for every resolution's
+    source link, which prints a dead link for an Azure DevOps `org/project/repo`.
+    Now that a private image can resolve to either forge, the source link has to
+    follow the forge the repo actually lives on.
+    """
+    if kind == AZURE_DEVOPS:
+        parts = repo.split("/")
+        if len(parts) == 3:
+            org, project, name = parts
+            return f"https://dev.azure.com/{org}/{project}/_git/{name}"
+    return f"https://github.com/{repo}"

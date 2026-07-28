@@ -195,8 +195,8 @@
   "generated_at": "<SCRUBBED>",
   "stats": {
     "files_scanned": 41,
-    "components_found": 9,
-    "resolved": 7,
+    "components_found": 10,
+    "resolved": 8,
     "resolve_errors": 1,
     "github_queries": 18,
     "cache_hits": 64,
@@ -206,7 +206,7 @@
   "summary": {
     "critical": 2,
     "high": 2,
-    "medium": 1,
+    "medium": 2,
     "low": 1,
     "current": 1,
     "unknown": 2
@@ -839,6 +839,57 @@
         "steps": [],
         "cautions": [],
         "target_version": "2026-05-01",
+        "intermediate_versions": []
+      },
+      "delta": null,
+      "velocity": null,
+      "vulns": null
+    },
+    {
+      "component": {
+        "ecosystem": "go-module",
+        "name": "github.com/spf13/cobra",
+        "current": "v1.4.0",
+        "source": "svc/go.mod",
+        "line": 6,
+        "raw": "v1.4.0",
+        "meta": {
+          "indirect": false
+        }
+      },
+      "resolution": {
+        "latest_stable": "v1.8.1",
+        "repo": "spf13/cobra",
+        "forge": "github",
+        "homepage": "https://pkg.go.dev/github.com/spf13/cobra",
+        "deprecated": false,
+        "note": "Go proxy exposes dates only for the latest version",
+        "error": null,
+        "extra": {},
+        "release_count": 1
+      },
+      "lag": {
+        "behind_major": 0,
+        "behind_minor": 4,
+        "behind_patch": 0,
+        "releases_behind": 13,
+        "stable_releases_behind": 13,
+        "days_behind": 760,
+        "current_age_days": 980,
+        "age_lower_bound": false,
+        "comparable": true,
+        "reason": null
+      },
+      "severity": "medium",
+      "advice": {
+        "risk": "medium",
+        "strategy": "Bump the require line and reconcile the module graph.",
+        "steps": [
+          "Update the github.com/spf13/cobra version in go.mod",
+          "Run `go mod tidy` to settle indirect dependencies"
+        ],
+        "cautions": [],
+        "target_version": "v1.8.1",
         "intermediate_versions": []
       },
       "delta": null,

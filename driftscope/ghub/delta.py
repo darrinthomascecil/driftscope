@@ -183,8 +183,16 @@ def compute_delta(
     # -- eight round trips -- before any of the real work began.
     releases = forge.releases(repo)
 
-    from_date = _dates_from_resolution(resolution, current)
-    to_date = _dates_from_resolution(resolution, target)
+    # Normally a resolution's own dates ARE the upstream release dates, so they
+    # bound the issue window directly. A private image is the exception: its dates
+    # are image *build* times (see resolvers/acr.py), which cluster when several
+    # versions are rebuilt in one batch -- collapsing the window to a single day
+    # and silently dropping every issue in it. When the resolution says its dates
+    # are build times, ignore them for the window and take the forge's own release
+    # dates, which are the axis an "issues between these versions" question means.
+    build_times = bool(resolution.extra.get("dates_are_build_times"))
+    from_date = None if build_times else _dates_from_resolution(resolution, current)
+    to_date = None if build_times else _dates_from_resolution(resolution, target)
     from_rel = _match_release(releases, current) if not from_date else None
     to_rel = _match_release(releases, target) if not to_date else None
     if from_rel and from_rel.published:

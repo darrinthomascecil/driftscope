@@ -403,6 +403,19 @@ def test_oci_source_label_becomes_the_homepage(ctx, api_registry):
     assert r.homepage == "https://dev.azure.com/contoso/Platform/_git/payments"
 
 
+def test_source_label_resolves_to_an_upstream_repo_and_forge(ctx, api_registry):
+    """The whole point of the wire: an internal image that names its source stops
+    being a dead end. The ADO URL becomes the `org/project/repo` its forge client
+    speaks, and `forge` routes the delta to Azure DevOps rather than GitHub."""
+    r = resolve_acr_image(api_component("1.0.0"), ctx)
+
+    assert r.repo == "contoso/Platform/payments"
+    assert r.forge == "azure-devops"
+    # The note must stop claiming there is nothing upstream to compare against.
+    assert "no upstream project" not in r.note
+    assert "contoso/Platform/payments" in r.note
+
+
 def test_an_unlabelled_registry_says_unrecorded_not_unchanged(ctx, registry):
     """The webapp fixture carries no labels at all -- the common real case. An
     empty changelog must not read as "nothing changed"."""
@@ -411,6 +424,10 @@ def test_an_unlabelled_registry_says_unrecorded_not_unchanged(ctx, registry):
     assert r.extra["changelog"] == []
     assert r.extra["documented_versions"] == 0
     assert "unrecorded rather than empty" in r.note
+    # No source label means no upstream to attach: repo stays None so the delta
+    # engine never tries to date an issue window against a project that isn't there.
+    assert r.repo is None
+    assert "no upstream project" in r.note
 
 
 def test_a_long_gap_is_capped_and_says_so(ctx, api_registry, monkeypatch):

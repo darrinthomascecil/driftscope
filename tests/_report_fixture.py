@@ -24,6 +24,7 @@ from driftscope.history import Change, Diff
 from driftscope.models import (
     AZURE_API,
     DOCKER,
+    GO,
     JVM_TOOLCHAIN,
     K8S_API,
     MAVEN,
@@ -251,6 +252,31 @@ def build_report() -> Report:
                       target_version="2026-05-01"),
     ))
 
+    # ---- MEDIUM: a Go module several minors behind. Exercises the go-module
+    # ecosystem in the rendered report, the github.com/* -> owner/repo mapping, and
+    # the "proxy dates only the latest version" note (so a go-module release with
+    # no date still renders without implying it is undated everywhere).
+    findings.append(Finding(
+        component=Component(ecosystem=GO, name="github.com/spf13/cobra",
+                            current="v1.4.0", source="svc/go.mod", line=6,
+                            raw="v1.4.0", meta={"indirect": False}),
+        resolution=Resolution(
+            latest_stable="v1.8.1",
+            releases=[Release(version="v1.8.1", published=_dt(2024, 2, 1))],
+            repo="spf13/cobra",
+            homepage="https://pkg.go.dev/github.com/spf13/cobra",
+            note="Go proxy exposes dates only for the latest version",
+        ),
+        lag=Lag(behind_major=0, behind_minor=4, releases_behind=13,
+                stable_releases_behind=13, days_behind=760, current_age_days=980),
+        severity=SEV_MEDIUM,
+        advice=Advice(risk=SEV_MEDIUM,
+                      strategy="Bump the require line and reconcile the module graph.",
+                      steps=["Update the github.com/spf13/cobra version in go.mod",
+                             "Run `go mod tidy` to settle indirect dependencies"],
+                      target_version="v1.8.1"),
+    ))
+
     # ---- LOW / CURRENT, to fill the summary table
     findings.append(Finding(
         component=Component(ecosystem=JVM_TOOLCHAIN, name="java", current="21",
@@ -321,7 +347,7 @@ def build_report() -> Report:
     return Report(
         root="/tmp/estate",
         findings=findings,
-        stats=ScanStats(files_scanned=41, components_found=9, resolved=7,
+        stats=ScanStats(files_scanned=41, components_found=10, resolved=8,
                         resolve_errors=1, github_queries=18, cache_hits=64,
                         started="2026-07-27T00:00:00+00:00", duration_s=12.34),
         errors=["velocity: measured 6 of 11 eligible repos (--max-velocity); "

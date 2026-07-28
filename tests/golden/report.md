@@ -3,7 +3,7 @@
 **Scanned:** `/tmp/estate`  
 **Commit:** `0123456789ab` on `main`  
 **Generated:** <SCRUBBED>
-**Coverage:** 9 versioned components across 41 files - 7 resolved, 1 unresolved (12.34s, 18 GitHub queries)
+**Coverage:** 10 versioned components across 41 files - 8 resolved, 1 unresolved (12.34s, 18 GitHub queries)
 
 ## Summary
 
@@ -11,7 +11,7 @@
 |---|---:|---|
 | **CRITICAL** | 2 | Deprecated/removed upstream, or 2+ majors behind - will break |
 | **HIGH** | 2 | One major behind, or 2+ years stale |
-| **MEDIUM** | 1 | Several minors behind, over a year old, or unpinned |
+| **MEDIUM** | 2 | Several minors behind, over a year old, or unpinned |
 | **LOW** | 1 | Minor or patch behind |
 | **current** | 1 | At the latest stable version |
 | **unknown** | 2 | Could not be assessed - see notes |
@@ -59,6 +59,7 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 | Maven artifact | 1 | CRITICAL |
 | Container image | 3 | HIGH |
 | Azure API version | 1 | MEDIUM |
+| Go module | 1 | MEDIUM |
 | JVM toolchain | 1 | LOW |
 | Kubernetes API | 1 | current |
 
@@ -71,6 +72,7 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 | HIGH | `redis` <br/><sub>Container image</sub> | `5` | `8.8.1` | 3 major, 2100 days | `docker-compose.yml`:7 |
 | HIGH | `postgres` <br/><sub>Container image</sub> | `15` | `18.2` | 3 major, 1100 days | `docker-compose.yml`:15 |
 | MEDIUM | `Microsoft.CognitiveServices/accounts` <br/><sub>Azure API version</sub> | `2023-05-01` | `2026-05-01` | 3 years, 4 api-versions, 1096 days | `main.bicep`:21 |
+| MEDIUM | `github.com/spf13/cobra` <br/><sub>Go module</sub> | `v1.4.0` | `v1.8.1` | 4 minor, 13 releases, 760 days | `svc/go.mod`:6 |
 
 ## Upgrade guidance
 
@@ -215,6 +217,23 @@ _Vulnerability lookup: the guessed distro/package/version triple returned no adv
 - **Declared at:** `main.bicep`:21
 
 **Strategy.** Bump the apiVersion and re-deploy.
+
+### MEDIUM - `github.com/spf13/cobra` (Go module)
+
+- **Current:** `v1.4.0`
+- **Latest stable:** `v1.8.1`
+- **Behind by:** 4 minor, 13 releases, 760 days
+- **Age of your version:** 2.7 years (980 days since publish)
+- **Declared at:** `svc/go.mod`:6
+- **Source:** https://github.com/spf13/cobra
+- **Docs:** https://pkg.go.dev/github.com/spf13/cobra
+
+**Strategy.** Bump the require line and reconcile the module graph.
+
+**Steps**
+
+1. Update the github.com/spf13/cobra version in go.mod
+2. Run `go mod tidy` to settle indirect dependencies
 
 ## Not assessed
 
