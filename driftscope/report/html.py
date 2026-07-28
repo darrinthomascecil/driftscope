@@ -645,7 +645,7 @@ def _finding_detail(report: Report, f) -> str:
             a("</ul>")
     a(_registry_notes_block(f))
     d = f.delta
-    if d and (d.breaking_notes or d.bug_issues):
+    if d and (d.breaking_notes or d.bug_issues or d.total_bug_count):
         a(f"<p><b>Upstream delta</b> {e(d.from_ref)} &rarr; {e(d.to_ref)}"
           f"{f' &middot; {len(d.releases_in_window)} releases' if d.releases_in_window else ''}</p>")
         if d.breaking_notes:
@@ -653,13 +653,18 @@ def _finding_detail(report: Report, f) -> str:
             for n in d.breaking_notes[:8]:
                 a(f"<li>{e(n)}</li>")
             a("</ul>")
-        if d.bug_issues:
-            a(f"<div class='note'>{d.open_bug_count} open bug-labelled issue(s) "
-              f"filed in this window, of {d.total_bug_count} total</div><ul>")
-            for i in d.bug_issues[:6]:
-                a(f"<li><a href='{e(i.url)}' target='_blank' rel='noopener'>"
-                  f"#{i.number}</a> {e(i.title)}</li>")
-            a("</ul>")
+        # Show the count whenever the window had any bug-labelled issues, not only
+        # when there are still-open ones to list -- a window with 9 filed and 0 open
+        # is a real signal that used to render as nothing.
+        if d.total_bug_count or d.bug_issues:
+            a(f"<div class='note'>{d.open_bug_count} open of {d.total_bug_count} "
+              f"bug-labelled issue(s) filed in this window</div>")
+            if d.bug_issues:
+                a("<ul>")
+                for i in d.bug_issues[:6]:
+                    a(f"<li><a href='{e(i.url)}' target='_blank' rel='noopener'>"
+                      f"#{i.number}</a> {e(i.title)}</li>")
+                a("</ul>")
         if d.note:
             a(f"<div class='note'>{e(d.note)}</div>")
     if f.vulns is not None and f.vulns.has_data:

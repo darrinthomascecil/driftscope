@@ -120,7 +120,10 @@ INDEX_HTML = """<!doctype html>
       status.textContent = 'Scanned ' + repo + (commit ? ' @ ' + commit : '');
       if (format === 'html') {
         var iframe = document.createElement('iframe');
-        iframe.setAttribute('sandbox', '');   // isolate the report; it needs no script
+        // allow-scripts (but NOT allow-same-origin) so the report's own filter
+        // dropdown and collapsible details work, while it still can't reach this
+        // page or its origin. Without allow-scripts the whole report is inert.
+        iframe.setAttribute('sandbox', 'allow-scripts');
         iframe.srcdoc = text;
         out.appendChild(iframe);
       } else {

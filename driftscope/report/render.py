@@ -391,8 +391,8 @@ def to_markdown(report: Report, *, max_detail: int = 40) -> str:
                 for n in d.breaking_notes[:12]:
                     a(f"- {n}")
                 a("")
-            if d.bug_issues:
-                a(f"**Open bug-labelled issues filed in this window** "
+            if d.total_bug_count or d.bug_issues:
+                a(f"**Bug-labelled issues filed in this window** "
                   f"({d.open_bug_count} open of {d.total_bug_count} total)")
                 a("")
                 for i in d.bug_issues[:10]:

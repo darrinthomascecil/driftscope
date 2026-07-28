@@ -132,7 +132,7 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 - 2.17.0: removed support for the legacy `JsonSerializable` interface
 - 2.18.0: minimum required Java version is now 17
 
-**Open bug-labelled issues filed in this window** (14 open of 61 total)
+**Bug-labelled issues filed in this window** (14 open of 61 total)
 
 - [#4100](https://github.com/FasterXML/jackson-databind/issues/4100) Deserialisation regression #0
 - [#4101](https://github.com/FasterXML/jackson-databind/issues/4101) Deserialisation regression #1
