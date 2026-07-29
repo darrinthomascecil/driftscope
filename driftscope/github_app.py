@@ -162,6 +162,17 @@ def installation_token() -> str | None:
 
     Returns None when the App is not configured or any step fails, so the caller falls
     through to another GitHub credential rather than erroring.
+
+    REVOCATION LAG -- a security caveat. The token is cached until ~REFRESH_SKEW_SECS
+    before its ~1h expiry, and driftscope does NOT re-check the installation's current
+    repositories or permissions on each scan; it reuses the cached token. GitHub scopes
+    an installation token at mint time, and *narrowing* an installation (removing a repo,
+    reducing permissions) does not reliably invalidate tokens already issued. So a token
+    minted while access was broader can keep granting that broader access for up to the
+    cache window (~55 min) after the permission is revoked. Uninstalling the App does
+    revoke immediately; narrowing repos does not, so it is not a fast kill-switch. If
+    prompt revocation matters, shorten REFRESH_SKEW_SECS toward the token lifetime (mint
+    per scan), or restart the process to drop the cache -- which is what a redeploy does.
     """
     if not _configured():
         return None
