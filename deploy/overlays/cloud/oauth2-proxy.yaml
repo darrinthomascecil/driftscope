@@ -1,0 +1,78 @@
+# Entra (Azure AD) OIDC relying party, run as an Istio ext_authz provider (not in
+# the data path). Namespace injected by the kustomization (namespace: driftscope).
+#
+# The `oauth2-proxy` Secret is NOT in git. Create it from Key Vault before applying:
+#   CID=$(az keyvault secret show --vault-name dscopeclddev01 -n oauth2-proxy-client-id --query value -o tsv)
+#   CSECRET=$(az keyvault secret show --vault-name dscopeclddev01 -n oauth2-proxy-client-secret --query value -o tsv)
+#   COOKIE=$(openssl rand -hex 16)   # 32 chars = 32 bytes; a base64 of 32 bytes is 44 chars and is REJECTED
+#   kubectl -n driftscope create secret generic oauth2-proxy \
+#     --from-literal=client-id="$CID" --from-literal=client-secret="$CSECRET" --from-literal=cookie-secret="$COOKIE"
+# NOTE: store the client secret VALUE (`password`), never the credential keyId, or the
+#       callback 500s with AADSTS7000215. See docs/design-enterprise-istio-sso.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy
+  labels: { app: oauth2-proxy }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: oauth2-proxy }
+  template:
+    metadata:
+      labels: { app: oauth2-proxy }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
+          args:
+            - --provider=oidc
+            - --oidc-issuer-url=https://login.microsoftonline.com/f493fd7e-e41b-4f64-ad3d-a9704bbfb5f8/v2.0
+            - --http-address=0.0.0.0:4180
+            - --reverse-proxy=true
+            - --upstream=static://200          # ext_authz mode: proxy authorizes, app serves the bytes
+            - --redirect-url=https://driftscope.justmakeitgo.net/oauth2/callback   # pinned https (TLS ends at Cloudflare)
+            - --email-domain=*
+            - --oidc-email-claim=preferred_username
+            - --insecure-oidc-allow-unverified-email=true
+            - --scope=openid profile email
+            - --cookie-secure=true
+            - --cookie-domain=driftscope.justmakeitgo.net
+            - --whitelist-domain=driftscope.justmakeitgo.net
+            - --set-xauthrequest=true
+            - --pass-access-token=true
+            - --set-authorization-header=true
+            - --skip-provider-button=true
+          env:
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: oauth2-proxy, key: client-id } }
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: oauth2-proxy, key: client-secret } }
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom: { secretKeyRef: { name: oauth2-proxy, key: cookie-secret } }
+          ports:
+            - { name: http, containerPort: 4180 }
+          readinessProbe:
+            httpGet: { path: /ping, port: 4180 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy
+  labels: { app: oauth2-proxy }
+spec:
+  selector: { app: oauth2-proxy }
+  ports:
+    - { name: http, port: 4180, targetPort: 4180 }

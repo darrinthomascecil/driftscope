@@ -1,0 +1,23 @@
+# Registers oauth2-proxy as an Istio ext_authz extension provider on the MANAGED mesh.
+# AKS managed Istio reads mesh-config extras from this well-known ConfigMap in
+# aks-istio-system (name is revision-pinned). Applied directly (not via the app
+# kustomization, whose namespace transformer would relocate it). Restart istiod after:
+#   kubectl -n aks-istio-system rollout restart deployment istiod-asm-1-29
+#
+# The revision (asm-1-29) tracks `az aks show ... serviceMeshProfile.istio.revisions`.
+# On a mesh upgrade, rename this ConfigMap to match the new revision.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio-shared-configmap-asm-1-29
+  namespace: aks-istio-system
+data:
+  mesh: |-
+    extensionProviders:
+    - name: oauth2-proxy
+      envoyExtAuthzHttp:
+        service: oauth2-proxy.driftscope.svc.cluster.local
+        port: 4180
+        includeRequestHeadersInCheck: ["authorization", "cookie", "x-forwarded-for"]
+        headersToUpstreamOnAllow: ["authorization", "path", "x-auth-request-user", "x-auth-request-email", "x-auth-request-access-token"]
+        headersToDownstreamOnDeny: ["content-type", "set-cookie", "location"]

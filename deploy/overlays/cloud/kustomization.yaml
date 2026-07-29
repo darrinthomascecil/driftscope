@@ -3,7 +3,12 @@ kind: Kustomization
 namespace: driftscope
 resources:
   - ../../base
-  - networkpolicy.yaml
+  - cloudflared.yaml
+  - oauth2-proxy.yaml     # Entra OIDC relying party (Istio ext_authz provider)
+  - istio-routing.yaml    # Gateway + VirtualService + STRICT mTLS
+  - networkpolicy.yaml    # egress lockdown (blocks IMDS + private ranges)
+  # Cluster-scoped mesh objects (ext_authz provider, gateway AuthorizationPolicy) live
+  # in mesh/ and are applied directly -- see mesh/README.md.
 images:
   - name: driftscope
     newName: dscopeacr18860.azurecr.io/driftscope
@@ -26,13 +31,7 @@ patches:
         path: /spec/template/metadata/labels/azure.workload.identity~1use
   - target: {kind: Service, name: driftscope}
     patch: |-
-      - op: replace
-        path: /spec/type
-        value: LoadBalancer
+      # ClusterIP only -- reached via the Cloudflare Tunnel, no public IP.
       - op: replace
         path: /spec/ports/0/port
         value: 80
-      - op: add
-        path: /metadata/annotations
-        value:
-          service.beta.kubernetes.io/azure-dns-label-name: driftscope-18860
