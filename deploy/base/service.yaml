@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: driftscope
+  labels:
+    app.kubernetes.io/name: driftscope
+spec:
+  # ClusterIP: in-cluster only. On kind, reach it with
+  #   kubectl port-forward svc/driftscope 8080:8080
+  # On AKS it is fronted by Application Gateway for Containers (a Gateway/HTTPRoute in
+  # the AKS overlays) -- it is never a LoadBalancer/NodePort directly, because the
+  # service clones arbitrary repo URLs and needs deliberate controls in front.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: driftscope
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

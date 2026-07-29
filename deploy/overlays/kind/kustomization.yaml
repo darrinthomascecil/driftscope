@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Local kind loop. Image is loaded with `kind load docker-image driftscope:dev`;
+# reach the service with `kubectl port-forward svc/driftscope 8081:8080`.
+namespace: driftscope
+resources:
+  - ../../base
+
+images:
+  - name: driftscope
+    newName: driftscope
+    newTag: dev
+
+replicas:
+  - name: driftscope
+    count: 1
+
+# AZURE_TENANT_ID + the shared GitHub App's ids + THIS env's Key Vault. A change here
+# re-hashes the ConfigMap name and rolls the Deployment automatically.
+configMapGenerator:
+  - name: driftscope-config
+    envs:
+      - config.env
+
+# Point the ServiceAccount at the local (kind) UAMI.
+patches:
+  - path: patch-sa.yaml

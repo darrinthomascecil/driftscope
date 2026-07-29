@@ -15,7 +15,12 @@ spec:
       labels:
         app.kubernetes.io/name: driftscope
         app.kubernetes.io/component: scan-service
+        # Opt this pod into the azure-workload-identity mutating webhook: it injects
+        # AZURE_CLIENT_ID / AZURE_FEDERATED_TOKEN_FILE / AZURE_AUTHORITY_HOST and the
+        # projected api://AzureADTokenExchange token. No secret is mounted.
+        azure.workload.identity/use: "true"
     spec:
+      serviceAccountName: driftscope
       # The image already runs as the unprivileged `drift` user (uid 1000). These
       # settings make that explicit and lock the container down: no root, no
       # privilege escalation, no capabilities, a read-only root filesystem with
@@ -30,9 +35,9 @@ spec:
       containers:
         - name: driftscope
           image: driftscope:dev
-          # Local image loaded with `kind load docker-image`; never pull from a
-          # registry. With a reused tag you MUST reload + `rollout restart` for a
-          # change to take -- k8s serves the cached image otherwise.
+          # kind loads the local image; AKS overlays repoint this at ACR via the
+          # kustomize `images:` transformer. With a reused tag you MUST reload +
+          # `rollout restart` for a change to take -- k8s serves the cached image.
           imagePullPolicy: IfNotPresent
           # ENTRYPOINT is `driftscope`; args replace the image's default CMD.
           args:
@@ -51,9 +56,15 @@ spec:
               value: /tmp
             - name: HOME
               value: /home/drift
-          # Forge tokens are optional: without them the scan degrades to `unknown`,
-          # not failure. Referenced from a Secret that need not exist (optional).
+          # Per-environment config (AZURE_TENANT_ID + the GITHUB_APP_* references,
+          # incl. that env's Key Vault) comes from a ConfigMap the overlay generates.
+          # AZURE_CLIENT_ID / the federated token are injected by the webhook, not here.
           envFrom:
+            - configMapRef:
+                name: driftscope-config
+            # Optional token fallback (a PAT / az token) for clusters not using
+            # workload identity. Absent under WI; the scan degrades to `unknown`
+            # rather than failing if neither is present.
             - secretRef:
                 name: driftscope-tokens
                 optional: true
