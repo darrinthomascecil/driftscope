@@ -111,14 +111,19 @@ AKS analog of the kind script, parameterized per environment:
    membership / ACR pull as needed
 5. `az aks update --attach-acr <acr>`
 
-## Identity isolation (the design call)
+## Identity isolation (decided: per-environment)
 
-Give **each environment its own UAMI + federated credential + Key Vault** — blast-radius
-isolation, so a dev credential can never read prod's secrets or repos. The federated
-*subject* stays `system:serviceaccount:driftscope:driftscope` everywhere; because each
-cluster has a different issuer, **each env needs its own federated credential** on its
-own UAMI. The GitHub App can be shared for dev but should be **per-env for prod** (a
-separate App + Key Vault key), so prod's installation scope and key rotate independently.
+**Decided — each environment gets its own identity, never shared across envs.** Every
+env has its own UAMI + federated credential + Key Vault, so a dev credential can never
+read prod's secrets or repos (blast-radius isolation). This holds for **both** identities
+a cluster runs — the driftscope app identity *and* the ALB-Controller platform identity
+(see *Two identities per cluster*): dev and prod each get their own of each.
+
+The federated *subject* stays the same everywhere (`system:serviceaccount:driftscope:driftscope`
+for the app), but because each cluster has a different OIDC issuer, **each env needs its
+own federated credential** on its own UAMI. The GitHub App can be shared for dev but
+should be **per-env for prod** (a separate App + Key Vault key), so prod's installation
+scope and key rotate independently.
 
 ## Secrets and config surface, per env
 
@@ -249,7 +254,9 @@ resources.**)
 
 ## Open questions
 
-- **Per-env identities** (recommended) vs a shared UAMI across envs?
+- ~~Per-env vs shared identities~~ — **resolved: per-environment**, for both the app and
+  the ALB-Controller identity (own UAMI + federated credential + Key Vault each). See
+  *Identity isolation*.
 - **Per-env GitHub Apps** for prod, or one App installed per-env-scoped?
 - ~~Ingress controller on AKS~~ — **resolved: Application Gateway for Containers (AGC)**;
   see the ingress section. (nginx remains a lighter-weight dev option.)
