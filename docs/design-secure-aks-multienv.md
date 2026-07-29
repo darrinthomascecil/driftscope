@@ -48,6 +48,20 @@ you → https://driftscope[-<env>].justmakeitgo.net
    └─ workload identity → per-env Key Vault (the shared GitHub App's key)
 ```
 
+## Edge & DNS (decided: Cloudflare fronting Azure)
+
+**Decided — Cloudflare is the edge, not Azure-native (no Front Door/AGC).** Cloudflare
+provides TLS, WAF, Access↔Entra, and the Tunnel; Azure runs the workload. The tradeoff is
+accepted deliberately: cheapest and least-config, at the cost of Cloudflare terminating
+TLS (fine here; would warrant review for a regulated buyer, who would go Azure-native).
+
+**DNS operational rule that follows from this:** keep **Cloudflare authoritative** for
+`justmakeitgo.net` (Cloudflare's nameservers at the registrar) and **proxy** the app
+record (`driftscope[-<env>]`, orange cloud). Do **not** create an Azure DNS zone for the
+app name or delegate it to Azure DNS — that would pull the name *off* Cloudflare's edge
+and forfeit the TLS/WAF/Access/Tunnel this plan depends on. (Azure DNS is fine for
+*unrelated* records, just not the proxied app hostname.)
+
 ## How it scales (the repeatable machinery)
 
 - **Kustomize:** the existing `base/` + one overlay per env. Each overlay adds the env's
