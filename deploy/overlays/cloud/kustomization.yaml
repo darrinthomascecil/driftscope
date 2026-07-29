@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: driftscope
 resources:
   - ../../base
+  - networkpolicy.yaml
 images:
   - name: driftscope
     newName: dscopeacr18860.azurecr.io/driftscope
