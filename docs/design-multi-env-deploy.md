@@ -127,8 +127,14 @@ per-env Key Vault, each with their own federated credential (same subject, that 
 own issuer). Keeping the subject constant while naming the Azure identities per-env gives
 isolation without a different subject string to track per environment.
 
-The GitHub App can be shared for dev but should be **per-env for prod** (a separate App +
-Key Vault key), so prod's installation scope and key rotate independently.
+The **GitHub App is shared across environments** — one App, one installation, so
+`GITHUB_APP_ID` and `GITHUB_APP_INSTALLATION_ID` are identical everywhere. To preserve the
+per-env Key Vault isolation, its private key is imported into **each env's own Key Vault**,
+so every environment signs the App JWT with a key that only its own identity can reach
+(only `GITHUB_APP_KEY_VAULT_URI` differs per env; the App id/installation do not). The
+trade-off is deliberate: dev and prod share one GitHub identity and installation scope,
+while the *Azure*-side isolation (per-env UAMI + per-env vault) still holds. Rotating the
+App key means re-importing the new key into each env's vault.
 
 ## Secrets and config surface, per env
 
@@ -262,7 +268,9 @@ resources.**)
 - ~~Per-env vs shared identities~~ — **resolved: per-environment**, for both the app and
   the ALB-Controller identity (own UAMI + federated credential + Key Vault each). See
   *Identity isolation*.
-- **Per-env GitHub Apps** for prod, or one App installed per-env-scoped?
+- ~~GitHub App: per-env or shared~~ — **resolved: one shared App** (same `GITHUB_APP_ID`
+  and installation across envs); its private key imported into **each env's own Key Vault**
+  so per-env vault isolation still holds.
 - ~~Ingress controller on AKS~~ — **resolved: Application Gateway for Containers (AGC)**;
   see the ingress section. (nginx remains a lighter-weight dev option.)
 - ~~Namespace / naming~~ — **resolved: the k8s namespace and ServiceAccount stay
