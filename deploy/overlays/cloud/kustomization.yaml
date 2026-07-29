@@ -26,13 +26,7 @@ patches:
         path: /spec/template/metadata/labels/azure.workload.identity~1use
   - target: {kind: Service, name: driftscope}
     patch: |-
-      - op: replace
-        path: /spec/type
-        value: LoadBalancer
+      # ClusterIP only -- reached via the Cloudflare Tunnel, no public IP.
       - op: replace
         path: /spec/ports/0/port
         value: 80
-      - op: add
-        path: /metadata/annotations
-        value:
-          service.beta.kubernetes.io/azure-dns-label-name: driftscope-18860
