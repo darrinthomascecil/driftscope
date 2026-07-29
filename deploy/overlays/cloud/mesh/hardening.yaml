@@ -1,0 +1,80 @@
+# Mesh-wide hardening. Applied directly (like the other objects in mesh/) because these
+# live in the managed-Istio namespaces (aks-istio-system root ns, aks-istio-ingress),
+# outside the app kustomization. Full rationale + the test matrix that verified them are
+# in docs/design-enterprise-istio-sso.md.
+#
+# Apply after the base mesh is up:
+#   kubectl apply -f hardening.yaml
+#
+# ORDER MATTERS on a live cluster: the ALLOW policies (here + gateway/app/oauth2-proxy)
+# must exist BEFORE the deny-all, or you cut off the gateway. This file lists deny-all
+# last for that reason; kubectl applies them together, which is fine on first install.
+---
+# 1. Mesh-wide STRICT mTLS. The app namespace already had a STRICT PeerAuthentication;
+#    this extends "no plaintext to any sidecar" to the whole mesh (root ns = mesh-wide),
+#    so a future namespace/workload can't silently accept plaintext.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: aks-istio-system
+spec:
+  mtls:
+    mode: STRICT
+---
+# 2. Mesh-wide default-DENY. Empty spec in the root namespace = allow nothing; every
+#    legitimate flow must be granted by an explicit ALLOW (gateway-allow-ingress,
+#    driftscope-allow-gateway-only, pathtrace-allow-gateway-only, oauth2-proxy-allow-gateway).
+#    Turns the mesh from default-allow into default-deny.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: aks-istio-system
+spec: {}
+---
+# 3. The ingress gateway fronts anonymous external users, so it must accept inbound
+#    (the CUSTOM ext_authz policy still enforces SSO at L7). Without this, the deny-all
+#    would reject all traffic at the front door.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: gateway-allow-ingress
+  namespace: aks-istio-ingress
+spec:
+  selector:
+    matchLabels:
+      istio: aks-istio-ingressgateway-internal
+  action: ALLOW
+  rules:
+    - {}
+---
+# 4. Explicit path normalization on the gateway, so the router and the authz filter see
+#    the SAME path -- closing the class of negative-match ("notPaths /oauth2/*") SSO
+#    bypasses (e.g. /oauth2/../trace, %2e%2e, %2f). Verified: crafted paths all 302/307,
+#    never reach the app.
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: gateway-path-normalization
+  namespace: aks-istio-ingress
+spec:
+  workloadSelector:
+    labels:
+      istio: aks-istio-ingressgateway-internal
+  configPatches:
+    - applyTo: NETWORK_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: MERGE
+        value:
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            normalize_path: true
+            merge_slashes: true
+            path_with_escaped_slashes_action: UNESCAPE_AND_REDIRECT
