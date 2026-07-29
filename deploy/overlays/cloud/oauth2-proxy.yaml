@@ -76,3 +76,21 @@ spec:
   selector: { app: oauth2-proxy }
   ports:
     - { name: http, port: 4180, targetPort: 4180 }
+---
+# Under the mesh-wide deny-all (mesh/hardening.yaml), oauth2-proxy is reachable ONLY by
+# the ingress gateway's identity -- the same lockdown as the app. Without this, a default
+# deny would block the gateway's ext_authz calls; with it, no other in-mesh workload can
+# reach oauth2-proxy either (verified: in-mesh probe -> oauth2-proxy = 403).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: oauth2-proxy-allow-gateway
+spec:
+  selector:
+    matchLabels: { app: oauth2-proxy }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/aks-istio-ingress/sa/aks-istio-ingressgateway-internal
