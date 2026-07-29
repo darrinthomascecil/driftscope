@@ -1,0 +1,22 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: driftscope
+spec:
+  parentRefs:
+    - name: driftscope
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: driftscope
+          port: 8080
+      # A single-repo scan is slow; give the request room. SSE heartbeats (~15s) keep
+      # the stream from idling out. The FLEET / multi-repo path can still exceed any
+      # sane request timeout -- that is the async job model, not a bigger number here.
+      # (AGC also honours per-route timeout via its own policy CRD; confirm the exact
+      # knob against current AGC docs at implementation.)
+      timeouts:
+        request: 300s

@@ -1,0 +1,28 @@
+# Application Gateway for Containers entry point (Gateway API). The ALB Controller
+# reconciles this into the AGC resource in Azure using ITS OWN managed identity --
+# separate from driftscope's app identity (see docs/design-multi-env-deploy.md).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: driftscope
+  annotations:
+    # The AGC to program. For a managed deployment this references the
+    # ApplicationLoadBalancer resource the ALB Controller created; for bring-your-own,
+    # the AGC's resource id.
+    alb.networking.azure.io/alb-id: "<AGC_RESOURCE_ID>"
+spec:
+  gatewayClassName: azure-alb-external
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          # TLS cert synced from Key Vault into this Secret (e.g. via the Secrets Store
+          # CSI driver) -- reusing the same vault the App key lives in.
+          - kind: Secret
+            name: driftscope-tls
+      allowedRoutes:
+        namespaces:
+          from: Same

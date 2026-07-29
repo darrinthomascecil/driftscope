@@ -1,0 +1,23 @@
+# Application Gateway for Containers entry point for prod. Reconciled by the ALB
+# Controller's OWN managed identity (separate from driftscope's). Consider attaching a
+# WAF policy for prod (alb.networking.azure.io WebApplicationFirewallPolicy).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: driftscope
+  annotations:
+    alb.networking.azure.io/alb-id: "<AGC_RESOURCE_ID>"
+spec:
+  gatewayClassName: azure-alb-external
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: driftscope-tls
+      allowedRoutes:
+        namespaces:
+          from: Same

@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# dev AKS. Image pulled from ACR; exposed via Application Gateway for Containers
+# (Gateway + HTTPRoute). Replace the <PLACEHOLDERS> below and in the sibling files.
+namespace: driftscope
+resources:
+  - ../../base
+  - gateway.yaml
+  - httproute.yaml
+
+images:
+  - name: driftscope
+    newName: <ACR_LOGIN_SERVER>/driftscope   # e.g. driftscopedev.azurecr.io/driftscope
+    newTag: <IMAGE_TAG>                       # promote a digest/tag validated in dev
+
+replicas:
+  - name: driftscope
+    count: 2
+
+configMapGenerator:
+  - name: driftscope-config
+    envs:
+      - config.env
+
+patches:
+  - path: patch-sa.yaml
