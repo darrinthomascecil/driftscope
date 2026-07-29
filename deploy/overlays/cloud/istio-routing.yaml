@@ -30,6 +30,14 @@ spec:
         - destination:
             host: oauth2-proxy.driftscope.svc.cluster.local
             port: { number: 4180 }
+    # pathtrace demo (examples/pathtrace) -- still behind the SSO gate + mTLS, so it
+    # exercises the full path it describes.
+    - match:
+        - uri: { prefix: /trace }
+      route:
+        - destination:
+            host: pathtrace.driftscope.svc.cluster.local
+            port: { number: 8080 }
     # everything else -> the app (gated by the CUSTOM AuthorizationPolicy on the gateway)
     - route:
         - destination:
