@@ -13,6 +13,7 @@ import pytest
 from pathlib import Path
 
 from driftscope import source as src_mod
+from driftscope import wi as wi_mod
 from driftscope.source import (
     AdoCredential,
     AdoRef,
@@ -170,10 +171,29 @@ def test_token_never_reaches_argv(fake_token):
     assert "TOKEN123" in env["GIT_CONFIG_VALUE_0"]
 
 
-def test_github_clone_gets_no_injected_auth(fake_token):
-    """Public GitHub needs nothing, and private GitHub already works through the
-    user's credential helper -- injecting an ADO token there would be wrong."""
+def test_github_clone_injects_nothing_without_a_github_token(monkeypatch):
+    """No resolvable GitHub token -> fall back to git's own credential helper; and it
+    must never reach for the ADO credential the way the old code implicitly could."""
+    import driftscope.http as http_mod
+
+    monkeypatch.setattr(http_mod, "github_token", lambda: None)
     assert _auth_env_for("https://github.com/org/repo") == {}
+
+
+def test_github_clone_injects_token_as_basic_x_access_token(monkeypatch):
+    """A resolvable GitHub token (App installation token under WI, or a PAT) is how a
+    private GitHub repo clones in a pod with no credential helper. GitHub's git-over-
+    HTTPS convention is basic auth with the token as the password and any username;
+    `x-access-token` is what a GitHub App installation token expects."""
+    import driftscope.http as http_mod
+
+    monkeypatch.setattr(http_mod, "github_token", lambda: "ghs_installtoken")
+    env = _auth_env_for("https://github.com/org/repo")
+    assert env["GIT_CONFIG_KEY_0"] == "http.extraheader"
+    expected = "Basic " + base64.b64encode(b"x-access-token:ghs_installtoken").decode()
+    assert env["GIT_CONFIG_VALUE_0"] == f"Authorization: {expected}"
+    # the ADO branch must not have run
+    assert "TOKEN123" not in env["GIT_CONFIG_VALUE_0"]
 
 
 def test_no_token_means_no_auth_env(monkeypatch):
@@ -432,7 +452,7 @@ def test_workload_identity_exchange_yields_a_bearer_credential(monkeypatch, tmp_
         seen["url"] = req.full_url
         seen["body"] = req.data.decode()
         return _FakeResp({"access_token": "eyJhbGc.ado.access", "token_type": "Bearer"})
-    monkeypatch.setattr(src_mod.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(wi_mod.urllib.request, "urlopen", fake_urlopen)
 
     cred = src_mod.ado_credential()
     assert cred is not None
@@ -454,7 +474,7 @@ def test_explicit_env_token_beats_workload_identity(monkeypatch, tmp_path):
 
     # If WI were consulted, this would blow up -- proving precedence stops earlier.
     def boom(*a, **k): raise AssertionError("workload identity must not be reached")
-    monkeypatch.setattr(src_mod.urllib.request, "urlopen", boom)
+    monkeypatch.setattr(wi_mod.urllib.request, "urlopen", boom)
 
     cred = src_mod.ado_credential()
     assert cred.origin == "AZURE_DEVOPS_TOKEN" and cred.scheme == "Bearer"

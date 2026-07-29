@@ -10,3 +10,4 @@ tutorials/
 drift-*.html
 drift-*.md
 drift-*.json
+.playwright-mcp/
