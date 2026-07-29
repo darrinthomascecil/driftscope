@@ -55,6 +55,11 @@ def evaluate(headers) -> list[dict]:
         {
             "n": 0, "title": "Client + DNS",
             "what": "The browser resolves this hostname to a Cloudflare edge IP (proxied record).",
+            "detail": "Before anything can connect, your browser turns the name "
+                      "driftscope.justmakeitgo.net into an address — that is DNS, like looking a "
+                      "company up in a phone book to get its number before you call. Because the record "
+                      "is ‘proxied’, the number you get rings Cloudflare’s switchboard, not "
+                      "the app’s own line: the app’s real address is never published.",
             "ok": bool(h("host")),
             "evidence": {"Host": h("host") or "(none)"},
             "note": "The Host that survived resolution + SNI. A non-Cloudflare answer would mean the record was un-proxied.",
@@ -63,6 +68,10 @@ def evaluate(headers) -> list[dict]:
         {
             "n": 1, "title": "Cloudflare edge (TLS · WAF · DDoS)",
             "what": "Terminates TLS and screens the request, then hands it to the tunnel.",
+            "detail": "This is the building’s front reception. Your encrypted connection is opened "
+                      "and read here (TLS), screened for attacks (WAF), and shielded from traffic floods "
+                      "(DDoS) — all before a single byte reaches anything of yours. Every visitor "
+                      "passes this desk; nothing skips the lobby.",
             "ok": bool(cf_ray),
             "evidence": {"cf-ray": cf_ray or "(absent)", "cf-connecting-ip": cf_ip or "(absent)",
                          "cf-visitor": cf_visitor or "(absent)"},
@@ -72,6 +81,10 @@ def evaluate(headers) -> list[dict]:
         {
             "n": 2, "title": "Cloudflare Tunnel (cloudflared)",
             "what": "cloudflared dials OUT to Cloudflare; the edge forwards this request down that tunnel. No public origin.",
+            "detail": "The app has no public door on the street. Instead a trusted runner inside the "
+                      "cluster (cloudflared) walks out to reception and carries approved requests back in "
+                      "through a private corridor it opened itself. Since the corridor only ever opens "
+                      "outward, there is no doorknob on the street for an attacker to try.",
             "ok": bool(xff),
             "evidence": {"x-forwarded-for": xff or "(absent)", "x-forwarded-proto": xfproto or "(absent)"},
             "note": "The forwarded-for chain is the client IP as cloudflared passed it inward.",
@@ -80,6 +93,10 @@ def evaluate(headers) -> list[dict]:
         {
             "n": 3, "title": "Istio internal ingress gateway",
             "what": "cloudflared forwards to the gateway Service (internal LB, no public IP); Envoy takes over.",
+            "detail": "Inside the building, this is the mailroom. It receives every request the runner "
+                      "brings in, stamps it with a tracking number (x-request-id) so its path can be "
+                      "followed, and works out which department it is for. It has an internal address "
+                      "only — you cannot reach it from outside.",
             "ok": bool(req_id),
             "evidence": {"x-request-id": req_id or "(absent)", "x-envoy-external-address": envoy_ext or "(absent)"},
             "note": "x-request-id / x-envoy-* are stamped by the gateway's Envoy -- proof the request passed through it.",
@@ -90,6 +107,11 @@ def evaluate(headers) -> list[dict]:
         {
             "n": 4, "title": "Gateway policy -> ext_authz (SSO)",
             "what": "The CUSTOM AuthorizationPolicy calls oauth2-proxy for every non-/oauth2 path; unauthenticated => 302 to Entra.",
+            "detail": "The badge checkpoint. Before you go further, your identity is checked against the "
+                      "company directory (Microsoft Entra). No valid badge and you are walked over to the "
+                      "sign-in desk to get one (the 302 redirect to login), then brought back. You can "
+                      "only read this page because you cleared this checkpoint — your email is "
+                      "stamped on the request as proof.",
             "ok": bool(auth_email),
             "evidence": {"x-auth-request-email": auth_email or "(absent)", "authorization": "Bearer <token>" if have_authz else "(absent)"},
             "note": "You are only reading this because SSO passed. oauth2-proxy injected your identity as upstream headers.",
@@ -98,6 +120,10 @@ def evaluate(headers) -> list[dict]:
         {
             "n": 5, "title": "Gateway -> app: mTLS + workload authz",
             "what": "The gateway originates mTLS; the app admits ONLY the gateway's SPIFFE identity (driftscope-allow-gateway-only).",
+            "detail": "A secure room where both you and your escort show cryptographic ID to each other "
+                      "— that is mutual TLS, and it cannot be faked. On top of that, the door is "
+                      "wired to open for exactly one escort: the mailroom gateway. Even another employee "
+                      "with a valid building badge is turned away at this door (they would get a 403).",
             "ok": is_gateway,
             "evidence": {"x-forwarded-client-cert (By)": xfcc_p.get("by", "(absent)"),
                          "x-forwarded-client-cert (URI = caller)": gw_principal or "(absent)"},
@@ -108,6 +134,10 @@ def evaluate(headers) -> list[dict]:
         {
             "n": 6, "title": "App container",
             "what": "This pod (pathtrace) finally handles the request over localhost from its sidecar.",
+            "detail": "The desk that finally does the work. By the time the request lands here it has been "
+                      "handed off inside the same office (over localhost), so if the answer is wrong you "
+                      "know it is this worker — not the couriers, checkpoints, or mailroom that got "
+                      "it here.",
             "ok": True,
             "evidence": {"pod": POD, "namespace": NS, "served_by": "pathtrace :8080"},
             "note": "Reached over localhost, so app bugs reproduce with the mesh out of the picture (kubectl exec ... curl localhost:8080).",
@@ -137,6 +167,7 @@ def render_html(hops: list[dict]) -> bytes:
               <span class="badge {badge}">{label}</span>
             </header>
             <p class="what">{html.escape(hop['what'])}</p>
+            <div class="detail"><span class="dlabel">In plain terms</span>{html.escape(hop['detail'])}</div>
             <div class="evidence">{ev}</div>
             <p class="note">{html.escape(hop['note'])}</p>
             <details open>
@@ -185,6 +216,10 @@ def render_html(hops: list[dict]) -> bytes:
  .badge.ok {{ background:rgba(63,185,80,.15); color:var(--ok); }}
  .badge.warn {{ background:rgba(210,153,34,.15); color:var(--warn); }}
  .what {{ margin:0 0 12px; color:var(--fg); }}
+ .detail {{ background:rgba(83,155,245,.06); border-left:3px solid var(--accent); border-radius:0 8px 8px 0;
+            padding:11px 14px; margin:0 0 14px; font-size:13.5px; color:var(--fg); }}
+ .dlabel {{ display:block; font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+            color:var(--accent); margin-bottom:5px; }}
  .evidence {{ background:var(--code); border:1px solid var(--line); border-radius:9px; padding:4px 12px; }}
  .kv {{ display:flex; gap:14px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px;
         padding:6px 0; border-bottom:1px solid var(--line); }}
