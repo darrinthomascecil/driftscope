@@ -162,6 +162,36 @@ curl -sI https://driftscope.justmakeitgo.net/healthz   # → 302 to login.micros
 
 ---
 
+## Proving it works
+
+"Applied" is not "enforced." Each security control is proven by a **negative test** — showing the
+thing it's supposed to block is actually blocked, from the position a real attacker would occupy — not
+by observing that the happy path redirects. A 302 proves a redirect exists; it does not prove the app
+is unreachable. Two throwaway pods (one in the mesh, one out) plus external curls cover it:
+
+| # | Claim | Test | Result |
+|---|---|---|---|
+| A | STRICT mTLS blocks plaintext | out-of-mesh pod → `app:80` | `000` / curl exit 56 (reset) — **blocked** |
+| B | App unreachable bypassing the SSO gate | in-mesh pod → app **direct** | `200` **→ fixed to `403`** (see below) |
+| C | SSO enforced *in the mesh*, not only at the edge | in-cluster pod → gateway `/report` | `302` → Entra |
+| D | Unauthenticated users get no app bytes | external `/`, `/report`, forged cookie | `302`, never `200` |
+| E | No public exposure | Services with a public LB IP | none; gateway LB is internal, app is ClusterIP |
+| F | gateway→app actually runs over mTLS | app sidecar Envoy telemetry | 4/4 `connection_security_policy="mutual_tls"` |
+| G | An authenticated user *does* get in | real browser login → app | *requires an interactive Entra login* |
+
+**What the test caught (B).** With only STRICT mTLS + gateway-side SSO, an in-mesh probe reached the
+app **directly with `200`, no login** — because the `AuthorizationPolicy` enforcing SSO lives on the
+*gateway*, while the app accepted any mТLS caller. STRICT mTLS only proves the caller has *some* mesh
+identity, not that it's the gateway. Closed with `driftscope-allow-gateway-only` (an app-namespace
+`AuthorizationPolicy`, `action: ALLOW`) restricting the app's inbound to the single principal
+`cluster.local/ns/aks-istio-ingress/sa/aks-istio-ingressgateway-internal`. Re-tested: the same probe
+now gets **`403`**, while the gateway path (C) and mTLS (F) are unaffected. This is the whole point of
+proving rather than asserting — the test turned a latent bypass into a closed one.
+
+**G is the one piece that needs a human:** completing an Entra login (credentials + MFA) and confirming
+the app returns `200` with a session. The negative controls above need no credentials and are
+reproducible any time by re-creating the two probe pods.
+
 ## Operational notes & known caveats
 
 - **`/healthz` is gated too.** Most secure, but external uptime checks will see 302. If you want a

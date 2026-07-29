@@ -44,3 +44,23 @@ metadata:
 spec:
   mtls:
     mode: STRICT
+---
+# Defense in depth: STRICT mTLS alone only proves the caller has *some* mesh
+# identity. Without this, any workload in the mesh could reach the app directly and
+# bypass the gateway's SSO gate (verified: an in-mesh probe got 200). This restricts
+# the app's inbound to the ingress gateway's identity ONLY, so the sole path to the
+# app is through the gateway (and therefore through oauth2-proxy).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: driftscope-allow-gateway-only
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: driftscope
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/aks-istio-ingress/sa/aks-istio-ingressgateway-internal
