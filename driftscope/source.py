@@ -287,6 +287,19 @@ def ado_token() -> str | None:
     return cred.token if cred else None
 
 
+def reset_credential_cache() -> None:
+    """Forget the resolved-once Azure DevOps credential so the next lookup re-resolves.
+
+    A workload-identity or `az` token is only valid ~1h. Resolving it once for the
+    whole process would let a long-running server reuse a stale one until it restarted.
+    Called at the start of each scan (see `open_source`) so a minted token is never
+    reused beyond a single repo -- fresh per scan, without paying the exchange cost on
+    every ADO API call within one. Static env tokens (a PAT) simply re-read for free.
+    """
+    global _ADO_CRED
+    _ADO_CRED = False
+
+
 def _auth_env_for(remote: str) -> dict[str, str]:
     """Git config, as environment, that authenticates a clone of `remote`.
 
@@ -382,6 +395,9 @@ def open_source(
     ado_org: str | None = None,
 ):
     """Yield a Source for `target`, cloning it first if it is remote."""
+    # Re-resolve credentials for each scan rather than reusing a process-lifetime
+    # token that a long-running server would let go stale (~1h validity).
+    reset_credential_cache()
     if not looks_remote(target):
         p = Path(target).expanduser().resolve()
         if not p.exists():
