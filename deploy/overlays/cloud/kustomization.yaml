@@ -6,6 +6,7 @@ resources:
   - cloudflared.yaml
   - oauth2-proxy.yaml     # Entra OIDC relying party (Istio ext_authz provider)
   - istio-routing.yaml    # Gateway + VirtualService + STRICT mTLS
+  - networkpolicy.yaml    # egress lockdown (blocks IMDS + private ranges)
   # Cluster-scoped mesh objects (ext_authz provider, gateway AuthorizationPolicy) live
   # in mesh/ and are applied directly -- see mesh/README.md.
 images:

@@ -385,3 +385,52 @@ def test_serve_exits_gracefully_on_sigterm():
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+
+
+# ---------------------------------------------------- SSRF hardening (allowlist)
+
+import pytest as _pytest  # noqa: E402  (already imported above; alias keeps the block self-contained)
+
+
+@_pytest.mark.parametrize("repo", [
+    "http://169.254.169.254/metadata/identity/oauth2/token",  # Azure IMDS -> token theft
+    "http://169.254.169.254/latest/meta-data/",               # metadata path
+    "https://169.254.169.254/",
+    "http://[fd00:ec2::254]/latest/meta-data/",               # IPv6 metadata
+    "http://10.1.2.3/o/r",                                    # RFC1918 private
+    "http://192.168.0.1/o/r",
+    "http://172.16.5.5/o/r",
+    "http://127.0.0.1:8080/o/r",                              # loopback
+    "http://localhost/o/r",
+    "http://100.100.100.200/o/r",                             # alt metadata range
+    "git@169.254.169.254:o/r",                                # scp-style to metadata
+    "https://github.com@169.254.169.254/o/r",                 # userinfo confusion: real host is the IP
+    "http://0xa9fea9fe/o/r",                                  # hex-encoded 169.254.169.254
+    "http://2852039166/o/r",                                  # decimal-encoded 169.254.169.254
+])
+def test_ssrf_targets_are_blocked_by_the_clone_allowlist(repo):
+    """A public /scan clones arbitrary URLs, so the allowlist must reject metadata
+    endpoints, private ranges, loopback, and host-confusion tricks BEFORE any clone --
+    otherwise the box's managed identity is one crafted request away. Rejection happens
+    without a clone (no network), so this is hermetic."""
+    code, _, body, _ = _run({"repo": repo}, allow_hosts=("github.com", "dev.azure.com"))
+    assert code in (400, 403), f"{repo!r} must be rejected, got {code}"
+
+
+def test_host_of_extracts_the_real_connect_host_not_userinfo():
+    """The allowlist keys off the real host, not a spoofed `user@` prefix:
+    github.com@evil connects to evil; evil@github.com connects to github."""
+    from driftscope.server import _host_of
+    assert _host_of("https://github.com@169.254.169.254/o/r") == "169.254.169.254"
+    assert _host_of("https://169.254.169.254@github.com/o/r") == "github.com"
+    assert _host_of("git@github.com:o/r") == "github.com"
+
+
+def test_the_allowlist_does_not_overblock_the_real_forges():
+    """Sanity: the hardening still lets the legitimate hosts through."""
+    from driftscope.server import _allowed, _host_of
+    allow = ("github.com", "dev.azure.com")
+    assert _allowed(_host_of("https://github.com/o/r"), allow)
+    assert _allowed(_host_of("https://raw.github.com/o/r"), allow)          # dotted subdomain
+    assert _allowed(_host_of("https://dev.azure.com/org/p/_git/r"), allow)
+    assert not _allowed(_host_of("https://notgithub.com/o/r"), allow)
