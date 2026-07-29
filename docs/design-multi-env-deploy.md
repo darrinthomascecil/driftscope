@@ -120,10 +120,15 @@ a cluster runs — the driftscope app identity *and* the ALB-Controller platform
 (see *Two identities per cluster*): dev and prod each get their own of each.
 
 The federated *subject* stays the same everywhere (`system:serviceaccount:driftscope:driftscope`
-for the app), but because each cluster has a different OIDC issuer, **each env needs its
-own federated credential** on its own UAMI. The GitHub App can be shared for dev but
-should be **per-env for prod** (a separate App + Key Vault key), so prod's installation
-scope and key rotate independently.
+for the app), because the **k8s namespace and ServiceAccount are `driftscope` in every
+cluster** — so a federated credential's subject never changes across envs. What carries
+the environment is the **Azure resource names**: a per-env UAMI (`driftscope-<env>`), a
+per-env Key Vault, each with their own federated credential (same subject, that cluster's
+own issuer). Keeping the subject constant while naming the Azure identities per-env gives
+isolation without a different subject string to track per environment.
+
+The GitHub App can be shared for dev but should be **per-env for prod** (a separate App +
+Key Vault key), so prod's installation scope and key rotate independently.
 
 ## Secrets and config surface, per env
 
@@ -260,8 +265,10 @@ resources.**)
 - **Per-env GitHub Apps** for prod, or one App installed per-env-scoped?
 - ~~Ingress controller on AKS~~ — **resolved: Application Gateway for Containers (AGC)**;
   see the ingress section. (nginx remains a lighter-weight dev option.)
-- Namespace: keep `driftscope` in every cluster (so the federated subject is identical),
-  or per-env namespaces (which would change the subject and each federated credential)?
+- ~~Namespace / naming~~ — **resolved: the k8s namespace and ServiceAccount stay
+  `driftscope` in every cluster, so the federated subject is identical everywhere; the
+  environment is encoded in the *Azure* resource names instead (per-env UAMI/Key Vault,
+  `driftscope-<env>`).**
 
 ## Non-goals
 
