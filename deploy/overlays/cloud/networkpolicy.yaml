@@ -1,0 +1,36 @@
+# Defense in depth for the SSRF surface: even if the app-level --allow-host guard were
+# ever misconfigured or bypassed (e.g. an RCE in the pod), this blocks the app pod's
+# egress to the cloud metadata endpoint and private ranges -- so the node's managed
+# identity token can't be exfiltrated. Egress-only, so it never interferes with kubelet
+# health probes or the cloudflared -> app path. Requires a network-policy engine on the
+# cluster (AKS: --network-policy cilium/azure); a harmless no-op where none is present.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: driftscope-egress-hardening
+  namespace: driftscope
+  labels:
+    app.kubernetes.io/name: driftscope
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: driftscope
+  policyTypes: [Egress]
+  egress:
+    # DNS anywhere (kube-dns lives on the service network)
+    - ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # HTTPS/HTTP to the public internet, but NEVER metadata or private ranges
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16     # cloud metadata (IMDS 169.254.169.254) + link-local
+              - 10.0.0.0/8         # RFC1918
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10      # CGNAT
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 80 }
