@@ -11,20 +11,32 @@ Deployed behind the same edge as driftscope, at `https://driftscope.justmakeitgo
 
 ## How it works
 
-Every hop leaves a fingerprint in the request headers. pathtrace reads them off the request
-it just received and turns each into a verdict:
+Each hop is a **role**, not a product. For every role pathtrace tries an ordered list of
+**vendor detectors**, then falls back to **vendor-neutral signals** — and reports *which*
+one matched, so the page self-identifies the stack instead of assuming one. This is a
+signature registry (like Wappalyzer/`whatweb`): adding an environment means adding a row,
+not changing logic.
 
-| Hop | Fingerprint it checks |
-|---|---|
-| 1 Cloudflare edge | `cf-ray`, `cf-connecting-ip`, `cf-visitor` |
-| 2 Tunnel | `x-forwarded-for`, `x-forwarded-proto` |
-| 3 Istio gateway | `x-request-id`, `x-envoy-external-address` (Envoy-stamped) |
-| 4 SSO | `x-auth-request-email`, `authorization` (injected by oauth2-proxy on allow) |
-| 5 mTLS + workload authz | `x-forwarded-client-cert` — the caller's SPIFFE URI (must be the gateway SA) |
-| 6 App | pod name / namespace (env) |
+| Role | Vendor detectors (first match wins) | Generic fallback |
+|---|---|---|
+| Edge / CDN | Cloudflare `cf-ray` · CloudFront `x-amz-cf-id` · Front Door `x-azure-ref` · Fastly `x-served-by` · Akamai `akamai-grn` | `Via`, `X-Cache` |
+| Forwarding chain | — (counts the chain) | `Forwarded` (RFC 7239), `X-Forwarded-For` depth |
+| Ingress / gateway | Istio/Envoy `x-envoy-*` | `x-request-id`, `traceparent`, `x-b3-traceid` |
+| Auth (IAP/SSO) | oauth2-proxy · Cloudflare Access · Google IAP · ALB OIDC · Azure Easy Auth | `Authorization` |
+| Service identity / mTLS | Istio `x-forwarded-client-cert` (SPIFFE) · Linkerd `l5d-client-id` | — |
+| App | this pod | — |
 
-Because hops 4 and 5 rely on headers only the gateway/oauth2-proxy can produce, a green
-verdict is genuine proof — not a claim. `GET /trace?format=json` returns the raw evidence.
+Each hop reports one of three states:
+- **detected** (green) — a specific vendor signal matched; the `via` chip names it.
+- **generic** (blue) — only a vendor-neutral signal was present; "some proxy, unidentified".
+- **not seen** (gray, dashed) — no fingerprint. Deliberately *not* "failed": a transparent
+  L4 balancer or NAT leaves no header, so absence of evidence isn't evidence of a broken hop.
+
+Because the auth and mTLS hops rely on headers only the proxy/gateway can produce, a green
+verdict there is genuine proof — not a claim. `GET /trace?format=json` returns the raw
+evidence and the reconstructed path. The header-based view is complete only for hops that
+stamp a header; for full ground truth across any topology, pair it with distributed tracing
+(W3C `traceparent` / OpenTelemetry) and client-side vantage (`traceroute`, `dig +trace`).
 
 ## Build & deploy
 

@@ -1,0 +1,160 @@
+== Info: Added driftscope.justmakeitgo.net:443:172.67.159.56 to DNS cache
+== Info: Hostname driftscope.justmakeitgo.net was found in DNS cache
+== Info:   Trying 172.67.159.56:443...
+== Info: Connected to driftscope.justmakeitgo.net (172.67.159.56) port 443
+== Info: ALPN: curl offers h2,http/1.1
+== Info: (304) (OUT), TLS handshake, Client hello (1):
+=> Send SSL data, 332 bytes (0x14c)
+0000: ...H..-0...[)v\o..h....q[...!.P..&..hr F.=..8C.S}.(,..Q........*
+0040: W...Pg..b.............0.,.(.$.......k.9...........=.5...../.+.'.
+0080: #.......g.3...E...<./...A.......................+............3.&
+00c0: .$... .WOWqC]n..&.~.7.~.....(...$...gy... .....driftscope.justma
+0100: keitgo.net......................................................
+0140: .h2.http/1.1
+== Info:  CAfile: /etc/ssl/cert.pem
+== Info:  CApath: none
+== Info: (304) (IN), TLS handshake, Server hello (2):
+<= Recv SSL data, 122 bytes (0x7a)
+0000: ...v...?.}-0.4..J^ge6..\..kJ8......... F.=..8C.S}.(,..Q........*
+0040: W...Pg.......3.$... ..K...."..Zj...En...)#.Tic@N..$z.+....
+== Info: (304) (IN), TLS handshake, Unknown (8):
+<= Recv SSL data, 19 bytes (0x13)
+0000: .................h2
+== Info: (304) (IN), TLS handshake, Certificate (11):
+<= Recv SSL data, 3439 bytes (0xd6f)
+0000: ...k...g...0...0..(..............H..e.D./h..0...*.H.=...031.0...
+0040: U....US1.0...U....Let's Encrypt1.0...U....YE10...260724113512Z..
+0080: 261022113511Z0.1.0...U....justmakeitgo.net0Y0...*.H.=....*.H.=..
+00c0: ..B..AJ........B.;.T....R.L.^2D`.(m}P.^,....c..9..}X*x....z.....
+0100: ........20...0...U...........0...U.%..0...+.......0...U.......0.
+0140: 0...U............."U.Dg/}.....'0...U.#..0.... .G........*..7E...
+0180: 03..+........'0%0#..+.....0...http://ye1.i.lencr.org/0/..U...(0&
+01c0: ..*.justmakeitgo.net..justmakeitgo.net0...U. ..0.0...g.....0...U
+0200: ...'0%0#.!....http://ye1.c.lencr.org/26.crl0.....+.....y........
+0240: ....v..NC........$&..e..._8..?rg}U7................G0E.!...m..B,
+0280: ..........)..ON...Qz.>i... .V..F2`.F...Y..W...[...9a..^.M...~.&.
+02c0: dnXi!#.4?G$5.7..$Z.....3....G#....... ......,.E....G0E. ^+9!C..Q
+0300: ...'.uk..Q$.|e...J1.[..q.!....H..P*..v..Y...z.v?..FN{..pA..0...*
+0340: .H.=....h.0e.1....N-..*......KW..U`.1...b.%">%.m1k..Tw4..._..T9.
+0380: 0=1....-.i.^;.#......N...... A."5..#I.b."&..'U..X.....0...0.....
+03c0: .....].p.1...\.jz....0...*.H.=...0.1.0...U....US1.0...U....ISRG1
+0400: .0...U....Root YE0...250903000000Z..280902235959Z031.0...U....US
+0440: 1.0...U....Let's Encrypt1.0...U....YE10v0...*.H.=....+...".b...e
+0480: Pu.h....}+..T....h.W/?...6.)f.`..OBr...$"....bcHi%.?_t.|... .#.G
+04c0: ......R....f.3..p6...q..&........0..0...U...........0...U.%..0..
+0500: .+.......0...U.......0.......0...U....... .G........*..7E...0...
+0540: U.#..0.....&Z..L.5c..#.:.V.OV02..+........&0$0"..+.....0...http:
+0580: //ye.i.lencr.org/0...U. ..0.0...g.....0'..U... 0.0.......http://
+05c0: ye.c.lencr.org/0...*.H.=....h.0e.1...A..T..p.jJ.=.K...g.-...8...
+0600: {.._7x..r.x.)woBu6}.0.X.D.o.....9..F..T......L.#.. .|....wf.Q...
+0640: Y.jF......0...0..+.........!e.4.......p_.:0...*.H.=...0O1.0...U.
+0680: ...US1)0'..U... Internet Security Research Group1.0...U....ISRG 
+06c0: Root X20...260513000000Z..320902235959Z0.1.0...U....US1.0...U...
+0700: .ISRG1.0...U....Root YE0v0...*.H.=....+...".b..<......jq.h...#w.
+0740: ..{..I9..L.b..0..|..D.1..N..X...! ...3..7vo..$.. =8c,..Nsj...d..
+0780: .M.?.Hhy.5..>.....0..0...U...........0...U.%..0...+.......0...U.
+07c0: ......0....0...U........&Z..L.5c..#.:.V.OV0...U.#..0...|B...KH;.
+0800: .....m..r7.02..+........&0$0"..+.....0...http://x2.i.lencr.org/0
+0840: ...U. ..0.0...g.....0'..U... 0.0.......http://x2.c.lencr.org/0..
+0880: .*.H.=....i.0f.1..5.`...M.....h..=g........N.N..[....ew.....x.MF
+08c0: ..1..&..I...6%.^H.....$.L_.z..1~6g.4r.T.........i.:v....t0..p0..
+0900: X.......l...'...{..:....0...*.H........0O1.0...U....US1)0'..U...
+0940:  Internet Security Research Group1.0...U....ISRG Root X10...2605
+0980: 13000000Z..320902235959Z0O1.0...U....US1)0'..U... Internet Secur
+09c0: ity Research Group1.0...U....ISRG Root X20v0...*.H.=....+...".b.
+0a00: ..........J..J>\.w..g........Z....q`..E........*......2......8..
+0a40: E..jn..w..Q}"..n.[w...A.9.u.h.......0..0...U...........0...U.%..
+0a80: 0...+.........+.......0...U.......0....0...U......|B...KH;......
+0ac0: m..r7.0...U.#..0...y.Y.{....s.....X...n02..+........&0$0"..+....
+0b00: .0...http://x1.i.lencr.org/0...U. ..0.0...g.....0'..U... 0.0....
+0b40: ...http://x1.c.lencr.org/0...*.H.............=.{....M.%t...z.>1]
+0b80: .......v.G...a.N....a.uM^....Ab.u.9"$.....m.....eY..\.(...+..^.3
+0bc0: ....~g.G....Y;.F.M.m4.%.L...o...YB6.+]S`.6..>`s_l..........'&4..
+0c00: .K#...!2..v.H....,5>.t......F.......f?u_y"...H.f'....tH.]{..?n.%
+0c40: Di....i.b..uy..@D8...n.R..Fp...}A\.Q.....iY~t6.......ua..O..x...
+0c80: .l.5*......E(0N.^.......K.....Q.....aLw..............]y..1-.o..%
+0cc0: ....I....4.h.a....X.U.....0Br.sS.z......U..K..g2.#?....0/qX.w...
+0d00: .n.........fE......w.H..YpF.......2....F........c.r..... ..5%...
+0d40: v.H...e..M=&C.._ 80@"i..\...De.g\.l*'..........
+== Info: (304) (IN), TLS handshake, CERT verify (15):
+<= Recv SSL data, 80 bytes (0x50)
+0000: ...L...H0F.!...Q..........~`.+...X..j....J.|..!..R....0... #..o.
+0040: .hM..(H.Bp..S.."
+== Info: (304) (IN), TLS handshake, Finished (20):
+<= Recv SSL data, 36 bytes (0x24)
+0000: ... Y.V!91z........z.3gps....}f..'..
+== Info: (304) (OUT), TLS handshake, Finished (20):
+=> Send SSL data, 36 bytes (0x24)
+0000: ... ....\...cnC...i.>i......5..F....
+== Info: SSL connection using TLSv1.3 / AEAD-CHACHA20-POLY1305-SHA256 / [blank] / UNDEF
+== Info: ALPN: server accepted h2
+== Info: Server certificate:
+== Info:  subject: CN=justmakeitgo.net
+== Info:  start date: Jul 24 11:35:12 2026 GMT
+== Info:  expire date: Oct 22 11:35:11 2026 GMT
+== Info:  subjectAltName: host "driftscope.justmakeitgo.net" matched cert's "*.justmakeitgo.net"
+== Info:  issuer: C=US; O=Let's Encrypt; CN=YE1
+== Info:  SSL certificate verify ok.
+== Info: using HTTP/2
+== Info: [HTTP/2] [1] OPENED stream for https://driftscope.justmakeitgo.net/trace
+== Info: [HTTP/2] [1] [:method: GET]
+== Info: [HTTP/2] [1] [:scheme: https]
+== Info: [HTTP/2] [1] [:authority: driftscope.justmakeitgo.net]
+== Info: [HTTP/2] [1] [:path: /trace]
+== Info: [HTTP/2] [1] [user-agent: curl/8.7.1]
+== Info: [HTTP/2] [1] [accept: */*]
+=> Send header, 93 bytes (0x5d)
+0000: GET /trace HTTP/2
+0013: Host: driftscope.justmakeitgo.net
+0036: User-Agent: curl/8.7.1
+004e: Accept: */*
+005b: 
+== Info: Request completely sent off
+<= Recv header, 13 bytes (0xd)
+0000: HTTP/2 302 
+<= Recv header, 37 bytes (0x25)
+0000: date: Wed, 29 Jul 2026 21:50:57 GMT
+<= Recv header, 40 bytes (0x28)
+0000: content-type: text/html; charset=utf-8
+<= Recv header, 355 bytes (0x163)
+0000: location: https://login.microsoftonline.com/f493fd7e-e41b-4f64-a
+0040: d3d-a9704bbfb5f8/oauth2/v2.0/authorize?approval_prompt=force&cli
+0080: ent_id=2fe61316-6a56-4808-968c-0785ffa97aac&redirect_uri=https%3
+00c0: A%2F%2Fdriftscope.justmakeitgo.net%2Foauth2%2Fcallback&response_
+0100: type=code&scope=openid+profile+email&state=8PE8imglH6X0RNxHnwtGg
+0140: SNIX9ScGLTV7VhDgDP7j_E%3A%2Ftrace
+<= Recv header, 20 bytes (0x14)
+0000: server: cloudflare
+<= Recv header, 310 bytes (0x136)
+0000: set-cookie: _oauth2_proxy_csrf=U7fMhps-5ao1Ijz5BLL6Y7XUjNtfGD2-F
+0040: ZyRfJAtUKQmuwRh0GTE_B0JbHbghOwpVlPiHfwvG9qMIczM7DYw2u0IY1-BF5wmT
+0080: Dae2D9XurpPLV3yG6R0fSc=|1785361857|i-VyW4ZZw9d8zBCjdpTC4hvYI5dAr
+00c0: JP4SQoNmRCE9oM=; Path=/; Domain=driftscope.justmakeitgo.net; Exp
+0100: ires=Wed, 29 Jul 2026 22:05:57 GMT; HttpOnly; Secure
+<= Recv header, 26 bytes (0x1a)
+0000: cf-cache-status: DYNAMIC
+<= Recv header, 69 bytes (0x45)
+0000: nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":6048
+0040: 00}
+<= Recv header, 270 bytes (0x10e)
+0000: report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url
+0040: ":"https://a.nel.cloudflare.com/report/v4?s=uECB5zJ33LREm3knho2k
+0080: xOrAmlu7vBO822Ldq1KGs648LmzPA77%2FUAkTriyEBcs3K1e%2B3seB7JmzTknz
+00c0: 1I8lIDQwPmem2dr6pciETLGHye%2FuUa4kEsPFyjtgvC9WDyiHV4ry0AiJGsPic4
+0100: IhEEM%3D"}]}
+<= Recv header, 30 bytes (0x1e)
+0000: cf-ray: a22f579578bcb9cd-SEA
+<= Recv header, 30 bytes (0x1e)
+0000: alt-svc: h3=":443"; ma=86400
+<= Recv header, 2 bytes (0x2)
+0000: 
+<= Recv data, 386 bytes (0x182)
+0000: <a href="https://login.microsoftonline.com/f493fd7e-e41b-4f64-ad
+0040: 3d-a9704bbfb5f8/oauth2/v2.0/authorize?approval_prompt=force&amp;
+0080: client_id=2fe61316-6a56-4808-968c-0785ffa97aac&amp;redirect_uri=
+00c0: https%3A%2F%2Fdriftscope.justmakeitgo.net%2Foauth2%2Fcallback&am
+0100: p;response_type=code&amp;scope=openid+profile+email&amp;state=8P
+0140: E8imglH6X0RNxHnwtGgSNIX9ScGLTV7VhDgDP7j_E%3A%2Ftrace">Found</a>.
+0180: ..
+<= Recv data, 0 bytes (0x0)
+== Info: Connection #0 to host driftscope.justmakeitgo.net left intact

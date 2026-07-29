@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""pathtrace -- a self-diagnostic page that proves the edge->app network path.
+"""pathtrace -- a vendor-neutral edge->app network path tracer.
 
-Each hop from the internet to this pod leaves fingerprints in the request headers
-(Cloudflare's cf-ray, Envoy's x-request-id, the mTLS x-forwarded-client-cert, the
-SSO x-auth-request-email, ...). This app reads those fingerprints off the request it
-just received and, for every hop, shows: what the hop does, the live evidence that it
-happened, a verdict, and the command you'd run to debug it if it hadn't.
+Each hop is a ROLE (edge/CDN, forwarding chain, ingress, auth, service identity, app),
+not a specific product. For every role we try an ordered list of vendor detectors
+(Cloudflare, CloudFront, Front Door, Fastly, Akamai, Istio/Envoy, Linkerd, oauth2-proxy,
+Cloudflare Access, Google IAP, ALB OIDC, Azure Easy Auth, ...), then fall back to
+vendor-neutral signals (Via, Forwarded, X-Forwarded-For depth, W3C traceparent). We
+report WHICH signal matched, so the page self-identifies the stack instead of assuming
+one. A hop that leaves no fingerprint is reported as "not seen" (transparent or absent)
+-- deliberately NOT "failed", because absence of evidence isn't evidence of a broken hop.
 
-Stdlib only, like driftscope. Serves any path (it lives behind a /trace route); /healthz
-is the pod-local probe; ?format=json dumps the raw evidence.
+Stdlib only. /healthz is the pod probe; ?format=json dumps the raw evidence.
 """
 from __future__ import annotations
 import html
 import json
 import os
-import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 POD = os.environ.get("HOSTNAME", "unknown")
@@ -22,7 +23,6 @@ NS = os.environ.get("POD_NAMESPACE", "driftscope")
 
 
 def _xfcc(v: str) -> dict:
-    """Parse an x-forwarded-client-cert header into its key/values (By, URI, ...)."""
     out = {}
     for part in v.split(";"):
         if "=" in part:
@@ -31,175 +31,218 @@ def _xfcc(v: str) -> dict:
     return out
 
 
-def evaluate(headers) -> list[dict]:
-    """Build the per-hop evidence from the request headers. h() is case-insensitive."""
-    def h(name, default=""):
-        return headers.get(name, default)
+def _shape(present: dict) -> dict:
+    """Expand identity-bearing headers into something readable."""
+    out = {}
+    for k, v in present.items():
+        if k == "x-forwarded-client-cert":
+            p = _xfcc(v)
+            out["client-cert By"] = p.get("by", "(unparsed)")
+            out["client-cert URI (caller)"] = p.get("uri", "(none)")
+        else:
+            out[k] = v
+    return out
 
-    cf_ray = h("cf-ray")
-    cf_ip = h("cf-connecting-ip")
-    cf_visitor = h("cf-visitor")
-    xff = h("x-forwarded-for")
-    xfproto = h("x-forwarded-proto")
-    req_id = h("x-request-id")
-    envoy_ext = h("x-envoy-external-address")
-    xfcc = h("x-forwarded-client-cert")
-    xfcc_p = _xfcc(xfcc)
-    auth_email = h("x-auth-request-email") or h("x-auth-request-user")
-    have_authz = bool(h("authorization"))
 
-    gw_principal = xfcc_p.get("uri", "")
-    is_gateway = "aks-istio-ingress" in gw_principal
-
+# Each hop's detectors are tried in order; first vendor with ANY of its signals present
+# wins. If none match, the vendor-neutral `generic` signals are tried. This table is the
+# whole point: adding an environment means adding a row, not changing logic.
+def hops_spec() -> list[dict]:
     return [
         {
-            "n": 0, "title": "Client + DNS",
-            "what": "The browser resolves this hostname to a Cloudflare edge IP (proxied record).",
-            "detail": "Before anything can connect, your browser turns the name "
-                      "driftscope.justmakeitgo.net into an address — that is DNS, like looking a "
-                      "company up in a phone book to get its number before you call. Because the record "
-                      "is ‘proxied’, the number you get rings Cloudflare’s switchboard, not "
-                      "the app’s own line: the app’s real address is never published.",
-            "ok": bool(h("host")),
-            "evidence": {"Host": h("host") or "(none)"},
-            "note": "The Host that survived resolution + SNI. A non-Cloudflare answer would mean the record was un-proxied.",
-            "failure": "You never even reach this page: the browser says 'server not found' and there is no "
-                       "cf-ray anywhere, because nothing resolved. Classic false alarm -- dig @1.1.1.1 returns "
-                       "an IP but your machine does not: a stale negative DNS cache, not a real outage.",
-            "debug": "dig +short driftscope.justmakeitgo.net @1.1.1.1   # vs the local resolver; mismatch = stale cache, not DNS",
+            "n": 0, "role": "Client + DNS", "kind": "fixed",
+            "plain": "Before anything can connect, the client turns the hostname into an address "
+                     "-- that is DNS, like looking a company up in a phone book to get its number "
+                     "before you call. If the record is proxied, that number rings an edge, not the "
+                     "app's own line.",
+            "note": "The Host that survived resolution + SNI. Generalizes to any stack -- every request arrives with one.",
+            "failure": "You never even reach this page: 'server not found', and no edge/proxy signals appear at all "
+                       "because nothing resolved. Classic false alarm -- an authoritative resolver (dig @1.1.1.1) "
+                       "answers but the client does not: a stale negative cache, not a real outage.",
+            "debug": "dig +short <host> @1.1.1.1   # vs the local resolver; mismatch = stale cache, not DNS",
         },
         {
-            "n": 1, "title": "Cloudflare edge (TLS · WAF · DDoS)",
-            "what": "Terminates TLS and screens the request, then hands it to the tunnel.",
-            "detail": "This is the building’s front reception. Your encrypted connection is opened "
-                      "and read here (TLS), screened for attacks (WAF), and shielded from traffic floods "
-                      "(DDoS) — all before a single byte reaches anything of yours. Every visitor "
-                      "passes this desk; nothing skips the lobby.",
-            "ok": bool(cf_ray),
-            "evidence": {"cf-ray": cf_ray or "(absent)", "cf-connecting-ip": cf_ip or "(absent)",
-                         "cf-visitor": cf_visitor or "(absent)"},
-            "note": "cf-ray present = the request genuinely transited Cloudflare. cf-visitor shows the original scheme (https).",
-            "failure": "A Cloudflare-branded error instead of the app -- 525 (TLS handshake failed) or a WAF "
-                       "'you have been blocked' 403. The tell is that it still carries a cf-ray: the edge is up "
-                       "and answering, so the fault is edge config or something downstream, not your network.",
-            "debug": "curl -sv https://driftscope.justmakeitgo.net/ 2>&1 | grep -Ei 'cf-ray|server:'   # 5xx WITH cf-ray = edge ok, origin sick",
+            "n": 1, "role": "Edge / CDN", "kind": "detect",
+            "detectors": [
+                ("Cloudflare", ["cf-ray", "cf-connecting-ip", "cf-visitor"]),
+                ("AWS CloudFront", ["x-amz-cf-id", "x-amz-cf-pop"]),
+                ("Azure Front Door", ["x-azure-ref", "x-fd-healthprobe"]),
+                ("Fastly", ["x-served-by", "fastly-io-info"]),
+                ("Akamai", ["akamai-grn", "x-akamai-request-id"]),
+            ],
+            "generic": ["via", "x-cache"],
+            "plain": "The building's front reception: TLS is terminated, the request is screened (WAF) and "
+                     "shielded from floods (DDoS) before a byte reaches your origin. Different vendors sign "
+                     "their work with different headers -- the evidence below names whichever one answered.",
+            "note": "A branded header (cf-ray, x-amz-cf-id, x-azure-ref, ...) names the CDN; a bare Via means a proxy we can't identify.",
+            "failure": "A vendor-branded error page instead of the app (e.g. Cloudflare 525 TLS-handshake, a WAF 403). "
+                       "The tell: it still carries the edge's signature header, so the edge is up and the fault is "
+                       "config or downstream, not your network.",
+            "debug": "curl -sv https://<host>/ 2>&1 | grep -Ei 'cf-ray|x-amz-cf-id|x-azure-ref|via|server:'",
         },
         {
-            "n": 2, "title": "Cloudflare Tunnel (cloudflared)",
-            "what": "cloudflared dials OUT to Cloudflare; the edge forwards this request down that tunnel. No public origin.",
-            "detail": "The app has no public door on the street. Instead a trusted runner inside the "
-                      "cluster (cloudflared) walks out to reception and carries approved requests back in "
-                      "through a private corridor it opened itself. Since the corridor only ever opens "
-                      "outward, there is no doorknob on the street for an attacker to try.",
-            "ok": bool(xff),
-            "evidence": {"x-forwarded-for": xff or "(absent)", "x-forwarded-proto": xfproto or "(absent)"},
-            "note": "The forwarded-for chain is the client IP as cloudflared passed it inward.",
-            "failure": "Error 1033 or a 502 WITH a cf-ray present: the edge is fine but no healthy tunnel "
-                       "connector answered, or the tunnel points at the wrong in-cluster service. cloudflared's "
-                       "logs show reconnect errors instead of 'Registered tunnel connection', and the Tunnels "
-                       "dashboard reads DEGRADED / DOWN.",
-            "debug": "kubectl -n driftscope logs deploy/cloudflared | grep -Ei 'registered|error'   # ~4 connectors = healthy",
+            "n": 2, "role": "Forwarding / proxy chain", "kind": "chain",
+            "generic": ["forwarded", "x-forwarded-for", "x-forwarded-proto"],
+            "plain": "How many proxies stand between you and the app. The standard way to count them is "
+                     "vendor-neutral: RFC 7239 Forwarded, or the length of the X-Forwarded-For chain. In "
+                     "this deployment one of those hops is a private outbound tunnel with no public door.",
+            "note": "Depth = number of proxies the request admits to crossing. Works everywhere; needs no branded header.",
+            "failure": "The chain is wrong or broken: a 502/1033 with the edge signature present but no healthy next "
+                       "hop, or an XFF depth that doesn't match your topology (a proxy you didn't expect, or one "
+                       "silently missing). Spoofable XFF is also how naive IP allowlists get bypassed.",
+            "debug": "echo $X_FORWARDED_FOR | tr ',' '\\n' | nl   # count/inspect the proxy chain",
         },
         {
-            "n": 3, "title": "Istio internal ingress gateway",
-            "what": "cloudflared forwards to the gateway Service (internal LB, no public IP); Envoy takes over.",
-            "detail": "Inside the building, this is the mailroom. It receives every request the runner "
-                      "brings in, stamps it with a tracking number (x-request-id) so its path can be "
-                      "followed, and works out which department it is for. It has an internal address "
-                      "only — you cannot reach it from outside.",
-            "ok": bool(req_id),
-            "evidence": {"x-request-id": req_id or "(absent)", "x-envoy-external-address": envoy_ext or "(absent)"},
-            "note": "x-request-id / x-envoy-* are stamped by the gateway's Envoy -- proof the request passed through it.",
-            "failure": "503 'no healthy upstream' or a 523: the gateway Service has no endpoints (its pods are "
-                       "down) or the tunnel names the wrong port. An in-cluster curl to the gateway returns 000 "
-                       "(connection refused) instead of a 302.",
-            "debug": "kubectl -n default run t --image=curlimages/curl --restart=Never -- sleep 3600; "
-                     "kubectl -n default exec t -- curl -s -o /dev/null -w '%{http_code}' "
-                     "-H 'Host: driftscope.justmakeitgo.net' http://aks-istio-ingressgateway-internal.aks-istio-ingress.svc:80/trace   # 302",
+            "n": 3, "role": "Ingress / gateway", "kind": "detect",
+            "detectors": [
+                ("Istio / Envoy", ["x-envoy-external-address", "x-envoy-attempt-count", "x-envoy-decorator-operation"]),
+                ("Contour / Envoy", ["x-envoy-upstream-service-time"]),
+            ],
+            "generic": ["x-request-id", "traceparent", "x-b3-traceid", "server"],
+            "plain": "Inside the building, the mailroom: it receives the request, stamps it with a tracking id "
+                     "so its path can be followed, and routes it to the right department. Envoy stamps x-envoy-*; "
+                     "anything with a request-id or a W3C traceparent is at least a tracing-aware proxy.",
+            "note": "x-envoy-* names Envoy specifically; a lone x-request-id / traceparent proves 'some ingress' without naming it.",
+            "failure": "503 'no healthy upstream' or a 523: the gateway Service has no endpoints (pods down) or the "
+                       "wrong port is named. An in-cluster curl to the gateway returns 000 (connection refused) "
+                       "instead of a routed response.",
+            "debug": "kubectl -n <gw-ns> get endpoints <gateway-svc>   # empty = no backends; then curl the svc from a debug pod",
         },
         {
-            "n": 4, "title": "Gateway policy -> ext_authz (SSO)",
-            "what": "The CUSTOM AuthorizationPolicy calls oauth2-proxy for every non-/oauth2 path; unauthenticated => 302 to Entra.",
-            "detail": "The badge checkpoint. Before you go further, your identity is checked against the "
-                      "company directory (Microsoft Entra). No valid badge and you are walked over to the "
-                      "sign-in desk to get one (the 302 redirect to login), then brought back. You can "
-                      "only read this page because you cleared this checkpoint — your email is "
-                      "stamped on the request as proof.",
-            "ok": bool(auth_email),
-            "evidence": {"x-auth-request-email": auth_email or "(absent)", "authorization": "Bearer <token>" if have_authz else "(absent)"},
-            "note": "You are only reading this because SSO passed. oauth2-proxy injected your identity as upstream headers.",
-            "failure": "A healthy 302 to Entra is the gate doing its job; the FAILURE looks like a 403 'RBAC: "
-                       "access denied' or an endless login loop when Envoy cannot reach oauth2-proxy and fails "
-                       "closed. On the callback, a 500 with AADSTS7000215 means the client secret is the wrong "
-                       "value -- and you would never see your email above, because you never reached the app.",
-            "debug": "kubectl -n aks-istio-ingress exec <gw-pod> -c istio-proxy -- pilot-agent request GET stats | grep ext_authz   # error>0 = oauth2-proxy unreachable",
+            "n": 4, "role": "Authentication (IAP / SSO)", "kind": "detect",
+            "detectors": [
+                ("oauth2-proxy", ["x-auth-request-email", "x-auth-request-user"]),
+                ("Cloudflare Access", ["cf-access-authenticated-user-email", "cf-access-jwt-assertion"]),
+                ("Google IAP", ["x-goog-authenticated-user-email", "x-goog-iap-jwt-assertion"]),
+                ("AWS ALB OIDC", ["x-amzn-oidc-identity", "x-amzn-oidc-data"]),
+                ("Azure Easy Auth", ["x-ms-client-principal-name", "x-ms-client-principal"]),
+            ],
+            "generic": ["authorization"],
+            "plain": "The badge checkpoint. Before you go further, your identity is verified against a directory "
+                     "and stamped onto the request. Every identity-aware proxy injects a different header -- "
+                     "oauth2-proxy, Cloudflare Access, Google IAP, ALB, Azure Easy Auth -- but the ROLE is the same.",
+            "note": "You are only reading this because auth passed; the header below is the identity the proxy vouched for. A bare Authorization means a token but no proxy-verified identity.",
+            "failure": "A healthy redirect to the IdP is the gate working; the FAILURE is a 403 'access denied' or an "
+                       "endless login loop when the proxy can't be reached and fails closed -- or a callback 500 "
+                       "(e.g. Entra AADSTS7000215) from a bad client secret. Either way, no identity header appears.",
+            "debug": "curl -sI https://<host>/ | grep -i location   # unauth should redirect to the IdP, not 200",
         },
         {
-            "n": 5, "title": "Gateway -> app: mTLS + workload authz",
-            "what": "The gateway originates mTLS; the app admits ONLY the gateway's SPIFFE identity (driftscope-allow-gateway-only).",
-            "detail": "A secure room where both you and your escort show cryptographic ID to each other "
-                      "— that is mutual TLS, and it cannot be faked. On top of that, the door is "
-                      "wired to open for exactly one escort: the mailroom gateway. Even another employee "
-                      "with a valid building badge is turned away at this door (they would get a 403).",
-            "ok": is_gateway,
-            "evidence": {"x-forwarded-client-cert (By)": xfcc_p.get("by", "(absent)"),
-                         "x-forwarded-client-cert (URI = caller)": gw_principal or "(absent)"},
-            "note": "URI is the caller's cryptographic identity. It MUST be the ingress gateway SA -- any other mesh pod gets 403.",
-            "failure": "403 'RBAC: access denied' at the app: if the allow-policy principal is wrong, even the "
-                       "gateway is refused and every request 403s right after login. A broken mTLS handshake "
-                       "instead shows as a connection reset / 503 UC, and connection_security_policy reads 'none'; "
-                       "the XFCC line above would be absent or show a non-gateway identity.",
-            "debug": "kubectl -n driftscope exec <app-pod> -c istio-proxy -- pilot-agent request GET stats/prometheus "
-                     "| grep connection_security_policy   # mutual_tls, never 'none'",
+            "n": 5, "role": "Service identity / mTLS", "kind": "detect",
+            "detectors": [
+                ("Istio mTLS (SPIFFE)", ["x-forwarded-client-cert"]),
+                ("Linkerd mTLS", ["l5d-client-id"]),
+            ],
+            "generic": [],
+            "plain": "A secure room where both sides present cryptographic ID -- mutual TLS, which can't be faked. "
+                     "The caller's identity is the SPIFFE URI (Istio) or l5d-client-id (Linkerd). Good policy admits "
+                     "only ONE caller here (the gateway); any other in-mesh workload is refused even with a valid cert.",
+            "note": "The URI/id is the caller's cryptographic identity. Absent = not a mesh, or mTLS not surfaced to the app.",
+            "failure": "403 'RBAC: access denied' at the app: if the allow-policy principal is wrong, even the gateway "
+                       "is refused and every request 403s right after login. A broken handshake instead shows as a "
+                       "connection reset / 503 UC; the identity header would be absent or a non-gateway principal.",
+            "debug": "kubectl -n <app-ns> exec <app-pod> -c istio-proxy -- pilot-agent request GET stats/prometheus | grep connection_security_policy",
         },
         {
-            "n": 6, "title": "App container",
-            "what": "This pod (pathtrace) finally handles the request over localhost from its sidecar.",
-            "detail": "The desk that finally does the work. By the time the request lands here it has been "
-                      "handed off inside the same office (over localhost), so if the answer is wrong you "
-                      "know it is this worker — not the couriers, checkpoints, or mailroom that got "
-                      "it here.",
-            "ok": True,
-            "evidence": {"pod": POD, "namespace": NS, "served_by": "pathtrace :8080"},
-            "note": "Reached over localhost, so app bugs reproduce with the mesh out of the picture (kubectl exec ... curl localhost:8080).",
-            "failure": "The mesh is fine but the app itself fails: a 500 traceback in its logs, a "
-                       "CrashLoopBackOff (503 'no healthy upstream' from the sidecar), or OOMKilled on a heavy "
-                       "scan. Sometimes a 200 with a wrong answer -- e.g. 'could not read issues' when the pod "
-                       "has no GitHub token -- which is an app bug, not plumbing.",
-            "debug": f"kubectl -n {NS} logs {POD} -c pathtrace -f   # the app's own logs (‑c pathtrace, not istio-proxy)",
+            "n": 6, "role": "App", "kind": "fixed",
+            "plain": "The desk that finally does the work. By the time the request lands here it's been handed off "
+                     "inside the same host (over localhost), so if the answer is wrong you know it's this worker -- "
+                     "not the couriers, checkpoints, or mailroom that got it here.",
+            "note": "Reached over localhost, so app bugs reproduce with the network out of the picture.",
+            "failure": "The path is fine but the app itself fails: a 500 traceback in its logs, a crash-loop (503 "
+                       "'no healthy upstream' from the sidecar), or OOM under load. Sometimes a 200 with a wrong "
+                       "answer -- an app bug, not plumbing.",
+            "debug": "kubectl -n <app-ns> logs <app-pod> -c <app-container> -f   # the app's own logs",
         },
     ]
 
 
-def render_html(hops: list[dict]) -> bytes:
-    detected = sum(1 for h in hops if h["ok"])
-    total = len(hops)
+def evaluate(headers) -> list[dict]:
+    h = {k.lower(): v for k, v in headers.items()}
+    results = []
+    for spec in hops_spec():
+        r = dict(spec)
+        if spec["kind"] == "fixed" and spec["n"] == 0:
+            r.update(status="ok", via="request received",
+                     evidence={"Host": h.get("host", "(none)")})
+        elif spec["kind"] == "fixed":  # app
+            r.update(status="ok", via=f"pod {POD}",
+                     evidence={"pod": POD, "namespace": NS, "served_by": "pathtrace :8080"})
+        elif spec["kind"] == "chain":
+            xff = h.get("x-forwarded-for", "")
+            depth = len([x for x in xff.split(",") if x.strip()]) if xff else 0
+            ev = {k: h[k] for k in spec["generic"] if h.get(k)}
+            if depth:
+                r.update(status="ok", via=f"{depth} proxy hop(s)", evidence=ev or {"x-forwarded-for": xff})
+            elif ev:
+                r.update(status="generic", via="proxy chain (no XFF)", evidence=ev)
+            else:
+                r.update(status="unknown", via=None, evidence={"forwarded / x-forwarded-for": "(absent)"})
+        else:  # detect
+            matched = None
+            for vendor, names in spec.get("detectors", []):
+                present = {k: h[k] for k in names if h.get(k)}
+                if present:
+                    matched = (vendor, present); break
+            if matched:
+                r.update(status="ok", via=matched[0], evidence=_shape(matched[1]))
+            else:
+                gen = {k: h[k] for k in spec.get("generic", []) if h.get(k)}
+                if gen:
+                    r.update(status="generic", via="unidentified (generic signal)", evidence=_shape(gen))
+                else:
+                    looked = [n for _, ns in spec.get("detectors", []) for n in ns][:3] + spec.get("generic", [])[:2]
+                    r.update(status="unknown", via=None,
+                             evidence={", ".join(looked[:4]) or "(no signals)": "(none present)"})
+        results.append(r)
+    return results
+
+
+def summarize(results) -> str:
+    seg = []
+    for r in results:
+        if r["status"] == "unknown":
+            seg.append("· (not seen)")
+        elif r["n"] == 0:
+            seg.append("client")
+        elif r["n"] == 6:
+            seg.append("app")
+        else:
+            seg.append(r["via"])
+    return "  →  ".join(seg)
+
+
+STATUS = {"ok": ("detected", "ok"), "generic": ("generic", "generic"), "unknown": ("not seen", "unknown")}
+
+
+def render_html(results) -> bytes:
+    known = sum(1 for r in results if r["status"] == "ok")
+    generic = sum(1 for r in results if r["status"] == "generic")
+    unseen = sum(1 for r in results if r["status"] == "unknown")
     rows = []
-    for hop in hops:
-        badge = "ok" if hop["ok"] else "warn"
-        label = "detected" if hop["ok"] else "missing"
+    for r in results:
+        label, cls = STATUS[r["status"]]
+        via = html.escape(r["via"]) if r["via"] else "no fingerprint"
         ev = "".join(
             f'<div class="kv"><span class="k">{html.escape(k)}</span>'
             f'<span class="v">{html.escape(str(val))}</span></div>'
-            for k, val in hop["evidence"].items()
+            for k, val in r["evidence"].items()
         )
         rows.append(f"""
-        <section class="hop {badge}">
-          <span class="num">{hop['n']}</span>
+        <section class="hop {cls}">
+          <span class="num">{r['n']}</span>
           <div class="body">
             <header>
-              <h2>{html.escape(hop['title'])}</h2>
-              <span class="badge {badge}">{label}</span>
+              <h2>{html.escape(r['role'])}</h2>
+              <span class="via {cls}">{via}</span>
+              <span class="badge {cls}">{label}</span>
             </header>
-            <p class="what">{html.escape(hop['what'])}</p>
-            <div class="detail"><span class="dlabel">In plain terms</span>{html.escape(hop['detail'])}</div>
+            <div class="detail"><span class="dlabel">In plain terms</span>{html.escape(r['plain'])}</div>
             <div class="evidence">{ev}</div>
-            <p class="note">{html.escape(hop['note'])}</p>
-            <div class="failure"><span class="flabel">If this hop fails</span>{html.escape(hop['failure'])}</div>
-            <details open>
-              <summary>How to debug this hop</summary>
-              <pre><code>{html.escape(hop['debug'])}</code></pre>
-            </details>
+            <p class="note">{html.escape(r['note'])}</p>
+            <div class="failure"><span class="flabel">If this hop fails</span>{html.escape(r['failure'])}</div>
+            <details open><summary>How to debug this hop</summary>
+              <pre><code>{html.escape(r['debug'])}</code></pre></details>
           </div>
         </section>""")
     body = "\n".join(rows)
@@ -208,80 +251,81 @@ def render_html(hops: list[dict]) -> bytes:
 <title>pathtrace — edge to app</title>
 <style>
  :root {{ color-scheme: light dark; --bg:#0b0e14; --card:#141a24; --fg:#e6edf3; --muted:#8b97a7;
-          --ok:#3fb950; --warn:#d29922; --line:#222b38; --rail:#2b3543; --code:#090c11;
-          --accent:#539bf5; --shadow:0 1px 2px rgba(0,0,0,.4); }}
+          --ok:#3fb950; --gen:#539bf5; --unk:#7d8590; --warn:#d29922; --line:#222b38; --rail:#2b3543;
+          --code:#090c11; --accent:#539bf5; --shadow:0 1px 2px rgba(0,0,0,.4); }}
  @media (prefers-color-scheme: light) {{ :root {{ --bg:#f4f6f9; --card:#fff; --fg:#1f2328;
           --muted:#5b6572; --line:#e2e7ee; --rail:#d7dee7; --code:#f6f8fa; --accent:#0969da;
-          --shadow:0 1px 2px rgba(140,149,159,.2); }} }}
+          --unk:#8b949e; --shadow:0 1px 2px rgba(140,149,159,.2); }} }}
  * {{ box-sizing:border-box; }}
  body {{ margin:0; font:15px/1.55 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,sans-serif;
          background:var(--bg); color:var(--fg); -webkit-font-smoothing:antialiased; }}
- .wrap {{ max-width:780px; margin:0 auto; padding:40px 20px 72px; }}
- .hero {{ margin-bottom:8px; }}
+ .wrap {{ max-width:790px; margin:0 auto; padding:40px 20px 72px; }}
  h1 {{ font-size:26px; letter-spacing:-.01em; margin:0 0 6px; }}
- .sub {{ color:var(--muted); margin:0; max-width:60ch; }}
+ .sub {{ color:var(--muted); margin:0; max-width:62ch; }}
  .sub code {{ background:var(--code); padding:1px 6px; border-radius:5px; font-size:12.5px; }}
- .summary {{ display:inline-flex; align-items:center; gap:9px; margin:20px 0 4px; padding:7px 14px;
-             background:var(--card); border:1px solid var(--line); border-radius:999px;
-             box-shadow:var(--shadow); font-size:13.5px; font-weight:600; }}
- .dot {{ width:9px; height:9px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 3px rgba(63,185,80,.18); }}
- .hops {{ position:relative; margin-top:20px; }}
+ .path {{ margin:22px 0 4px; padding:12px 14px; background:var(--card); border:1px solid var(--line);
+          border-radius:10px; box-shadow:var(--shadow); font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+          font-size:12.5px; overflow-x:auto; white-space:nowrap; }}
+ .path .lbl {{ color:var(--muted); }}
+ .tally {{ margin:12px 0 4px; font-size:13px; color:var(--muted); display:flex; gap:16px; flex-wrap:wrap; }}
+ .tally b {{ color:var(--fg); }}
+ .pill {{ display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; vertical-align:middle; }}
+ .pill.ok {{ background:var(--ok); }} .pill.generic {{ background:var(--gen); }} .pill.unknown {{ background:var(--unk); }}
+ .hops {{ position:relative; margin-top:22px; }}
  .hops::before {{ content:''; position:absolute; left:19px; top:14px; bottom:14px; width:2px; background:var(--rail); }}
- .hop {{ position:relative; display:flex; gap:18px; padding:0 0 4px 0; }}
- .num {{ position:relative; z-index:1; flex:none; width:40px; height:40px; border-radius:50%;
-         display:grid; place-items:center; font-weight:700; font-size:15px;
-         background:var(--card); border:2px solid var(--rail); color:var(--muted); box-shadow:var(--shadow); }}
- .hop.ok  .num {{ border-color:var(--ok);   color:var(--ok); }}
- .hop.warn .num {{ border-color:var(--warn); color:var(--warn); }}
- .body {{ flex:1; background:var(--card); border:1px solid var(--line); border-radius:12px;
-          padding:16px 18px; margin-bottom:16px; box-shadow:var(--shadow); min-width:0; }}
- header {{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }}
+ .hop {{ position:relative; display:flex; gap:18px; }}
+ .num {{ position:relative; z-index:1; flex:none; width:40px; height:40px; border-radius:50%; display:grid;
+         place-items:center; font-weight:700; font-size:15px; background:var(--card); border:2px solid var(--rail);
+         color:var(--muted); box-shadow:var(--shadow); }}
+ .hop.ok .num {{ border-color:var(--ok); color:var(--ok); }}
+ .hop.generic .num {{ border-color:var(--gen); color:var(--gen); }}
+ .hop.unknown .num {{ border-color:var(--unk); color:var(--unk); border-style:dashed; }}
+ .body {{ flex:1; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px;
+          margin-bottom:16px; box-shadow:var(--shadow); min-width:0; }}
+ header {{ display:flex; align-items:center; gap:9px; margin-bottom:8px; flex-wrap:wrap; }}
  h2 {{ font-size:16px; margin:0; flex:1; letter-spacing:-.005em; }}
- .badge {{ font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
-           padding:3px 9px; border-radius:999px; flex:none; }}
+ .via {{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px; color:var(--muted);
+         background:var(--code); border:1px solid var(--line); border-radius:6px; padding:2px 7px; }}
+ .badge {{ font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:3px 9px; border-radius:999px; flex:none; }}
  .badge.ok {{ background:rgba(63,185,80,.15); color:var(--ok); }}
- .badge.warn {{ background:rgba(210,153,34,.15); color:var(--warn); }}
- .what {{ margin:0 0 12px; color:var(--fg); }}
+ .badge.generic {{ background:rgba(83,155,245,.15); color:var(--gen); }}
+ .badge.unknown {{ background:rgba(125,133,144,.15); color:var(--unk); }}
  .detail {{ background:rgba(83,155,245,.06); border-left:3px solid var(--accent); border-radius:0 8px 8px 0;
-            padding:11px 14px; margin:0 0 14px; font-size:13.5px; color:var(--fg); }}
- .dlabel {{ display:block; font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
-            color:var(--accent); margin-bottom:5px; }}
- .failure {{ background:rgba(210,153,34,.07); border-left:3px solid var(--warn); border-radius:0 8px 8px 0;
-             padding:11px 14px; margin:12px 0 4px; font-size:13.5px; color:var(--fg); }}
- .flabel {{ display:block; font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
-            color:var(--warn); margin-bottom:5px; }}
+            padding:11px 14px; margin:0 0 14px; font-size:13.5px; }}
+ .dlabel {{ display:block; font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--accent); margin-bottom:5px; }}
  .evidence {{ background:var(--code); border:1px solid var(--line); border-radius:9px; padding:4px 12px; }}
- .kv {{ display:flex; gap:14px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px;
-        padding:6px 0; border-bottom:1px solid var(--line); }}
+ .kv {{ display:flex; gap:14px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; padding:6px 0; border-bottom:1px solid var(--line); }}
  .kv:last-child {{ border-bottom:0; }}
  .k {{ color:var(--muted); min-width:210px; flex:none; }}
  .v {{ color:var(--fg); word-break:break-all; }}
  .note {{ color:var(--muted); font-size:13px; margin:12px 0 10px; }}
- details {{ border-top:1px dashed var(--line); padding-top:10px; }}
- summary {{ cursor:pointer; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.06em;
-            text-transform:uppercase; list-style:none; user-select:none; }}
+ .failure {{ background:rgba(210,153,34,.07); border-left:3px solid var(--warn); border-radius:0 8px 8px 0;
+             padding:11px 14px; margin:12px 0 4px; font-size:13.5px; }}
+ .flabel {{ display:block; font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--warn); margin-bottom:5px; }}
+ details {{ border-top:1px dashed var(--line); padding-top:10px; margin-top:12px; }}
+ summary {{ cursor:pointer; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; list-style:none; }}
  summary::-webkit-details-marker {{ display:none; }}
- summary::before {{ content:'▸ '; }}
- details[open] summary::before {{ content:'▾ '; }}
- pre {{ background:var(--code); border:1px solid var(--line); border-radius:9px; padding:12px 14px;
-        overflow-x:auto; font-size:12px; line-height:1.6; margin:10px 0 0; }}
+ summary::before {{ content:'▾ '; }}
+ pre {{ background:var(--code); border:1px solid var(--line); border-radius:9px; padding:12px 14px; overflow-x:auto; font-size:12px; line-height:1.6; margin:10px 0 0; }}
  pre code {{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--fg); }}
  footer {{ color:var(--muted); font-size:12.5px; margin-top:32px; padding-top:16px; border-top:1px solid var(--line); }}
- a {{ color:var(--accent); text-decoration:none; }}
- a:hover {{ text-decoration:underline; }}
+ a {{ color:var(--accent); text-decoration:none; }} a:hover {{ text-decoration:underline; }}
 </style></head><body><div class="wrap">
- <div class="hero">
-   <h1>pathtrace</h1>
-   <p class="sub">Every hop from the internet to this pod leaves a fingerprint in your request.
-     Below is what each one left behind — read live from the request you just sent to pod
-     <code>{html.escape(POD)}</code>.</p>
+ <h1>pathtrace</h1>
+ <p class="sub">Each hop is a <em>role</em> in the network path, detected from whatever fingerprint your
+   stack leaves — vendor headers first, then neutral signals (Via, Forwarded, traceparent). Read live
+   from the request you sent pod <code>{html.escape(POD)}</code>.</p>
+ <div class="path"><span class="lbl">detected path:</span> {html.escape(summarize(results))}</div>
+ <div class="tally">
+   <span><span class="pill ok"></span><b>{known}</b> vendor-identified</span>
+   <span><span class="pill generic"></span><b>{generic}</b> generic</span>
+   <span><span class="pill unknown"></span><b>{unseen}</b> not seen</span>
  </div>
- <div class="summary"><span class="dot"></span>{detected} / {total} hops verified</div>
  <div class="hops">
  {body}
  </div>
- <footer>Raw evidence as JSON: <a href="?format=json">?format=json</a> · each hop maps to
-   <code>docs/runbook-edge-to-app.md</code>.</footer>
+ <footer>Roles + detector registry generalize this beyond one stack. Raw evidence:
+   <a href="?format=json">?format=json</a> · companion to <code>docs/runbook-edge-to-app.md</code>.</footer>
 </div></body></html>"""
     return page.encode("utf-8")
 
@@ -299,13 +343,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.rstrip("/").endswith("/healthz") or self.path == "/healthz":
             return self._send(200, b"ok\n", "text/plain")
-        hops = evaluate(self.headers)
+        results = evaluate(self.headers)
         if "format=json" in self.path:
-            payload = json.dumps({"pod": POD, "hops": hops}, indent=2).encode()
-            return self._send(200, payload, "application/json")
-        return self._send(200, render_html(hops))
+            slim = [{k: r[k] for k in ("n", "role", "status", "via", "evidence")} for r in results]
+            return self._send(200, json.dumps({"pod": POD, "path": summarize(results), "hops": slim}, indent=2).encode(),
+                              "application/json")
+        return self._send(200, render_html(results))
 
-    def log_message(self, fmt, *args):  # quiet, single-line
+    def log_message(self, fmt, *args):
         print("pathtrace %s - %s" % (self.address_string(), fmt % args))
 
 
