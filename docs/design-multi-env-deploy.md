@@ -206,6 +206,35 @@ the design point is that it is *tunable per route*, not fixed.)
 Use **AGC** for the AKS envs; **nginx** stays a fine lighter-weight option for a dev
 cluster if you want less setup.
 
+## Two identities per cluster: app vs platform (least-privilege)
+
+A cluster running driftscope behind AGC has **two** workload identities, each scoped to
+its own job. Same mechanism (a UAMI + federated credential + projected token, no stored
+secret); different subject and, crucially, different Azure roles. They are never shared —
+the whole point is that neither can do the other's job.
+
+| | driftscope (app) | ALB Controller (platform) |
+|---|---|---|
+| Workload | the driftscope pod | the ingress controller (`azure-alb-system` ns) |
+| Federated subject | `system:serviceaccount:driftscope:driftscope` | `system:serviceaccount:azure-alb-system:alb-controller-sa` |
+| Job in Azure | reads repos, **signs the GitHub App JWT in Key Vault**, pulls from ACR, talks to ADO | **programs the AGC load balancer** — frontends, routes, backends, subnet association |
+| Azure roles | `Key Vault Crypto User` (the App key), `AcrPull`, ADO org membership | `AppGw for Containers Configuration Manager` (the AGC RG/resource), `Network Contributor` or `…/subnets/join/action` (the AGC subnet), `Reader` (the RG) |
+| Blast radius if compromised | read repos + sign with one KV key | reconfigure one load balancer + join one subnet |
+
+The boundaries do not overlap, deliberately: the **app** identity has **no** networking
+rights (it cannot touch the load balancer), and the **platform** identity has **no**
+access to Key Vault, ACR, repos, or any secret (it cannot read app data). A compromise
+of either is contained to its own narrow job.
+
+Both are **per environment** (see *Identity isolation*): dev and prod each get their own
+app UAMI *and* their own ALB-Controller UAMI, federated to their own cluster's issuer.
+The ALB-Controller identity is a **one-time platform bootstrap** — part of installing AGC
+on the cluster — that a driftscope deploy never touches.
+
+(Exact AGC role names/scopes are still settling — confirm at implementation time; the
+design invariant is fixed: **one identity per component, each scoped to only its own
+resources.**)
+
 ## Implementation phases
 
 1. **Refactor `deploy/k8s/` → `deploy/base/` + `deploy/overlays/{kind,dev-aks,prod-aks}`**,
