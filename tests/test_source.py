@@ -485,3 +485,27 @@ def test_partial_workload_identity_falls_through_without_erroring(monkeypatch):
     monkeypatch.setenv("AZURE_CLIENT_ID", "c")  # tenant + token file missing
     monkeypatch.setattr(src_mod.shutil, "which", lambda name: None)  # no `az` either
     assert src_mod.ado_credential() is None  # no crash, just "nothing supplies one"
+
+
+# ----------------------------------------- per-scan credential re-resolution
+
+def test_reset_credential_cache_forces_re_resolution(monkeypatch, no_az):
+    """A workload-identity/az token is only ~1h valid, so a scan must re-resolve
+    rather than reuse a credential cached for the whole process."""
+    monkeypatch.setenv("AZURE_DEVOPS_TOKEN", JWT)
+    assert src_mod.ado_credential().token == JWT
+    monkeypatch.setenv("AZURE_DEVOPS_TOKEN", JWT + "rotated")
+    assert src_mod.ado_credential().token == JWT            # still the cached one
+    src_mod.reset_credential_cache()
+    assert src_mod.ado_credential().token == JWT + "rotated"  # re-resolved fresh
+
+
+def test_open_source_re_resolves_credentials_each_scan(tmp_path):
+    """open_source drops the cached credential on entry, so every scan (once per repo)
+    gets a fresh token instead of reusing a stale process-lifetime one."""
+    src_mod._ADO_CRED = AdoCredential("stale-token", "Bearer", "workload-identity")
+    d = tmp_path / "local-repo"
+    d.mkdir()
+    with src_mod.open_source(str(d)):     # local path: no clone, but the reset still runs
+        pass
+    assert src_mod._ADO_CRED is False     # next ado_credential() will re-resolve
