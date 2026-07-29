@@ -117,10 +117,12 @@ def evaluate(headers) -> list[dict]:
 
 
 def render_html(hops: list[dict]) -> bytes:
+    detected = sum(1 for h in hops if h["ok"])
+    total = len(hops)
     rows = []
     for hop in hops:
         badge = "ok" if hop["ok"] else "warn"
-        label = "DETECTED" if hop["ok"] else "NOT DETECTED"
+        label = "detected" if hop["ok"] else "missing"
         ev = "".join(
             f'<div class="kv"><span class="k">{html.escape(k)}</span>'
             f'<span class="v">{html.escape(str(val))}</span></div>'
@@ -128,14 +130,20 @@ def render_html(hops: list[dict]) -> bytes:
         )
         rows.append(f"""
         <section class="hop {badge}">
-          <header><span class="num">{hop['n']}</span>
-            <h2>{html.escape(hop['title'])}</h2>
-            <span class="badge {badge}">{label}</span></header>
-          <p class="what">{html.escape(hop['what'])}</p>
-          <div class="evidence">{ev}</div>
-          <p class="note">{html.escape(hop['note'])}</p>
-          <details><summary>How to debug this hop</summary>
-            <pre>{html.escape(hop['debug'])}</pre></details>
+          <span class="num">{hop['n']}</span>
+          <div class="body">
+            <header>
+              <h2>{html.escape(hop['title'])}</h2>
+              <span class="badge {badge}">{label}</span>
+            </header>
+            <p class="what">{html.escape(hop['what'])}</p>
+            <div class="evidence">{ev}</div>
+            <p class="note">{html.escape(hop['note'])}</p>
+            <details open>
+              <summary>How to debug this hop</summary>
+              <pre><code>{html.escape(hop['debug'])}</code></pre>
+            </details>
+          </div>
         </section>""")
     body = "\n".join(rows)
     page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -143,43 +151,71 @@ def render_html(hops: list[dict]) -> bytes:
 <title>pathtrace — edge to app</title>
 <style>
  :root {{ color-scheme: light dark; --bg:#0b0e14; --card:#141a24; --fg:#e6edf3; --muted:#8b97a7;
-          --ok:#2ea043; --warn:#d29922; --line:#232c39; --code:#0a0d12; }}
- @media (prefers-color-scheme: light) {{ :root {{ --bg:#f6f8fa; --card:#fff; --fg:#1f2328;
-          --muted:#57606a; --line:#d0d7de; --code:#f6f8fa; }} }}
+          --ok:#3fb950; --warn:#d29922; --line:#222b38; --rail:#2b3543; --code:#090c11;
+          --accent:#539bf5; --shadow:0 1px 2px rgba(0,0,0,.4); }}
+ @media (prefers-color-scheme: light) {{ :root {{ --bg:#f4f6f9; --card:#fff; --fg:#1f2328;
+          --muted:#5b6572; --line:#e2e7ee; --rail:#d7dee7; --code:#f6f8fa; --accent:#0969da;
+          --shadow:0 1px 2px rgba(140,149,159,.2); }} }}
  * {{ box-sizing:border-box; }}
- body {{ margin:0; font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); }}
- .wrap {{ max-width:820px; margin:0 auto; padding:32px 20px 64px; }}
- h1 {{ font-size:24px; margin:0 0 4px; }}
- .sub {{ color:var(--muted); margin:0 0 28px; }}
- .hop {{ background:var(--card); border:1px solid var(--line); border-left:4px solid var(--line);
-         border-radius:10px; padding:16px 18px; margin:14px 0; }}
- .hop.ok {{ border-left-color:var(--ok); }}
- .hop.warn {{ border-left-color:var(--warn); }}
- .hop header {{ display:flex; align-items:center; gap:10px; }}
- .num {{ width:26px; height:26px; flex:none; border-radius:50%; background:var(--line); color:var(--fg);
-         display:grid; place-items:center; font-weight:700; font-size:13px; }}
- h2 {{ font-size:16px; margin:0; flex:1; }}
- .badge {{ font-size:11px; font-weight:700; letter-spacing:.04em; padding:3px 8px; border-radius:20px; }}
- .badge.ok {{ background:rgba(46,160,67,.16); color:var(--ok); }}
- .badge.warn {{ background:rgba(210,153,34,.16); color:var(--warn); }}
- .what {{ margin:10px 0 12px; }}
- .evidence {{ background:var(--code); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }}
- .kv {{ display:flex; gap:10px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; padding:2px 0; }}
- .k {{ color:var(--muted); min-width:230px; flex:none; }}
+ body {{ margin:0; font:15px/1.55 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,sans-serif;
+         background:var(--bg); color:var(--fg); -webkit-font-smoothing:antialiased; }}
+ .wrap {{ max-width:780px; margin:0 auto; padding:40px 20px 72px; }}
+ .hero {{ margin-bottom:8px; }}
+ h1 {{ font-size:26px; letter-spacing:-.01em; margin:0 0 6px; }}
+ .sub {{ color:var(--muted); margin:0; max-width:60ch; }}
+ .sub code {{ background:var(--code); padding:1px 6px; border-radius:5px; font-size:12.5px; }}
+ .summary {{ display:inline-flex; align-items:center; gap:9px; margin:20px 0 4px; padding:7px 14px;
+             background:var(--card); border:1px solid var(--line); border-radius:999px;
+             box-shadow:var(--shadow); font-size:13.5px; font-weight:600; }}
+ .dot {{ width:9px; height:9px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 3px rgba(63,185,80,.18); }}
+ .hops {{ position:relative; margin-top:20px; }}
+ .hops::before {{ content:''; position:absolute; left:19px; top:14px; bottom:14px; width:2px; background:var(--rail); }}
+ .hop {{ position:relative; display:flex; gap:18px; padding:0 0 4px 0; }}
+ .num {{ position:relative; z-index:1; flex:none; width:40px; height:40px; border-radius:50%;
+         display:grid; place-items:center; font-weight:700; font-size:15px;
+         background:var(--card); border:2px solid var(--rail); color:var(--muted); box-shadow:var(--shadow); }}
+ .hop.ok  .num {{ border-color:var(--ok);   color:var(--ok); }}
+ .hop.warn .num {{ border-color:var(--warn); color:var(--warn); }}
+ .body {{ flex:1; background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:16px 18px; margin-bottom:16px; box-shadow:var(--shadow); min-width:0; }}
+ header {{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }}
+ h2 {{ font-size:16px; margin:0; flex:1; letter-spacing:-.005em; }}
+ .badge {{ font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+           padding:3px 9px; border-radius:999px; flex:none; }}
+ .badge.ok {{ background:rgba(63,185,80,.15); color:var(--ok); }}
+ .badge.warn {{ background:rgba(210,153,34,.15); color:var(--warn); }}
+ .what {{ margin:0 0 12px; color:var(--fg); }}
+ .evidence {{ background:var(--code); border:1px solid var(--line); border-radius:9px; padding:4px 12px; }}
+ .kv {{ display:flex; gap:14px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px;
+        padding:6px 0; border-bottom:1px solid var(--line); }}
+ .kv:last-child {{ border-bottom:0; }}
+ .k {{ color:var(--muted); min-width:210px; flex:none; }}
  .v {{ color:var(--fg); word-break:break-all; }}
- .note {{ color:var(--muted); font-size:13.5px; margin:12px 0 8px; }}
- details {{ margin-top:6px; }}
- summary {{ cursor:pointer; color:var(--muted); font-size:13px; }}
- pre {{ background:var(--code); border:1px solid var(--line); border-radius:8px; padding:10px;
-        overflow-x:auto; font-size:12px; margin:8px 0 0; }}
- footer {{ color:var(--muted); font-size:12.5px; margin-top:28px; }}
- a {{ color:#539bf5; }}
+ .note {{ color:var(--muted); font-size:13px; margin:12px 0 10px; }}
+ details {{ border-top:1px dashed var(--line); padding-top:10px; }}
+ summary {{ cursor:pointer; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.06em;
+            text-transform:uppercase; list-style:none; user-select:none; }}
+ summary::-webkit-details-marker {{ display:none; }}
+ summary::before {{ content:'▸ '; }}
+ details[open] summary::before {{ content:'▾ '; }}
+ pre {{ background:var(--code); border:1px solid var(--line); border-radius:9px; padding:12px 14px;
+        overflow-x:auto; font-size:12px; line-height:1.6; margin:10px 0 0; }}
+ pre code {{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--fg); }}
+ footer {{ color:var(--muted); font-size:12.5px; margin-top:32px; padding-top:16px; border-top:1px solid var(--line); }}
+ a {{ color:var(--accent); text-decoration:none; }}
+ a:hover {{ text-decoration:underline; }}
 </style></head><body><div class="wrap">
- <h1>pathtrace</h1>
- <p class="sub">You are reading this from inside pod <code>{html.escape(POD)}</code>. Every hop below was
-   verified from the fingerprints your request carried in. Green = the hop's evidence is present.</p>
+ <div class="hero">
+   <h1>pathtrace</h1>
+   <p class="sub">Every hop from the internet to this pod leaves a fingerprint in your request.
+     Below is what each one left behind — read live from the request you just sent to pod
+     <code>{html.escape(POD)}</code>.</p>
+ </div>
+ <div class="summary"><span class="dot"></span>{detected} / {total} hops verified</div>
+ <div class="hops">
  {body}
- <footer>Raw evidence as JSON: <a href="?format=json">?format=json</a>. Each hop maps to
+ </div>
+ <footer>Raw evidence as JSON: <a href="?format=json">?format=json</a> · each hop maps to
    <code>docs/runbook-edge-to-app.md</code>.</footer>
 </div></body></html>"""
     return page.encode("utf-8")
