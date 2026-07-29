@@ -22,7 +22,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: pathtrace
-          image: dscopeacr18860.azurecr.io/pathtrace:v3
+          image: dscopeacr18860.azurecr.io/pathtrace:v4
           ports: [{ name: http, containerPort: 8080 }]
           env:
             - name: POD_NAMESPACE

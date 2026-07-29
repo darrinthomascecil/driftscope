@@ -63,6 +63,9 @@ def evaluate(headers) -> list[dict]:
             "ok": bool(h("host")),
             "evidence": {"Host": h("host") or "(none)"},
             "note": "The Host that survived resolution + SNI. A non-Cloudflare answer would mean the record was un-proxied.",
+            "failure": "You never even reach this page: the browser says 'server not found' and there is no "
+                       "cf-ray anywhere, because nothing resolved. Classic false alarm -- dig @1.1.1.1 returns "
+                       "an IP but your machine does not: a stale negative DNS cache, not a real outage.",
             "debug": "dig +short driftscope.justmakeitgo.net @1.1.1.1   # vs the local resolver; mismatch = stale cache, not DNS",
         },
         {
@@ -76,6 +79,9 @@ def evaluate(headers) -> list[dict]:
             "evidence": {"cf-ray": cf_ray or "(absent)", "cf-connecting-ip": cf_ip or "(absent)",
                          "cf-visitor": cf_visitor or "(absent)"},
             "note": "cf-ray present = the request genuinely transited Cloudflare. cf-visitor shows the original scheme (https).",
+            "failure": "A Cloudflare-branded error instead of the app -- 525 (TLS handshake failed) or a WAF "
+                       "'you have been blocked' 403. The tell is that it still carries a cf-ray: the edge is up "
+                       "and answering, so the fault is edge config or something downstream, not your network.",
             "debug": "curl -sv https://driftscope.justmakeitgo.net/ 2>&1 | grep -Ei 'cf-ray|server:'   # 5xx WITH cf-ray = edge ok, origin sick",
         },
         {
@@ -88,6 +94,10 @@ def evaluate(headers) -> list[dict]:
             "ok": bool(xff),
             "evidence": {"x-forwarded-for": xff or "(absent)", "x-forwarded-proto": xfproto or "(absent)"},
             "note": "The forwarded-for chain is the client IP as cloudflared passed it inward.",
+            "failure": "Error 1033 or a 502 WITH a cf-ray present: the edge is fine but no healthy tunnel "
+                       "connector answered, or the tunnel points at the wrong in-cluster service. cloudflared's "
+                       "logs show reconnect errors instead of 'Registered tunnel connection', and the Tunnels "
+                       "dashboard reads DEGRADED / DOWN.",
             "debug": "kubectl -n driftscope logs deploy/cloudflared | grep -Ei 'registered|error'   # ~4 connectors = healthy",
         },
         {
@@ -100,6 +110,9 @@ def evaluate(headers) -> list[dict]:
             "ok": bool(req_id),
             "evidence": {"x-request-id": req_id or "(absent)", "x-envoy-external-address": envoy_ext or "(absent)"},
             "note": "x-request-id / x-envoy-* are stamped by the gateway's Envoy -- proof the request passed through it.",
+            "failure": "503 'no healthy upstream' or a 523: the gateway Service has no endpoints (its pods are "
+                       "down) or the tunnel names the wrong port. An in-cluster curl to the gateway returns 000 "
+                       "(connection refused) instead of a 302.",
             "debug": "kubectl -n default run t --image=curlimages/curl --restart=Never -- sleep 3600; "
                      "kubectl -n default exec t -- curl -s -o /dev/null -w '%{http_code}' "
                      "-H 'Host: driftscope.justmakeitgo.net' http://aks-istio-ingressgateway-internal.aks-istio-ingress.svc:80/trace   # 302",
@@ -115,6 +128,10 @@ def evaluate(headers) -> list[dict]:
             "ok": bool(auth_email),
             "evidence": {"x-auth-request-email": auth_email or "(absent)", "authorization": "Bearer <token>" if have_authz else "(absent)"},
             "note": "You are only reading this because SSO passed. oauth2-proxy injected your identity as upstream headers.",
+            "failure": "A healthy 302 to Entra is the gate doing its job; the FAILURE looks like a 403 'RBAC: "
+                       "access denied' or an endless login loop when Envoy cannot reach oauth2-proxy and fails "
+                       "closed. On the callback, a 500 with AADSTS7000215 means the client secret is the wrong "
+                       "value -- and you would never see your email above, because you never reached the app.",
             "debug": "kubectl -n aks-istio-ingress exec <gw-pod> -c istio-proxy -- pilot-agent request GET stats | grep ext_authz   # error>0 = oauth2-proxy unreachable",
         },
         {
@@ -128,6 +145,10 @@ def evaluate(headers) -> list[dict]:
             "evidence": {"x-forwarded-client-cert (By)": xfcc_p.get("by", "(absent)"),
                          "x-forwarded-client-cert (URI = caller)": gw_principal or "(absent)"},
             "note": "URI is the caller's cryptographic identity. It MUST be the ingress gateway SA -- any other mesh pod gets 403.",
+            "failure": "403 'RBAC: access denied' at the app: if the allow-policy principal is wrong, even the "
+                       "gateway is refused and every request 403s right after login. A broken mTLS handshake "
+                       "instead shows as a connection reset / 503 UC, and connection_security_policy reads 'none'; "
+                       "the XFCC line above would be absent or show a non-gateway identity.",
             "debug": "kubectl -n driftscope exec <app-pod> -c istio-proxy -- pilot-agent request GET stats/prometheus "
                      "| grep connection_security_policy   # mutual_tls, never 'none'",
         },
@@ -141,6 +162,10 @@ def evaluate(headers) -> list[dict]:
             "ok": True,
             "evidence": {"pod": POD, "namespace": NS, "served_by": "pathtrace :8080"},
             "note": "Reached over localhost, so app bugs reproduce with the mesh out of the picture (kubectl exec ... curl localhost:8080).",
+            "failure": "The mesh is fine but the app itself fails: a 500 traceback in its logs, a "
+                       "CrashLoopBackOff (503 'no healthy upstream' from the sidecar), or OOMKilled on a heavy "
+                       "scan. Sometimes a 200 with a wrong answer -- e.g. 'could not read issues' when the pod "
+                       "has no GitHub token -- which is an app bug, not plumbing.",
             "debug": f"kubectl -n {NS} logs {POD} -c pathtrace -f   # the app's own logs (‑c pathtrace, not istio-proxy)",
         },
     ]
@@ -170,6 +195,7 @@ def render_html(hops: list[dict]) -> bytes:
             <div class="detail"><span class="dlabel">In plain terms</span>{html.escape(hop['detail'])}</div>
             <div class="evidence">{ev}</div>
             <p class="note">{html.escape(hop['note'])}</p>
+            <div class="failure"><span class="flabel">If this hop fails</span>{html.escape(hop['failure'])}</div>
             <details open>
               <summary>How to debug this hop</summary>
               <pre><code>{html.escape(hop['debug'])}</code></pre>
@@ -220,6 +246,10 @@ def render_html(hops: list[dict]) -> bytes:
             padding:11px 14px; margin:0 0 14px; font-size:13.5px; color:var(--fg); }}
  .dlabel {{ display:block; font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
             color:var(--accent); margin-bottom:5px; }}
+ .failure {{ background:rgba(210,153,34,.07); border-left:3px solid var(--warn); border-radius:0 8px 8px 0;
+             padding:11px 14px; margin:12px 0 4px; font-size:13.5px; color:var(--fg); }}
+ .flabel {{ display:block; font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+            color:var(--warn); margin-bottom:5px; }}
  .evidence {{ background:var(--code); border:1px solid var(--line); border-radius:9px; padding:4px 12px; }}
  .kv {{ display:flex; gap:14px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px;
         padding:6px 0; border-bottom:1px solid var(--line); }}
