@@ -11,15 +11,11 @@ disabled explicitly so a hostile repo cannot run anything during clone.
 from __future__ import annotations
 
 import base64
-import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
-import urllib.error
-import urllib.parse
-import urllib.request
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -230,45 +226,16 @@ def _scheme_for(token: str) -> str:
 
 
 def _federated_ado_token() -> str | None:
-    """Exchange a Kubernetes-projected federated token for an Azure DevOps token.
+    """The Azure Workload Identity path for Azure DevOps: exchange the pod's projected
+    federated token for an ADO-scoped access token, with no stored secret and no `az`.
 
-    This is the Azure Workload Identity path. In a pod federated to a managed
-    identity, the azure-workload-identity webhook projects an OIDC token and sets
-    AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_FEDERATED_TOKEN_FILE (and
-    AZURE_AUTHORITY_HOST). Entra trades that token -- signed by the cluster,
-    validated against its published JWKS -- for an ADO-scoped access token, with no
-    stored secret and, unlike the `az` path, no CLI in the image. Returns None
-    unless every piece is present and the exchange succeeds, so a partially-wired
-    pod falls through to the next credential source rather than erroring.
+    The exchange itself lives in `wi.federated_token_for` because the Key Vault-backed
+    GitHub App path needs the identical flow for a different resource. Returns None
+    when the pod is not federated, so the caller falls through to `az` or nothing.
     """
-    token_file = os.environ.get("AZURE_FEDERATED_TOKEN_FILE")
-    client_id = os.environ.get("AZURE_CLIENT_ID")
-    tenant = os.environ.get("AZURE_TENANT_ID")
-    if not (token_file and client_id and tenant):
-        return None
-    try:
-        assertion = Path(token_file).read_text().strip()
-    except OSError:
-        return None
-    if not assertion:
-        return None
-    # AZURE_AUTHORITY_HOST is injected too, so this follows the pod into sovereign
-    # clouds (Government, China) instead of hard-coding the public login endpoint.
-    authority = (os.environ.get("AZURE_AUTHORITY_HOST")
-                 or "https://login.microsoftonline.com").rstrip("/")
-    body = urllib.parse.urlencode({
-        "grant_type": "client_credentials",
-        "client_id": client_id,
-        "scope": f"{ADO_RESOURCE}/.default",
-        "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-        "client_assertion": assertion,
-    }).encode()
-    req = urllib.request.Request(f"{authority}/{tenant}/oauth2/v2.0/token", data=body)
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.load(resp).get("access_token") or None
-    except (urllib.error.URLError, OSError, ValueError):
-        return None
+    from .wi import federated_token_for
+
+    return federated_token_for(f"{ADO_RESOURCE}/.default")
 
 
 def ado_credential() -> AdoCredential | None:
@@ -323,21 +290,34 @@ def ado_token() -> str | None:
 def _auth_env_for(remote: str) -> dict[str, str]:
     """Git config, as environment, that authenticates a clone of `remote`.
 
-    Only Azure DevOps is handled: GitHub clones of public repos need nothing, and
-    private ones already work through the user's credential helper.
+    Azure DevOps gets its AAD/PAT credential; github.com gets a GitHub token when one
+    is resolvable (a GitHub App installation token under workload identity, or a
+    `GITHUB_TOKEN`/`gh` token otherwise) -- which is the only way a private GitHub repo
+    clones in a pod with no credential helper. Anything else, or no token, gets `{}`
+    and falls back to whatever git is already configured with.
 
-    The token travels in `GIT_CONFIG_VALUE_0` rather than a `-c` argument on
-    purpose -- argv is world-readable via `ps`, environment is not.
+    The token travels in `GIT_CONFIG_VALUE_0` rather than a `-c` argument on purpose --
+    argv is world-readable via `ps`, environment is not.
     """
-    if not parse_ado_url(remote):
-        return {}
-    cred = ado_credential()
-    if not cred:
+    header = None
+    if parse_ado_url(remote):
+        cred = ado_credential()
+        if cred:
+            header = cred.header
+    elif "github.com" in remote:
+        from .http import github_token
+
+        tok = github_token()
+        if tok:
+            # GitHub's git-over-HTTPS convention: any username, token as password.
+            # x-access-token is what a GitHub App installation token expects.
+            header = "Basic " + base64.b64encode(f"x-access-token:{tok}".encode()).decode()
+    if not header:
         return {}
     return {
         "GIT_CONFIG_COUNT": "1",
         "GIT_CONFIG_KEY_0": "http.extraheader",
-        "GIT_CONFIG_VALUE_0": f"Authorization: {cred.header}",
+        "GIT_CONFIG_VALUE_0": f"Authorization: {header}",
     }
 
 

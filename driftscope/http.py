@@ -217,6 +217,29 @@ def gh_token() -> str | None:
     return _GH_TOKEN  # type: ignore[return-value]
 
 
+def github_token() -> str | None:
+    """The token to authenticate GitHub API calls and clones with, by precedence:
+
+    1. ``GITHUB_TOKEN`` in the environment -- an explicit override (a PAT, or a token a
+       CI system already exported).
+    2. A **GitHub App installation token** -- the secure, short-lived path whose signing
+       key is reached via workload identity (see `github_app`). Inert unless configured.
+    3. ``gh auth token`` -- the zero-config developer fallback.
+
+    Returns None when nothing supplies one, in which case GitHub is queried
+    unauthenticated (anonymous rate limits) or the `gh` CLI fallback is used.
+    """
+    env = (os.environ.get("GITHUB_TOKEN") or "").strip()
+    if env:
+        return env
+    from .github_app import installation_token
+
+    app = installation_token()
+    if app:
+        return app
+    return gh_token()
+
+
 def gh_available() -> bool:
     """True when the `gh` CLI is installed and authenticated.
 
@@ -296,7 +319,7 @@ class GitHub:
         if self.offline or not self.enabled:
             return self.cache.get(key, ignore_ttl=True)
 
-        token = gh_token()
+        token = github_token()
         if token is None:
             return self._api_via_cli(path, paginate=paginate, key=key)
 
