@@ -6,6 +6,7 @@ No network and no cloning -- these are all pure string functions.
 from __future__ import annotations
 
 import base64
+import json
 
 import pytest
 
@@ -399,3 +400,68 @@ def test_open_source_removes_temp_dir_when_clone_fails(monkeypatch):
             pass  # pragma: no cover
 
     assert created["dir"] and not created["dir"].exists()  # cleaned up despite failure
+
+
+# ------------------------------------------- workload identity ADO auth (no `az`)
+
+def _clear_ado_env(monkeypatch):
+    monkeypatch.setattr(src_mod, "_ADO_CRED", False)  # reset the resolve-once cache
+    for v in ("AZURE_DEVOPS_EXT_PAT", "SYSTEM_ACCESSTOKEN", "AZURE_DEVOPS_TOKEN",
+              "AZURE_FEDERATED_TOKEN_FILE", "AZURE_CLIENT_ID", "AZURE_TENANT_ID",
+              "AZURE_AUTHORITY_HOST"):
+        monkeypatch.delenv(v, raising=False)
+
+
+class _FakeResp:
+    def __init__(self, payload): self._payload = payload
+    def read(self): return json.dumps(self._payload).encode()
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+
+def test_workload_identity_exchange_yields_a_bearer_credential(monkeypatch, tmp_path):
+    _clear_ado_env(monkeypatch)
+    tokfile = tmp_path / "azure-identity-token"
+    tokfile.write_text("eyJhbGc.federated.assertion")
+    monkeypatch.setenv("AZURE_FEDERATED_TOKEN_FILE", str(tokfile))
+    monkeypatch.setenv("AZURE_CLIENT_ID", "5d507c31-client")
+    monkeypatch.setenv("AZURE_TENANT_ID", "f493fd7e-tenant")
+
+    seen = {}
+    def fake_urlopen(req, timeout=None):
+        seen["url"] = req.full_url
+        seen["body"] = req.data.decode()
+        return _FakeResp({"access_token": "eyJhbGc.ado.access", "token_type": "Bearer"})
+    monkeypatch.setattr(src_mod.urllib.request, "urlopen", fake_urlopen)
+
+    cred = src_mod.ado_credential()
+    assert cred is not None
+    assert cred.scheme == "Bearer" and cred.origin == "workload-identity"
+    assert cred.header == "Bearer eyJhbGc.ado.access"
+    # exchanged the federated assertion for the ADO-scoped token at the tenant endpoint
+    assert "f493fd7e-tenant/oauth2/v2.0/token" in seen["url"]
+    assert f"{src_mod.ADO_RESOURCE}%2F.default" in seen["body"]
+    assert "client-assertion-type" in seen["body"]
+
+
+def test_explicit_env_token_beats_workload_identity(monkeypatch, tmp_path):
+    _clear_ado_env(monkeypatch)
+    tokfile = tmp_path / "azure-identity-token"
+    tokfile.write_text("federated.assertion.here")
+    monkeypatch.setenv("AZURE_FEDERATED_TOKEN_FILE", str(tokfile))
+    monkeypatch.setenv("AZURE_CLIENT_ID", "c"); monkeypatch.setenv("AZURE_TENANT_ID", "t")
+    monkeypatch.setenv("AZURE_DEVOPS_TOKEN", "eyJexplicit.jwt.token")  # an intentional override
+
+    # If WI were consulted, this would blow up -- proving precedence stops earlier.
+    def boom(*a, **k): raise AssertionError("workload identity must not be reached")
+    monkeypatch.setattr(src_mod.urllib.request, "urlopen", boom)
+
+    cred = src_mod.ado_credential()
+    assert cred.origin == "AZURE_DEVOPS_TOKEN" and cred.scheme == "Bearer"
+
+
+def test_partial_workload_identity_falls_through_without_erroring(monkeypatch):
+    _clear_ado_env(monkeypatch)
+    monkeypatch.setenv("AZURE_CLIENT_ID", "c")  # tenant + token file missing
+    monkeypatch.setattr(src_mod.shutil, "which", lambda name: None)  # no `az` either
+    assert src_mod.ado_credential() is None  # no crash, just "nothing supplies one"

@@ -11,11 +11,15 @@ disabled explicitly so a hostile repo cannot run anything during clone.
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -225,6 +229,48 @@ def _scheme_for(token: str) -> str:
     return "Bearer" if token.startswith("eyJ") and token.count(".") == 2 else "Basic"
 
 
+def _federated_ado_token() -> str | None:
+    """Exchange a Kubernetes-projected federated token for an Azure DevOps token.
+
+    This is the Azure Workload Identity path. In a pod federated to a managed
+    identity, the azure-workload-identity webhook projects an OIDC token and sets
+    AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_FEDERATED_TOKEN_FILE (and
+    AZURE_AUTHORITY_HOST). Entra trades that token -- signed by the cluster,
+    validated against its published JWKS -- for an ADO-scoped access token, with no
+    stored secret and, unlike the `az` path, no CLI in the image. Returns None
+    unless every piece is present and the exchange succeeds, so a partially-wired
+    pod falls through to the next credential source rather than erroring.
+    """
+    token_file = os.environ.get("AZURE_FEDERATED_TOKEN_FILE")
+    client_id = os.environ.get("AZURE_CLIENT_ID")
+    tenant = os.environ.get("AZURE_TENANT_ID")
+    if not (token_file and client_id and tenant):
+        return None
+    try:
+        assertion = Path(token_file).read_text().strip()
+    except OSError:
+        return None
+    if not assertion:
+        return None
+    # AZURE_AUTHORITY_HOST is injected too, so this follows the pod into sovereign
+    # clouds (Government, China) instead of hard-coding the public login endpoint.
+    authority = (os.environ.get("AZURE_AUTHORITY_HOST")
+                 or "https://login.microsoftonline.com").rstrip("/")
+    body = urllib.parse.urlencode({
+        "grant_type": "client_credentials",
+        "client_id": client_id,
+        "scope": f"{ADO_RESOURCE}/.default",
+        "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        "client_assertion": assertion,
+    }).encode()
+    req = urllib.request.Request(f"{authority}/{tenant}/oauth2/v2.0/token", data=body)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.load(resp).get("access_token") or None
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
 def ado_credential() -> AdoCredential | None:
     """The Azure DevOps credential for this process, resolved once.
 
@@ -245,6 +291,14 @@ def ado_credential() -> AdoCredential | None:
         if raw:
             _ADO_CRED = AdoCredential(raw, scheme or _scheme_for(raw), name)
             return _ADO_CRED
+
+    # Workload identity: a federated pod, no secret and no `az`. Comes after the
+    # explicit env tokens (setting one of those is an override) but before `az`,
+    # which is the last resort and may not be installed at all.
+    wi = _federated_ado_token()
+    if wi:
+        _ADO_CRED = AdoCredential(wi, "Bearer", "workload-identity")
+        return _ADO_CRED
 
     if shutil.which("az"):
         try:
