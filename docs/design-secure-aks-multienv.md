@@ -131,6 +131,65 @@ and forfeit the TLS/WAF/Access/Tunnel this plan depends on. (Azure DNS is fine f
 - Build → push to **ACR** (digest-pinned) → **image scan** gate (Defender/ACR) → GitOps
   reconcile. Promote the **same digest** across envs.
 
+## Entra ID protection: cluster-level vs app-level
+
+"Protect the app with Entra" means *only an authenticated Entra user (in an allowed
+group) can use it.* There are two places to enforce that, and the choice matters.
+
+### Cluster-level (a shared gate in front of the app) — recommended
+Auth is enforced at a shared choke point, so the app carries **no auth code**. Two forms
+in this stack:
+- **Edge — Cloudflare Access ↔ Entra** (outermost): Access federates to Entra as the IdP;
+  the user completes an Entra login at Cloudflare's edge before any traffic reaches the
+  cluster. **Un-bypassable** because the origin is private (tunnel + ClusterIP). This is
+  where the plan already lands.
+- **Mesh — Istio `RequestAuthentication` + `AuthorizationPolicy`** (inside the cluster):
+  the Istio ingress gateway validates the Entra-issued JWT and denies unauthenticated
+  requests. Keeps enforcement in-cluster; good as defense-in-depth.
+
+*Pros:* one config protects **every** app (deploy a new app → automatically gated — it
+matches the auto-subdomain pattern); one consistent policy (allowed groups, MFA, session
+length); apps stay **auth-agnostic** — no libraries, no token handling, so driftscope
+keeps its stdlib-only, zero-dependency design; central audit/governance.
+*Cons:* coarse by default (same policy for all apps unless you add per-hostname/route
+rules); the app doesn't know *who* the user is unless the layer **forwards identity**
+(Cloudflare Access injects a signed `Cf-Access-Jwt-Assertion` header; Istio can forward
+the JWT claims).
+
+### App-level (Entra built into each app)
+Each app implements Entra OIDC itself (MSAL / an OIDC middleware): it runs the login
+flow, validates tokens, manages sessions, and can do per-user authorization internally.
+*Pros:* fine-grained — per-user/role authz, the app natively knows the identity, per-app
+registration/scopes/consent; works even if the app is reached directly (not dependent on
+an upstream gate).
+*Cons:* **every** app must build and maintain auth (code, libraries, sessions) —
+duplication and more bug surface; it **breaks driftscope's zero-dependency design** (MSAL/
+OIDC is a real dependency + session/state complexity); slower to onboard each app;
+inconsistent if every app rolls its own.
+
+### Side by side
+| | Cluster-level (edge/mesh) | App-level (in-app) |
+|---|---|---|
+| Enforced at | Cloudflare Access / Istio gateway | inside each app |
+| Per-app effort | zero (inherited) | a full auth implementation each |
+| Granularity | coarse (per host/route) | fine (per user/role) |
+| App knows the user | only if identity is forwarded | yes, natively |
+| driftscope fit | ✅ stays stdlib-only | ❌ adds MSAL/OIDC + sessions |
+| New-app onboarding | automatic | re-implement auth |
+| Bypass risk | none if the origin is private | none (the app enforces) |
+
+### Recommendation
+**Cluster-level, at the edge — Cloudflare Access ↔ Entra.** A scanner needs
+"authenticated Entra user in an allowed group," not per-user authorization, so the coarse
+gate is exactly right and keeps driftscope auth-free. It also composes with auto-
+subdomains: every `*.justmakeitgo.net` app is gated identically with no per-app work.
+
+If a future app genuinely needs **per-user authorization**, don't move authentication into
+the app — keep the cluster gate and have the layer **forward the verified identity** (the
+Access JWT header, or Istio's forwarded claims) so the app does only the fine-grained
+authz while the gate still owns authentication. That hybrid is the best of both, and it's
+the ceiling driftscope should ever need.
+
 ## Per-environment parameters (slugs)
 
 Fill one column per environment. `dev` is pre-filled with what's already provisioned;
