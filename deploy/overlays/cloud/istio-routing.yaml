@@ -1,0 +1,46 @@
+# Mesh entry + routing for driftscope, fronted by the AKS managed-Istio internal
+# ingress gateway. Namespace is injected by the kustomization (namespace: driftscope).
+#
+# Request path: Cloudflare -> tunnel -> cloudflared (out of mesh) -> this Gateway
+#   -> VirtualService -> mTLS -> app sidecar. /oauth2/* is peeled off to oauth2-proxy.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: driftscope
+spec:
+  selector:
+    istio: aks-istio-ingressgateway-internal   # managed internal gateway (no public IP)
+  servers:
+    - port: { number: 80, name: http, protocol: HTTP }
+      hosts: ["driftscope.justmakeitgo.net"]
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: driftscope
+spec:
+  hosts: ["driftscope.justmakeitgo.net"]
+  gateways: ["driftscope"]
+  http:
+    # oauth2-proxy owns its login/callback endpoints; these bypass the ext_authz
+    # check (see mesh/require-sso.authorizationpolicy.yaml notPaths) and route here.
+    - match:
+        - uri: { prefix: /oauth2/ }
+      route:
+        - destination:
+            host: oauth2-proxy.driftscope.svc.cluster.local
+            port: { number: 4180 }
+    # everything else -> the app (gated by the CUSTOM AuthorizationPolicy on the gateway)
+    - route:
+        - destination:
+            host: driftscope.driftscope.svc.cluster.local
+            port: { number: 80 }
+---
+# Assume-breach posture: the app sidecar refuses any non-mTLS connection.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+spec:
+  mtls:
+    mode: STRICT

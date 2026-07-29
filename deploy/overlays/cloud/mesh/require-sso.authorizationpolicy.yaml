@@ -1,0 +1,24 @@
+# Forces the ext_authz (oauth2-proxy) check on the internal ingress gateway for every
+# request except oauth2-proxy's own /oauth2/* endpoints. Lives on the gateway in
+# aks-istio-ingress (not the app namespace), so it's applied directly, outside the
+# app kustomization.
+#
+# NOTE: /healthz is gated too (most secure). To expose a public health probe, add
+# "/healthz" to notPaths. In-cluster readiness probes hit the pod directly and are
+# unaffected either way.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: driftscope-require-sso
+  namespace: aks-istio-ingress
+spec:
+  selector:
+    matchLabels:
+      istio: aks-istio-ingressgateway-internal
+  action: CUSTOM
+  provider:
+    name: oauth2-proxy
+  rules:
+    - to:
+        - operation:
+            notPaths: ["/oauth2/*"]
