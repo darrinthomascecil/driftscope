@@ -1,0 +1,41 @@
+{
+  "endpoint": "/trace?format=json",
+  "authenticated": true,
+  "captured": "2026-07-29 (browser, logged-in session)",
+  "note": "public client IP redacted to 47.6.x.x; email is the repo author's own.",
+  "fetch_roundtrip_ms": 327,
+  "response_status": 200,
+  "response_headers": {
+    "server": "cloudflare",
+    "cf-ray": "a22f58a14ad4c3a7-SEA",
+    "cf-cache-status": "DYNAMIC",
+    "content-type": "application/json",
+    "content-encoding": "zstd",
+    "alt-svc": "h3=\":443\"; ma=86400",
+    "x-envoy-upstream-service-time": "3",
+    "date": "Wed, 29 Jul 2026 21:51:39 GMT"
+  },
+  "navigation_timing_ms": { "dns": 55, "tcp": 43, "tls": 43, "ttfb": 312, "total": 432 },
+  "resource_timing_trace_doc_ms": { "dns": 2, "tcp": 34, "tls": 34, "ttfb": 288, "total": 326 },
+  "server_side_hop_view": {
+    "pod": "pathtrace-6f9d7ffb4f-hkp77",
+    "path": "client  →  Cloudflare  →  2 proxy hop(s)  →  Istio / Envoy  →  oauth2-proxy  →  Istio mTLS (SPIFFE)  →  app",
+    "hops": [
+      { "n": 0, "role": "Client + DNS", "status": "ok", "via": "request received",
+        "evidence": { "Host": "driftscope.justmakeitgo.net" } },
+      { "n": 1, "role": "Edge / CDN", "status": "ok", "via": "Cloudflare",
+        "evidence": { "cf-ray": "a22f58a14ad4c3a7-SEA", "cf-connecting-ip": "47.6.x.x", "cf-visitor": "{\"scheme\":\"https\"}" } },
+      { "n": 2, "role": "Forwarding / proxy chain", "status": "ok", "via": "2 proxy hop(s)",
+        "evidence": { "x-forwarded-for": "47.6.x.x,10.244.1.216", "x-forwarded-proto": "https" } },
+      { "n": 3, "role": "Ingress / gateway", "status": "ok", "via": "Istio / Envoy",
+        "evidence": { "x-envoy-external-address": "47.6.x.x", "x-envoy-attempt-count": "1" } },
+      { "n": 4, "role": "Authentication (IAP / SSO)", "status": "ok", "via": "oauth2-proxy",
+        "evidence": { "x-auth-request-email": "darrinthomascecil@gmail.com", "x-auth-request-user": "gywREmADKCQauibrJChoV9K3XcE3VcKTUSupUO8VVl4" } },
+      { "n": 5, "role": "Service identity / mTLS", "status": "ok", "via": "Istio mTLS (SPIFFE)",
+        "evidence": { "client-cert By": "spiffe://cluster.local/ns/driftscope/sa/default",
+                      "client-cert URI (caller)": "spiffe://cluster.local/ns/aks-istio-ingress/sa/aks-istio-ingressgateway-internal" } },
+      { "n": 6, "role": "App", "status": "ok", "via": "pod pathtrace-6f9d7ffb4f-hkp77",
+        "evidence": { "pod": "pathtrace-6f9d7ffb4f-hkp77", "namespace": "driftscope", "served_by": "pathtrace :8080" } }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+client -> https://driftscope.justmakeitgo.net/trace
+== timing (seconds) ==
+DNS lookup      : 0.000010
+TCP connect     : 0.027141
+TLS handshake   : 0.066172
+TTFB (server)   : 0.344874
+total           : 0.345136
+== result ==
+HTTP status     : 302
+redirect target : https://login.microsoftonline.com/f493fd7e-e41b-4f64-ad3d-a9704bbfb5f8/oauth2/v2.0/authorize?approval_prompt=force&client_id=2fe61316-6a56-4808-968c-0785ffa97aac&redirect_uri=https%3A%2F%2Fdriftscope.justmakeitgo.net%2Foauth2%2Fcallback&response_type=code&scope=openid+profile+email&state=8PE8imglH6X0RNxHnwtGgSNIX9ScGLTV7VhDgDP7j_E%3A%2Ftrace
+TLS version     : 0 (0=verified)
+served by (IP)  : 172.67.159.56:443
+bytes           : 386
