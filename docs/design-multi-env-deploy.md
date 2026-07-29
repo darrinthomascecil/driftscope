@@ -146,21 +146,84 @@ a new environment is "run the infra script once, then `apply -k`."
   `<acr>.azurecr.io/driftscope:<tag>`. **Promote the same digest** dev→prod rather than
   rebuilding, so prod runs exactly what dev validated.
 
+## Ingress on AKS: Application Gateway for Containers (AGC)
+
+For the AKS environments, expose driftscope through **Application Gateway for Containers
+(AGC)** — Azure's managed L7 load balancer for Kubernetes, the modern successor to the
+classic Application Gateway Ingress Controller (AGIC). It fits driftscope for three
+reasons:
+
+- **Managed and scalable**, Azure-native, and it implements the **Kubernetes Gateway
+  API** (`Gateway` + `HTTPRoute`) via the in-cluster **ALB Controller** — not the legacy
+  Ingress-only AGIC.
+- **Workload-identity native:** the ALB Controller authenticates to Azure with a managed
+  identity + federated credential — the *same* pattern we already stood up for
+  driftscope, so the whole cluster's Azure access stays consistent and secretless.
+- **Per-route configurable timeouts**, which is the decisive advantage over the classic
+  App Gateway / Container Apps *fixed* caps for driftscope's long scans and SSE.
+
+### Gateway API resources (these replace `Ingress` in the AKS overlays)
+AGC speaks the Gateway API, so the AKS overlays expose driftscope with:
+- a **`Gateway`** referencing the AGC, with listeners (HTTP→HTTPS redirect, HTTPS with
+  TLS — the cert sourced from **Key Vault**, tying into the vault we already use),
+- an **`HTTPRoute`** routing `/`, `/scan`, `/ui`, `/healthz` to the driftscope Service,
+- a **health-check policy** and a **timeout policy** on the `/scan` route sized for scans.
+
+So `overlays/*-aks/` carry `gateway.yaml` + `httproute.yaml` instead of `ingress.yaml`;
+the `kind` overlay keeps `port-forward` and needs none of this.
+
+### Timeouts — the driftscope-specific bit
+AGC lets you set the **request timeout per route** (unlike the classic App Gateway's
+rigid cap), and its Envoy data plane streams SSE. So:
+- size the `/scan` route timeout generously for a single-repo scan, and keep the SSE
+  **heartbeats** (15s) driftscope already emits so an idle window never cuts a live scan;
+- for the **fleet / 100-repo** case that can exceed any sane request timeout, this still
+  points at the **async job model** (POST → `202` + job id, short poll/stream requests):
+  AGC gives more headroom than Container Apps but is not a substitute for making long
+  work asynchronous.
+
+(Confirm the exact configurable maximum against current AGC docs at implementation time —
+the design point is that it is *tunable per route*, not fixed.)
+
+### One-time setup (per AKS env), on top of the workload-identity setup
+1. Install the **ALB Controller** (helm) with its **own managed identity + federated
+   credential** (federate the controller's ServiceAccount) — the same WI pattern as
+   driftscope, so nothing new conceptually.
+2. Provision the AGC — **managed** (the ALB Controller creates it from an
+   `ApplicationLoadBalancer` resource) or **bring-your-own** (create it in Azure, then
+   reference it from the `Gateway`).
+3. Apply the `Gateway` (+ TLS from Key Vault), the `HTTPRoute`, and the timeout/health
+   policies. Optionally attach a **WAF policy** for prod.
+
+### Why AGC over the alternatives
+| | nginx ingress | classic App Gateway + AGIC | **AGC** |
+|---|---|---|---|
+| Model | in-cluster, self-managed | managed, Ingress API | **managed, Gateway API** |
+| Timeouts | idle-based (SSE-friendly) | rigid, short-ish cap | **configurable per route** |
+| Azure identity | — | AGIC managed identity | **workload-identity native** |
+| Status | ubiquitous, cheap | legacy, being superseded | **current Azure direction** |
+
+Use **AGC** for the AKS envs; **nginx** stays a fine lighter-weight option for a dev
+cluster if you want less setup.
+
 ## Implementation phases
 
 1. **Refactor `deploy/k8s/` → `deploy/base/` + `deploy/overlays/{kind,dev-aks,prod-aks}`**,
    migrating the live kind config into the `kind` overlay so nothing regresses.
-2. **`deploy/aks/setup-aks-wi.sh`** — the AKS one-time WI setup (managed OIDC).
-3. **`deploy/README.md`** — the `apply -k` workflow and the per-env infra checklist.
-4. Optional later: an HPA + Ingress/TLS example for the AKS overlays; a `deploy.sh <env>`
-   wrapper; GitOps (Argo CD/Flux) once the overlays are stable.
+2. **`deploy/aks/setup-aks-wi.sh`** — the AKS one-time WI setup (managed OIDC), plus ALB
+   Controller install + AGC provisioning (its own managed identity + federated credential).
+3. **AGC exposure in the AKS overlays** — `gateway.yaml` + `httproute.yaml` (+ TLS from
+   Key Vault, `/scan` route timeout, health-check policy) in place of `ingress.yaml`.
+4. **`deploy/README.md`** — the `apply -k` workflow and the per-env infra checklist.
+5. Optional later: HPA on the AKS overlays; a `deploy.sh <env>` wrapper; a WAF policy for
+   prod; GitOps (Argo CD/Flux) once the overlays are stable.
 
 ## Open questions
 
 - **Per-env identities** (recommended) vs a shared UAMI across envs?
 - **Per-env GitHub Apps** for prod, or one App installed per-env-scoped?
-- Ingress controller on AKS: **nginx** vs **Application Gateway** (App Gateway's ~240s
-  request cap interacts with long scans — see the async-job-model follow-up).
+- ~~Ingress controller on AKS~~ — **resolved: Application Gateway for Containers (AGC)**;
+  see the ingress section. (nginx remains a lighter-weight dev option.)
 - Namespace: keep `driftscope` in every cluster (so the federated subject is identical),
   or per-env namespaces (which would change the subject and each federated credential)?
 
