@@ -35,5 +35,27 @@ jobs:
       - name: Install
         run: python -m pip install -e ".[dev]"
 
+      # Deterministic, offline suite -- the required signal. The @pytest.mark.network
+      # tests hit real registries/GitHub and can't pass without credentials/network, so
+      # they run separately (network-tests job) and never block a merge.
       - name: Test
-        run: python -m pytest -q
+        run: python -m pytest -q -m "not network"
+
+  # Opt-in coverage of the network tests, authenticated with the Actions-issued
+  # GITHUB_TOKEN (raises the GitHub API limit 60 -> ~1000/hr). NON-BLOCKING:
+  # a rate-limited or down external registry must not fail a PR.
+  network-tests:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Network tests (non-blocking)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m pytest -q -m network
