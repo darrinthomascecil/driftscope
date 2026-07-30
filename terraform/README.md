@@ -6,10 +6,15 @@ policy, managed Istio internal ingress, Workload Identity + OIDC), **ACR**, **Ke
 (RBAC + soft-delete + purge-protection), and the AcrPull role. It also **generates**
 `deploy/overlays/cloud/params.yaml` from your values so the app manifests need no hand-editing.
 
-Scope: the Azure layer (`main.tf`) **and Entra** (`entra.tf`, Phase 0.3) — the SSO app
-registration + the access group (its id flows into `params.yaml`) + the client secret (rotated,
-written to Key Vault). **Cloudflare** (tunnel + DNS) is Phase 0.4; the in-cluster mesh/SSO
-objects are the existing kustomize overlays + `mesh/`.
+Scope: the Azure layer (`main.tf`), **Entra** (`entra.tf`, Phase 0.3), and the **edge** —
+**Azure DNS** (`dns.tf`) + **Azure Front Door Standard** (`frontdoor.tf`, Phase 0.4): managed
+TLS (browser-facing, no cert-manager) + WAF + DDoS + CDN, in front of the Istio gateway. This
+replaces the original Cloudflare tunnel — the deployment is now all-Azure. The gateway-side
+wiring (external gateway with the BYO IP, self-signed origin cert, X-Azure-FDID origin lock,
+remove cloudflared) is Phase 0.4b in the kustomize overlays. In-cluster mesh/SSO objects are the
+existing overlays + `mesh/`.
+
+After apply, delegate the zone: add the four `dns_name_servers` (output) at your registrar.
 
 ## Use
 

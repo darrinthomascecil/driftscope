@@ -1,6 +1,7 @@
 locals {
   tenant_id = coalesce(var.tenant_id, data.azurerm_client_config.current.tenant_id)
-  host      = "driftscope.${var.base_domain}"
+  subdomain = "driftscope"
+  host      = "${local.subdomain}.${var.base_domain}"
 }
 
 resource "azurerm_resource_group" "this" {

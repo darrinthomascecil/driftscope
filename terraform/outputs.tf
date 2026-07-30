@@ -44,3 +44,23 @@ output "allowed_group_id" {
   value       = azuread_group.access.object_id
   description = "Object id of the access group (flows into params.yaml)."
 }
+
+output "dns_name_servers" {
+  value       = azurerm_dns_zone.this.name_servers
+  description = "Add these at your domain registrar to delegate the zone to Azure DNS."
+}
+
+output "frontdoor_endpoint_host" {
+  value       = azurerm_cdn_frontdoor_endpoint.this.host_name
+  description = "Front Door endpoint hostname (the app CNAME points here)."
+}
+
+output "gateway_public_ip" {
+  value       = azurerm_public_ip.gateway.ip_address
+  description = "BYO public IP for the external Istio gateway; annotate its Service to use it (0.4b)."
+}
+
+output "frontdoor_id" {
+  value       = azurerm_cdn_frontdoor_profile.this.resource_guid
+  description = "Front Door GUID = the X-Azure-FDID the gateway validates to lock the origin (0.4b)."
+}

@@ -54,9 +54,17 @@ App registration (redirect URIs derived from the domain), the access **group**, 
 the client secret into Key Vault, federated credentials. So a new tenant gets its own app + group
 without portal clicks.
 
-### 0.4 Terraform Cloudflare (`cloudflare`)
-Tunnel, DNS (wildcard/subdomain from the domain param), and — decided — the edge config, so the
-public hostname is derived from the deployer's domain, not hardcoded.
+### 0.4 Terraform the edge — Azure DNS + Azure Front Door (re-imagined: was Cloudflare)
+Decision: drop the Cloudflare dependency, go all-Azure. **Azure DNS** zone (name servers
+delegated at the registrar) + **Azure Front Door Standard** — managed TLS (browser-facing, so
+no cert-manager for the public cert) + WAF + DDoS + CDN, in front of the Istio gateway.
+Chose Standard (~$35/mo, origin locked to Front Door via `X-Azure-FDID` + service tag) over
+Premium (~$330/mo, Private Link). Front Door→origin runs HTTPS to a **self-signed** cert on the
+gateway (a minimal cert-manager SelfSigned issuer — no ACME) so that hop stays encrypted.
+**0.4a** = the Terraform (DNS + Front Door + WAF + BYO gateway IP). **0.4b** = the overlay side:
+switch the mesh to an external gateway using the BYO IP, add the self-signed origin cert, the
+`X-Azure-FDID` origin-lock policy, exempt `/healthz` from SSO (Front Door health probe), and
+remove cloudflared.
 
 ### 0.5 Bootstrap: clone → running
 A `make up` / bootstrap script + a crisp README that runs 0.2–0.4, deploys the app, injects
