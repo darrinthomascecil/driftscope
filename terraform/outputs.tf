@@ -84,3 +84,19 @@ output "certmanager_client_id" {
   value       = try(azurerm_user_assigned_identity.certmanager[0].client_id, null)
   description = "Managed-identity client id for cert-manager Workload Identity (custom-domain mode). Feed to the cert-manager helm install -- see edge/README.md."
 }
+
+# ---- Consumed by the bootstrap (scripts/bootstrap/*, `make up`) so nothing is hardcoded ----
+output "use_custom_domain" {
+  value       = local.use_custom_domain
+  description = "Whether a custom domain is configured (gates cert-manager + the origin cert in the bootstrap)."
+}
+
+output "istio_revision" {
+  value       = var.istio_revision
+  description = "Managed-Istio revision (drives the namespace istio.io/rev label + the istiod-<rev> rollout)."
+}
+
+output "gateway_pip_name" {
+  value       = azurerm_public_ip.gateway.name
+  description = "Name of the BYO gateway public IP, for the external gateway service annotation."
+}

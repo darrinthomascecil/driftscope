@@ -6,36 +6,37 @@ not the app namespace, so they are deliberately **not** in `../kustomization.yam
 
 Full rationale, per-decision, in [`docs/design-enterprise-istio-sso.md`](../../../../docs/design-enterprise-istio-sso.md).
 
-## One-time cluster setup
+## How these get applied
+
+`make up` (the bootstrap, [`docs/quickstart-deploy.md`](../../../../docs/quickstart-deploy.md))
+applies them for you: `cluster-init.sh` registers the ext_authz provider and restarts istiod,
+`deploy.sh` applies `hardening.yaml`, `access-logs.yaml`, and `require-sso.authorizationpolicy.yaml`
+after the app overlay (so the default-deny lands only once the ALLOW policies exist).
+
+Managed Istio + the **external** ingress gateway are provisioned by Terraform
+(`service_mesh_profile` in `terraform/main.tf`) — there is no `az aks mesh enable` step anymore.
+
+The equivalent by hand, in order:
 
 ```sh
-RG=driftscope-cloud AKS=driftscope-aks
+REV=asm-1-29   # terraform output istio_revision
 
-# 1. Managed Istio + internal-only ingress gateway
-az aks mesh enable            -g $RG -n $AKS
-az aks mesh enable-ingress-gateway -g $RG -n $AKS --ingress-gateway-type Internal
-
-# 2. Register the ext_authz provider, then bounce istiod so it loads
+# 1. Register the ext_authz provider, then bounce istiod so it loads
 kubectl apply -f ext-authz-provider.configmap.yaml
-kubectl -n aks-istio-system rollout restart deployment istiod-asm-1-29
+kubectl -n aks-istio-system rollout restart deployment/istiod-$REV
 
-# 3. Label the app namespace for sidecar injection (revision-pinned)
-kubectl label namespace driftscope istio.io/rev=asm-1-29 --overwrite
+# 2. Label the app namespace for sidecar injection (revision-pinned)
+kubectl label namespace driftscope istio.io/rev=$REV --overwrite
 
-# 4. oauth2-proxy Secret from Key Vault (see ../oauth2-proxy.yaml header for the exact cmd)
+# 3. oauth2-proxy Secret from Key Vault (see ../oauth2-proxy.yaml header, or `make secret`)
 
-# 5. App-namespace resources via kustomize, then the gateway-side auth policy
+# 4. App overlay, THEN the mesh hardening + gateway-side SSO gate
 kubectl apply -k ..
-kubectl apply -f require-sso.authorizationpolicy.yaml
+kubectl apply -f hardening.yaml -f access-logs.yaml -f require-sso.authorizationpolicy.yaml
 ```
 
-## Retarget the Cloudflare tunnel
-
-Point the public hostname at the internal gateway (replaces the direct-to-app service):
-
-```
-service: http://aks-istio-ingressgateway-external.aks-istio-ingress.svc.cluster.local:80
-```
+The public entry point is Azure Front Door → the external gateway's public IP (the Cloudflare
+tunnel is gone). Edge TLS + the origin lock live in [`../edge/`](../edge/README.md).
 
 ## Revision upgrades
 

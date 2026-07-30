@@ -11,3 +11,15 @@ drift-*.html
 drift-*.md
 drift-*.json
 .playwright-mcp/
+
+# Terraform. State is SENSITIVE (it stores the Entra client secret value + other secrets)
+# and MUST NOT be committed; tfvars is deployment-specific (subscription id, admin UPNs).
+# The provider lock file (.terraform.lock.hcl) is intentionally NOT ignored -- commit it
+# for reproducible provider versions.
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform/terraform.tfvars
+crash.log
+crash.*.log

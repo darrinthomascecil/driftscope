@@ -79,9 +79,14 @@ The edge objects live in `deploy/overlays/cloud/edge/` (Terraform-generated, app
 > origin cert to issue/validate/renew. We're paying for a cert-manager origin cert precisely
 > because Standard's origin is public. That's the ~$330/mo-vs-cert-manager trade.
 
-### 0.5 Bootstrap: clone → running
-A `make up` / bootstrap script + a crisp README that runs 0.2–0.4, deploys the app, injects
-secrets, and prints the live URL. This is the deliverable that makes the north star real.
+### 0.5 Bootstrap: clone → running  ✅
+`make up` runs the whole pipeline — `preflight → infra (terraform) → image (az acr build) →
+cluster (ext_authz + namespace + BYO IP + cert-manager) → secret (from Key Vault, never printed)
+→ deploy (app + mesh hardening + edge TLS/lock)` — and prints the URL. Each step is a re-runnable
+target. Config is two files: `terraform.tfvars` + `az login`. Crisp guide in
+`docs/quickstart-deploy.md`. Also closed a real gap: `.gitignore` now excludes Terraform state
+(which holds the Entra client secret) + tfvars. This is the deliverable that makes the north star
+real. (Remote state backend + External Secrets are 0.6.)
 
 ### 0.6 GitOps/CD + secrets automation
 ArgoCD or Flux reconciling the overlays (retire imperative `kubectl`); **External Secrets
