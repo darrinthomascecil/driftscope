@@ -3,7 +3,9 @@ subscription_id  = "00000000-0000-0000-0000-000000000000"
 base_domain      = "example.com"           # app served at driftscope.<base_domain>
 acr_name         = "driftscopeacr12345"    # globally unique, alphanumeric only
 key_vault_name   = "driftscope-kv-12345"   # globally unique
-allowed_group_id = "REPLACE-WITH-ENTRA-GROUP-OBJECT-ID"  # Phase 0.3 creates this and feeds it in
+
+# Terraform CREATES the Entra access group; add yourself so you can log in:
+admin_members = ["you@your-tenant.onmicrosoft.com"]
 
 # Optional (defaults shown):
 # tenant_id          = null            # defaults to your current az login tenant

@@ -7,7 +7,7 @@ resource "local_file" "params" {
   content = templatefile("${path.module}/templates/params.yaml.tftpl", {
     host               = local.host
     tenant_id          = local.tenant_id
-    allowed_group_id   = var.allowed_group_id
+    allowed_group_id   = azuread_group.access.object_id
     allowed_group_name = var.allowed_group_name
   })
 }

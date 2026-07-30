@@ -28,15 +28,16 @@ variable "tenant_id" {
   description = "Entra tenant id for SSO. Defaults to the current az login tenant."
 }
 
-variable "allowed_group_id" {
-  type        = string
-  description = "Object id of the Entra group whose members may access the app. (Phase 0.3 will create this and feed the id in.)"
-}
-
 variable "allowed_group_name" {
   type        = string
   default     = "driftscope"
-  description = "Display name of the access group (shown on the no-access page)."
+  description = "Display name of the access group Terraform creates (shown on the no-access page)."
+}
+
+variable "admin_members" {
+  type        = list(string)
+  default     = []
+  description = "UPNs to add to the access group initially (e.g. [\"you@your-tenant.onmicrosoft.com\"]). Optional; membership can also be managed outside Terraform."
 }
 
 # ---- Resource names (must be globally unique for ACR + Key Vault) ----
