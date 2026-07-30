@@ -89,10 +89,16 @@ target. Config is two files: `terraform.tfvars` + `az login`. Crisp guide in
 real. (Remote state backend + External Secrets are 0.6.)
 
 ### 0.6 GitOps/CD + secrets automation
-ArgoCD or Flux reconciling the overlays (retire imperative `kubectl`); **External Secrets
-Operator** / CSI Secrets Store pulling from Key Vault (retire manual `create secret`); real
-dev/staging/prod separation. This is what makes *ongoing* change reproducible and safe, not just
-the first install.
+Delivered as sub-steps:
+- **0.6a Remote Terraform state** ✅ — opt-in Azure Storage backend (shared, locked, versioned,
+  AAD-only/keyless) via `make state-backend` + `backend.tf.example`; gets the secret-bearing
+  state off local disk for team/CD use. Local state stays the default. See `docs/remote-state.md`.
+- **0.6b External Secrets** — External Secrets Operator / CSI Secrets Store pulling the
+  oauth2-proxy creds from Key Vault (retire the manual `make secret`).
+- **0.6c GitOps** — ArgoCD or Flux reconciling the overlays (retire imperative `kubectl`).
+- **0.6d Environments** — real dev/staging/prod separation.
+
+This is what makes *ongoing* change reproducible and safe, not just the first install.
 
 **Phase 0 done when:** a fresh clone + a filled-in config produces a working, SSO-gated DriftScope
 on a *different* domain/tenant with no manual portal/CLI steps, and day-2 changes flow git → CD.

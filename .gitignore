@@ -23,3 +23,6 @@ terraform/.terraform/
 terraform/terraform.tfvars
 crash.log
 crash.*.log
+# Remote-state opt-in: the active backend config is per-deployment (keep the .example committed).
+terraform/backend.tf
+terraform/backend.hcl
