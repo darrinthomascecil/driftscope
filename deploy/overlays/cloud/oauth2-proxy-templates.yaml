@@ -2,7 +2,7 @@
 # NOT authorized -- i.e. not a member of the Entra group in driftscope-access -- so a
 # denied user lands here instead of a bare 403. Mounted at /templates (see oauth2-proxy.yaml
 # --custom-templates-dir). Static HTML (no template vars) so it renders regardless of
-# oauth2-proxy version. The group name here mirrors driftscope-access/ALLOWED_GROUP_NAME.
+# oauth2-proxy version. The group name here mirrors driftscope-params/ALLOWED_GROUP_NAME.
 apiVersion: v1
 kind: ConfigMap
 metadata:
