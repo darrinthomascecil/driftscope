@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Create the oauth2-proxy Secret from Key Vault. The Entra client secret + cookie secret are
-# handled here and NEVER printed (no set -x; values go straight into kubectl via stdin).
-# This is the one secret the app needs; Phase 0.6 replaces it with External Secrets.
+# FALLBACK path -- the default bootstrap uses External Secrets Operator (external-secrets.yaml)
+# to sync this Secret from Key Vault, so `make up` does NOT call this. Use it only on a cluster
+# where ESO isn't available. Do NOT run it alongside ESO: the ExternalSecret owns the oauth2-proxy
+# Secret (creationPolicy: Owner) and would reconcile over a hand-created one.
+#
+# The Entra client secret + cookie secret are handled here and NEVER printed (no set -x; values
+# go straight into kubectl via stdin).
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 KV="$(tf_out key_vault_name)"

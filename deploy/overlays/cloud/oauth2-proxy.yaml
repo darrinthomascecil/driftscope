@@ -8,13 +8,12 @@
 # the custom no-access page (oauth2-proxy-templates/error.html). The app must emit group claims:
 # `az ad app update --id <app> --set groupMembershipClaims=SecurityGroup`.
 #
-# The `oauth2-proxy` Secret is NOT in git. Create it from Key Vault before applying:
-#   CID=$(az keyvault secret show --vault-name <your-kv> -n oauth2-proxy-client-id --query value -o tsv)
-#   CSECRET=$(az keyvault secret show --vault-name <your-kv> -n oauth2-proxy-client-secret --query value -o tsv)
-#   COOKIE=$(openssl rand -hex 16)
-#   kubectl -n driftscope create secret generic oauth2-proxy \
-#     --from-literal=client-id="$CID" --from-literal=client-secret="$CSECRET" --from-literal=cookie-secret="$COOKIE"
-# NOTE: store the client secret VALUE (`password`), never the credential keyId (AADSTS7000215).
+# The `oauth2-proxy` Secret is NOT in git. By default it is synced from Key Vault by External
+# Secrets Operator -- see external-secrets.yaml (Terraform-generated) and the ExternalSecret named
+# `oauth2-proxy`, which maps oauth2-proxy-{client-id,client-secret,cookie-secret} into this Secret.
+# No human runs `kubectl create secret`. Fallback for clusters without ESO: `make secret`
+# (scripts/bootstrap/secret.sh). NOTE: the Key Vault holds the client secret VALUE (`password`),
+# never the credential keyId (AADSTS7000215).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

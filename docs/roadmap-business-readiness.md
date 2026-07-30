@@ -93,8 +93,10 @@ Delivered as sub-steps:
 - **0.6a Remote Terraform state** ✅ — opt-in Azure Storage backend (shared, locked, versioned,
   AAD-only/keyless) via `make state-backend` + `backend.tf.example`; gets the secret-bearing
   state off local disk for team/CD use. Local state stays the default. See `docs/remote-state.md`.
-- **0.6b External Secrets** — External Secrets Operator / CSI Secrets Store pulling the
-  oauth2-proxy creds from Key Vault (retire the manual `make secret`).
+- **0.6b External Secrets** ✅ — External Secrets Operator syncs the oauth2-proxy creds from Key
+  Vault via Workload Identity (dedicated `driftscope-eso` identity, Key Vault Secrets User). The
+  cookie secret is now Terraform-generated + stored in Key Vault (stable across deploys). ESO owns
+  the `oauth2-proxy` Secret; `make secret` is now fallback-only, dropped from `make up`.
 - **0.6c GitOps** — ArgoCD or Flux reconciling the overlays (retire imperative `kubectl`).
 - **0.6d Environments** — real dev/staging/prod separation.
 
