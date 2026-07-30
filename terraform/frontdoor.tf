@@ -1,15 +1,19 @@
 # Azure Front Door Standard: managed TLS (browser-facing) + WAF + DDoS + CDN, in front of the
-# Istio ingress gateway. The origin is a public IP locked to THIS Front Door (service tag +
-# X-Azure-FDID header check, wired on the gateway in 0.4b). Front Door -> origin runs HTTPS to a
-# self-signed cert on the gateway (certificate_name_check disabled) so that hop is encrypted.
+# Istio ingress gateway. The origin is a public IP with a <label>.<region>.cloudapp.azure.com DNS
+# name, locked to THIS Front Door (service tag + X-Azure-FDID header check, wired on the gateway
+# in 0.4b). Front Door -> origin runs HTTPS with a REAL Let's Encrypt cert on the gateway
+# (cert-manager, 0.4b) for that FQDN, and Front Door VALIDATES it -- authenticated + encrypted,
+# no disabled-cert-validation finding.
 
-# Static public IP the external Istio ingress gateway will use (BYO IP -> stable origin).
+# Static public IP the external Istio ingress gateway will use (BYO IP -> stable origin). The DNS
+# label gives it a real FQDN so a CA cert can be issued and Front Door can validate it.
 resource "azurerm_public_ip" "gateway" {
   name                = "${var.name_prefix}-gw-pip"
   resource_group_name = azurerm_resource_group.this.name
   location            = azurerm_resource_group.this.location
   allocation_method   = "Static"
   sku                 = "Standard"
+  domain_name_label   = var.gateway_dns_label # -> <label>.<region>.cloudapp.azure.com
 }
 
 # The AKS cluster identity needs to attach the BYO public IP to the gateway's load balancer.
@@ -52,14 +56,14 @@ resource "azurerm_cdn_frontdoor_origin" "gateway" {
   cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.gateway.id
   enabled                       = true
 
-  host_name          = azurerm_public_ip.gateway.ip_address
-  origin_host_header = local.host # so the Istio VirtualService matches on Host
+  host_name          = azurerm_public_ip.gateway.fqdn # cloudapp FQDN -> Front Door validates a real cert for it
+  origin_host_header = local.host                     # HTTP Host for Istio routing (separate from the TLS name)
   http_port          = 80
   https_port         = 443
   priority           = 1
   weight             = 1000
 
-  certificate_name_check_enabled = false # origin serves a self-signed cert (encrypt the hop, don't validate name)
+  certificate_name_check_enabled = true # gateway presents a real Let's Encrypt cert for the FQDN; Front Door validates it
 }
 
 resource "azurerm_cdn_frontdoor_custom_domain" "this" {

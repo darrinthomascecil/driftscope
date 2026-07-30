@@ -69,3 +69,8 @@ output "frontdoor_id" {
   value       = azurerm_cdn_frontdoor_profile.this.resource_guid
   description = "Front Door GUID = the X-Azure-FDID the gateway validates to lock the origin (0.4b)."
 }
+
+output "origin_fqdn" {
+  value       = azurerm_public_ip.gateway.fqdn
+  description = "Gateway's cloudapp.azure.com FQDN -- cert-manager issues the origin cert for this (0.4b)."
+}

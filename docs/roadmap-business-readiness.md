@@ -59,12 +59,19 @@ Decision: drop the Cloudflare dependency, go all-Azure. **Azure DNS** zone (name
 delegated at the registrar) + **Azure Front Door Standard** — managed TLS (browser-facing, so
 no cert-manager for the public cert) + WAF + DDoS + CDN, in front of the Istio gateway.
 Chose Standard (~$35/mo, origin locked to Front Door via `X-Azure-FDID` + service tag) over
-Premium (~$330/mo, Private Link). Front Door→origin runs HTTPS to a **self-signed** cert on the
-gateway (a minimal cert-manager SelfSigned issuer — no ACME) so that hop stays encrypted.
-**0.4a** = the Terraform (DNS + Front Door + WAF + BYO gateway IP). **0.4b** = the overlay side:
-switch the mesh to an external gateway using the BYO IP, add the self-signed origin cert, the
-`X-Azure-FDID` origin-lock policy, exempt `/healthz` from SSO (Front Door health probe), and
-remove cloudflared.
+Premium (~$330/mo, Private Link). Front Door→origin runs HTTPS with a **real Let's Encrypt cert**
+on the gateway, issued for its `<label>.<region>.cloudapp.azure.com` FQDN, and Front Door
+**validates it** (`certificate_name_check = true`) — authenticated + encrypted, no
+disabled-cert-validation finding. (Self-signed was rejected: a security team flags disabled cert
+validation, CWE-295.) **0.4a** = the Terraform (DNS + Front Door + WAF + BYO gateway IP with a
+DNS label). **0.4b** = the overlay side: external gateway on the BYO IP, **cert-manager** issuing
+the origin cert (HTTP-01 for the cloudapp FQDN) → Istio Gateway HTTPS, the `X-Azure-FDID`
+origin-lock policy, exempt `/healthz` from SSO (Front Door health probe), and remove cloudflared.
+
+> **Premium + Private Link would obviate the origin cert entirely** — the Front Door→origin hop
+> would traverse a *private* connection (no public path), so there's no public MITM surface and no
+> origin cert to issue/validate/renew. We're paying for a cert-manager origin cert precisely
+> because Standard's origin is public. That's the ~$330/mo-vs-cert-manager trade.
 
 ### 0.5 Bootstrap: clone → running
 A `make up` / bootstrap script + a crisp README that runs 0.2–0.4, deploys the app, injects

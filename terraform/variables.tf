@@ -55,6 +55,11 @@ variable "key_vault_name" {
   description = "Key Vault name (globally unique)."
 }
 
+variable "gateway_dns_label" {
+  type        = string
+  description = "DNS label for the gateway's public IP -> <label>.<region>.cloudapp.azure.com (unique per region). This FQDN is what the origin cert is issued for and Front Door validates."
+}
+
 # ---- Cluster shape ----
 variable "kubernetes_version" {
   type        = string
