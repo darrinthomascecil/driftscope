@@ -23,10 +23,23 @@ Logs alone don't give fast pinpointing. You want all three, joined by a shared r
 | **Traces** (distributed) | **PINPOINT** — which hop, which request | the request's waterfall edge→app |
 | **Logs** (structured) | **ROOT CAUSE** — why | per-request detail |
 
-The glue is a **single ID flowing through every layer**: Cloudflare `cf-ray` → Envoy
-`x-request-id` → W3C `traceparent`. Log all three together and you can join the edge to the
-cluster and pivot metric→trace→log in one hop. **Alert on symptoms** (error rate, latency),
-not causes — then use traces/logs to find the cause. This avoids alert fatigue.
+The glue is a **correlation ID flowing through every layer** — but pick a *vendor-neutral*
+one as the backbone, or you couple your log schema to today's edge (the same trap the
+[pathtrace](../examples/pathtrace/README.md) generalization fixed: key on the *role*, not the
+vendor header).
+
+- **Backbone (always): W3C `traceparent` + Envoy `x-request-id`.** These work end-to-end
+  regardless of what's in front — Cloudflare, Front Door, a plain LB, or nothing. Envoy
+  already stamps `x-request-id`, so this correlation exists today with zero edge dependency.
+  Propagating `traceparent` (OpenTelemetry) is the durable way to make one trace span edge
+  *and* cluster.
+- **Optional supplement: an "edge request id"**, captured as a generically-named field that is
+  `cf-ray` for this deployment but is a one-line swap per vendor (`x-azure-ref` for Front Door,
+  `x-amzn-trace-id` for ALB). It only helps for requests that *reached* the cluster — a `530`
+  means the request never arrived, so there's nothing in-cluster to join it to.
+
+**Alert on symptoms** (error rate, latency), not causes — then use traces/logs to find the
+cause. This avoids alert fatigue.
 
 ## The highest-value signal for networking: Envoy response flags
 
@@ -54,7 +67,7 @@ equivalent is the LGTM stack (Loki/Grafana/Tempo/Mimir) — same shape, more to 
 
 | Layer | Signal | Collector |
 |---|---|---|
-| **Edge** (530/524) | Cloudflare logs — *the only place these exist* | **Cloudflare Logpush** → log store (join on `cf-ray`) |
+| **Edge** (530/524) | edge logs — *the only place these exist* | edge log export (Cloudflare Logpush today) → log store; correlate via propagated `traceparent` |
 | **Tunnel** | cloudflared reconnects | pod logs → log store |
 | **Gateway + mesh** | RED metrics + **access logs w/ response flags** | **Azure Managed Prometheus** + access logs via **Telemetry API** → Loki / Azure Monitor |
 | **Traces** | per-request waterfall | **OpenTelemetry** (propagate `traceparent`) → Tempo / App Insights |
@@ -99,10 +112,11 @@ spec:
     - providers:
         - name: envoy               # default provider -> stdout, includes %RESPONSE_FLAGS%
 ```
-For edge↔cluster correlation, define a custom-format provider in the shared mesh config that
-adds `cf-ray` and `x-request-id` to the log line (so a Cloudflare 530 can be joined to the
-in-cluster request by ID). Then `kubectl logs <pod> -c istio-proxy | grep -v '" 200 '` gives
-per-request lines with the flag that names the fault.
+The default format already carries `x-request-id` — the vendor-neutral backbone — so
+`kubectl logs <pod> -c istio-proxy | grep -v '" 200 '` gives per-request lines with the flag
+that names the fault, no edge dependency. *Optionally*, a custom-format provider can append an
+"edge request id" (`%REQ(CF-RAY)%` for Cloudflare today, swappable per vendor) for requests
+that reached the cluster — but this is a supplement, not the correlation key.
 
 ### Step 2 — Broaden metrics + wire alert delivery
 - Extend Prometheus scraping to **node-exporter + kube-state-metrics + LB SNAT** (today it only
@@ -114,9 +128,12 @@ per-request lines with the flag that names the fault.
 OpenTelemetry, propagate `traceparent` end-to-end (already flowing), export to Tempo / App
 Insights. Enable **exemplars** in Grafana for the one-click metric→trace pivot.
 
-### Step 4 — Cloudflare Logpush
-Ship edge logs to the same store so `cf-ray` joins edge↔cluster — the only way to see and
-correlate `530`/`524`.
+### Step 4 — Edge log export (Cloudflare Logpush today)
+Ship the edge's logs to the same store — the *only* place `530`/`524` exist (the request
+never reached the cluster). Correlation to in-cluster traces is via propagated `traceparent`,
+not a vendor id; the edge request id (`cf-ray`) is a supplementary field. If the edge ever
+changes (Front Door, direct), only this step's exporter and the edge-id field change — the
+rest of the design is untouched.
 
 ### Step 5 — Cilium Hubble
 Rides along with enabling Cilium (needed to make the egress NetworkPolicy actually enforce).
