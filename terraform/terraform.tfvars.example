@@ -1,8 +1,12 @@
 # Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored (deployment-specific).
-subscription_id  = "00000000-0000-0000-0000-000000000000"
-base_domain      = "example.com"           # app served at driftscope.<base_domain>
-acr_name         = "driftscopeacr12345"    # globally unique, alphanumeric only
-key_vault_name   = "driftscope-kv-12345"   # globally unique
+subscription_id = "00000000-0000-0000-0000-000000000000"
+acr_name         = "driftscopeacr12345"   # globally unique, alphanumeric only
+key_vault_name   = "driftscope-kv-12345"  # globally unique
+gateway_dns_label = "driftscope-gw-12345" # -> driftscope-gw-12345.<region>.cloudapp.azure.com (unique per region)
+
+# OPTIONAL custom domain. OMIT to run on Front Door's default *.azurefd.net hostname
+# (no domain ownership / DNS delegation needed -- the app URL is a terraform output).
+# base_domain = "example.com"              # -> app at driftscope.example.com (+ Azure DNS zone)
 
 # Terraform CREATES the Entra access group; add yourself so you can log in:
 admin_members = ["you@your-tenant.onmicrosoft.com"]

@@ -44,3 +44,33 @@ output "allowed_group_id" {
   value       = azuread_group.access.object_id
   description = "Object id of the access group (flows into params.yaml)."
 }
+
+output "app_url" {
+  value       = "https://${local.host}"
+  description = "Where the app is served -- your custom domain, or the Front Door *.azurefd.net default."
+}
+
+output "dns_name_servers" {
+  value       = local.use_custom_domain ? azurerm_dns_zone.this[0].name_servers : []
+  description = "Delegate these at your registrar (empty when running on the *.azurefd.net default host)."
+}
+
+output "frontdoor_endpoint_host" {
+  value       = azurerm_cdn_frontdoor_endpoint.this.host_name
+  description = "Front Door endpoint hostname (the app CNAME points here)."
+}
+
+output "gateway_public_ip" {
+  value       = azurerm_public_ip.gateway.ip_address
+  description = "BYO public IP for the external Istio gateway; annotate its Service to use it (0.4b)."
+}
+
+output "frontdoor_id" {
+  value       = azurerm_cdn_frontdoor_profile.this.resource_guid
+  description = "Front Door GUID = the X-Azure-FDID the gateway validates to lock the origin (0.4b)."
+}
+
+output "origin_fqdn" {
+  value       = azurerm_public_ip.gateway.fqdn
+  description = "Gateway's cloudapp.azure.com FQDN -- cert-manager issues the origin cert for this (0.4b)."
+}
