@@ -1,0 +1,23 @@
+# DEPLOYMENT PARAMETERS -- the one place to set per-deployment values.
+#
+# To stand up your own driftscope: set these to your values, then `kubectl apply -k .`.
+# Values are ATOMIC (host, tenant, group); the composed strings (OIDC issuer URL, oauth2
+# redirect URL) are built at runtime via Kubernetes $(VAR) env expansion in oauth2-proxy.yaml,
+# so you never edit a URL with an id buried in the middle.
+#
+# Phase 0.2 (Terraform) will GENERATE this file from its outputs, so a fresh deploy needs no
+# hand-editing. Until then, edit here. The ACR/image is set in kustomization.yaml (images:).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: driftscope-params
+  namespace: driftscope
+data:
+  # Public hostname the app is served at. Drives the Istio Gateway/VirtualService hosts
+  # (via kustomize replacements) and oauth2-proxy's redirect/cookie/whitelist (via $(HOST)).
+  HOST: "driftscope.justmakeitgo.net"
+  # Entra (Azure AD) tenant id. Composed into the OIDC issuer URL at runtime.
+  TENANT_ID: "f493fd7e-e41b-4f64-ad3d-a9704bbfb5f8"
+  # Entra security group whose members may access the app: object id + display name (page text).
+  ALLOWED_GROUP_ID: "82cb7474-d489-4fd7-b7e4-d7d6fad74d0c"
+  ALLOWED_GROUP_NAME: "driftscope"

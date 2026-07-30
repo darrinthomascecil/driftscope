@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: driftscope
 resources:
   - ../../base
+  - params.yaml           # DEPLOYMENT PARAMETERS -- edit to deploy your own (host/tenant/group)
   - cloudflared.yaml
   - oauth2-proxy.yaml     # Entra OIDC relying party (Istio ext_authz provider) + group gate
   - oauth2-proxy-templates.yaml   # custom "no access" page for non-group members
@@ -11,9 +12,23 @@ resources:
   # Cluster-scoped mesh objects (ext_authz provider, gateway AuthorizationPolicy) live
   # in mesh/ and are applied directly -- see mesh/README.md.
 images:
+  # The ACR/image is a deployment parameter -- set to your registry (Phase 0.2: Terraform emits it).
   - name: driftscope
     newName: dscopeacr18860.azurecr.io/driftscope
     newTag: v1
+
+# Inject the public HOST (from driftscope-params) into the Istio Gateway + VirtualService, so the
+# routing isn't hardcoded to a domain. The literals in istio-routing.yaml are overwritten here.
+replacements:
+  - source:
+      kind: ConfigMap
+      name: driftscope-params
+      fieldPath: data.HOST
+    targets:
+      - select: { kind: Gateway, name: driftscope }
+        fieldPaths: [spec.servers.0.hosts.0]
+      - select: { kind: VirtualService, name: driftscope }
+        fieldPaths: [spec.hosts.0]
 replicas:
   - name: driftscope
     count: 1

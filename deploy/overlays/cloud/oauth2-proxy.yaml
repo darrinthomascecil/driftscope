@@ -1,30 +1,20 @@
-# Entra (Azure AD) OIDC relying party, run as an Istio ext_authz provider (not in
-# the data path). Namespace injected by the kustomization (namespace: driftscope).
+# Entra (Azure AD) OIDC relying party, run as an Istio ext_authz provider (not in the data
+# path). Namespace injected by the kustomization (namespace: driftscope).
 #
-# Access is gated on Entra GROUP membership: only members of the group whose object id is
-# in the driftscope-access ConfigMap (ALLOWED_GROUP_ID) may in; everyone else authenticated
-# gets the custom "no access" page (oauth2-proxy-templates/error.html). The app must emit
-# group claims: `az ad app update --id <app> --set groupMembershipClaims=SecurityGroup`.
+# Deployment-specific values (host, tenant, group) come from the driftscope-params ConfigMap
+# (params.yaml). The composed strings -- OIDC issuer URL and the oauth2 redirect/cookie/whitelist
+# -- are built at runtime with Kubernetes $(VAR) env expansion, so nothing here is hardcoded to a
+# domain or tenant. Access is gated on Entra GROUP membership (ALLOWED_GROUP_ID); non-members get
+# the custom no-access page (oauth2-proxy-templates/error.html). The app must emit group claims:
+# `az ad app update --id <app> --set groupMembershipClaims=SecurityGroup`.
 #
 # The `oauth2-proxy` Secret is NOT in git. Create it from Key Vault before applying:
-#   CID=$(az keyvault secret show --vault-name dscopeclddev01 -n oauth2-proxy-client-id --query value -o tsv)
-#   CSECRET=$(az keyvault secret show --vault-name dscopeclddev01 -n oauth2-proxy-client-secret --query value -o tsv)
+#   CID=$(az keyvault secret show --vault-name <your-kv> -n oauth2-proxy-client-id --query value -o tsv)
+#   CSECRET=$(az keyvault secret show --vault-name <your-kv> -n oauth2-proxy-client-secret --query value -o tsv)
 #   COOKIE=$(openssl rand -hex 16)
 #   kubectl -n driftscope create secret generic oauth2-proxy \
 #     --from-literal=client-id="$CID" --from-literal=client-secret="$CSECRET" --from-literal=cookie-secret="$COOKIE"
 # NOTE: store the client secret VALUE (`password`), never the credential keyId (AADSTS7000215).
----
-# Parameters for group-based access. Swap the group by editing ALLOWED_GROUP_ID (and the
-# display name shown on the no-access page). ALLOWED_GROUP_ID is an Entra group OBJECT ID.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: driftscope-access
-  namespace: driftscope
-data:
-  ALLOWED_GROUP_ID: "82cb7474-d489-4fd7-b7e4-d7d6fad74d0c"   # Entra group "driftscope"
-  ALLOWED_GROUP_NAME: "driftscope"
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -46,35 +36,46 @@ spec:
           image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
           args:
             - --provider=oidc
-            - --oidc-issuer-url=https://login.microsoftonline.com/f493fd7e-e41b-4f64-ad3d-a9704bbfb5f8/v2.0
             - --http-address=0.0.0.0:4180
             - --reverse-proxy=true
             - --upstream=static://200
-            - --redirect-url=https://driftscope.justmakeitgo.net/oauth2/callback
             - --email-domain=*
             - --oidc-email-claim=preferred_username
             - --insecure-oidc-allow-unverified-email=true
             - --scope=openid profile email
             - --cookie-secure=true
-            - --cookie-domain=driftscope.justmakeitgo.net
-            - --whitelist-domain=driftscope.justmakeitgo.net
             - --set-xauthrequest=true
             - --pass-access-token=true
             - --set-authorization-header=true
             - --skip-provider-button=true
             - --custom-templates-dir=/templates          # the "no access" page (error.html)
           env:
+            # --- atomic params (from driftscope-params); ordered first so $(VAR) can expand them ---
+            - name: HOST
+              valueFrom: { configMapKeyRef: { name: driftscope-params, key: HOST } }
+            - name: TENANT_ID
+              valueFrom: { configMapKeyRef: { name: driftscope-params, key: TENANT_ID } }
+            # --- composed at runtime via $(VAR) -- no domain/tenant hardcoded ---
+            - name: OAUTH2_PROXY_OIDC_ISSUER_URL
+              value: "https://login.microsoftonline.com/$(TENANT_ID)/v2.0"
+            - name: OAUTH2_PROXY_REDIRECT_URL
+              value: "https://$(HOST)/oauth2/callback"
+            - name: OAUTH2_PROXY_COOKIE_DOMAINS
+              value: "$(HOST)"
+            - name: OAUTH2_PROXY_WHITELIST_DOMAINS
+              value: "$(HOST)"
+            # --- Entra group gate: only members of ALLOWED_GROUP_ID get in ---
+            - name: OAUTH2_PROXY_ALLOWED_GROUPS
+              valueFrom: { configMapKeyRef: { name: driftscope-params, key: ALLOWED_GROUP_ID } }
+            - name: OAUTH2_PROXY_OIDC_GROUPS_CLAIM
+              value: "groups"
+            # --- secrets (out of git; created from Key Vault) ---
             - name: OAUTH2_PROXY_CLIENT_ID
               valueFrom: { secretKeyRef: { name: oauth2-proxy, key: client-id } }
             - name: OAUTH2_PROXY_CLIENT_SECRET
               valueFrom: { secretKeyRef: { name: oauth2-proxy, key: client-secret } }
             - name: OAUTH2_PROXY_COOKIE_SECRET
               valueFrom: { secretKeyRef: { name: oauth2-proxy, key: cookie-secret } }
-            # --- Entra group gate: only members of ALLOWED_GROUP_ID get in ---
-            - name: OAUTH2_PROXY_ALLOWED_GROUPS
-              valueFrom: { configMapKeyRef: { name: driftscope-access, key: ALLOWED_GROUP_ID } }
-            - name: OAUTH2_PROXY_OIDC_GROUPS_CLAIM
-              value: "groups"                              # Entra emits security-group object ids here
           ports:
             - { name: http, containerPort: 4180 }
           volumeMounts:
