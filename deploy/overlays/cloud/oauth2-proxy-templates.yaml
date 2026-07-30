@@ -1,0 +1,50 @@
+# Custom oauth2-proxy templates. error.html is rendered when a user authenticates but is
+# NOT authorized -- i.e. not a member of the Entra group in driftscope-access -- so a
+# denied user lands here instead of a bare 403. Mounted at /templates (see oauth2-proxy.yaml
+# --custom-templates-dir). Static HTML (no template vars) so it renders regardless of
+# oauth2-proxy version. The group name here mirrors driftscope-access/ALLOWED_GROUP_NAME.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oauth2-proxy-templates
+  namespace: driftscope
+data:
+  error.html: |
+    <!doctype html>
+    <html lang="en"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Access denied — DriftScope</title>
+    <style>
+     :root { color-scheme: light dark; --bg:#0b0e14; --card:#141a24; --fg:#e6edf3;
+             --muted:#8b97a7; --warn:#d29922; --line:#232c39; --accent:#539bf5; }
+     @media (prefers-color-scheme: light) { :root { --bg:#f4f6f9; --card:#fff; --fg:#1f2328;
+             --muted:#5b6572; --line:#e2e7ee; } }
+     * { box-sizing:border-box; }
+     body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg);
+            color:var(--fg); font:15px/1.55 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif; }
+     .card { max-width:460px; margin:20px; padding:32px 30px; background:var(--card);
+             border:1px solid var(--line); border-left:4px solid var(--warn); border-radius:14px;
+             box-shadow:0 4px 24px rgba(0,0,0,.25); }
+     .badge { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.06em;
+              text-transform:uppercase; color:var(--warn); background:rgba(210,153,34,.14);
+              padding:4px 10px; border-radius:999px; margin-bottom:16px; }
+     h1 { font-size:22px; margin:0 0 10px; letter-spacing:-.01em; }
+     p { margin:0 0 14px; color:var(--fg); }
+     .muted { color:var(--muted); font-size:13.5px; }
+     code { background:rgba(83,155,245,.12); color:var(--accent); padding:2px 7px;
+            border-radius:6px; font-size:13px; }
+     a.btn { display:inline-block; margin-top:8px; padding:9px 16px; border-radius:8px;
+             background:var(--accent); color:#fff; text-decoration:none; font-weight:600; font-size:14px; }
+     a.btn:hover { opacity:.9; }
+    </style></head>
+    <body>
+      <div class="card">
+        <span class="badge">Access denied</span>
+        <h1>You don’t have access to DriftScope</h1>
+        <p>You signed in successfully, but access requires membership in the
+           <code>driftscope</code> group in your organization.</p>
+        <p class="muted">If you believe you should have access, ask an administrator to add you
+           to that group. If you signed in with the wrong account, switch accounts below.</p>
+        <a class="btn" href="/oauth2/sign_out?rd=%2F">Sign in with a different account</a>
+      </div>
+    </body></html>
