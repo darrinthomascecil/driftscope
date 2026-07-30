@@ -6,9 +6,10 @@ policy, managed Istio internal ingress, Workload Identity + OIDC), **ACR**, **Ke
 (RBAC + soft-delete + purge-protection), and the AcrPull role. It also **generates**
 `deploy/overlays/cloud/params.yaml` from your values so the app manifests need no hand-editing.
 
-Scope: this is the Azure layer. **Entra** (app + group) is Phase 0.3, **Cloudflare** (tunnel +
-DNS) is Phase 0.4, and the in-cluster mesh/SSO objects are the existing kustomize overlays +
-`mesh/`.
+Scope: the Azure layer (`main.tf`) **and Entra** (`entra.tf`, Phase 0.3) — the SSO app
+registration + the access group (its id flows into `params.yaml`) + the client secret (rotated,
+written to Key Vault). **Cloudflare** (tunnel + DNS) is Phase 0.4; the in-cluster mesh/SSO
+objects are the existing kustomize overlays + `mesh/`.
 
 ## Use
 

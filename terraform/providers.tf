@@ -8,4 +8,10 @@ provider "azurerm" {
   }
 }
 
+provider "azuread" {
+  # Uses your az CLI login. The signed-in identity needs rights to create app
+  # registrations and groups in the tenant.
+}
+
 data "azurerm_client_config" "current" {}
+data "azuread_client_config" "current" {}
