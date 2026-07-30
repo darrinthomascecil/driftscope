@@ -109,7 +109,8 @@ make down            # terraform destroy -- removes AKS, ACR, KV, DNS, Front Doo
 
 - Terraform **state is written locally** (`terraform/terraform.tfstate`) and is **gitignored** —
   it contains the Entra client secret value and must never be committed. So is `terraform.tfvars`.
-  (Phase 0.6 moves state to a remote backend + secrets to External Secrets.)
+  For teams/CD, move state into Azure Storage (shared, locked, versioned) — opt-in, see
+  [`remote-state.md`](remote-state.md). (Secrets → External Secrets is the next 0.6 step.)
 - The `oauth2-proxy` Secret lives only in the cluster, created from Key Vault at deploy time.
   It is never written to disk or git.
 - `make image` edits the overlay's `kustomization.yaml` to your registry; that's a local change,

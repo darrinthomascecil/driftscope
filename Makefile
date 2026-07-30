@@ -11,10 +11,13 @@
 TF   := terraform -chdir=terraform
 B    := scripts/bootstrap
 AUTO ?=
+# Remote state is opt-in: if terraform/backend.hcl exists, init points at it (else local state).
+BACKEND := $(wildcard terraform/backend.hcl)
+BACKEND_ARG := $(if $(BACKEND),-backend-config=backend.hcl,)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up down preflight infra image cluster secret deploy url
+.PHONY: help up down preflight infra image cluster secret deploy url state-backend state-migrate
 
 help: ## Show this help
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
@@ -26,7 +29,7 @@ preflight: ## Check tools, Azure login, and terraform.tfvars
 	@$(B)/preflight.sh
 
 infra: ## terraform init + apply (AKS, ACR, KV, Entra, DNS, Front Door; generates params + edge/)
-	@$(TF) init -input=false
+	@$(TF) init -input=false $(BACKEND_ARG)
 	@$(TF) apply -input=false $(AUTO)
 
 image: ## Build the app image in ACR and point the overlay at it
@@ -43,6 +46,12 @@ deploy: ## Apply the app + mesh hardening + edge TLS/origin-lock, then print the
 
 url: ## Print the app URL
 	@$(TF) output -raw app_url; echo
+
+state-backend: ## (opt-in) Create the Azure Storage remote-state backend; writes terraform/backend.hcl
+	@$(B)/state-backend.sh
+
+state-migrate: ## (opt-in) One-time: migrate existing local state into the remote backend
+	@$(TF) init -input=false -migrate-state -backend-config=backend.hcl
 
 down: ## Tear down ALL Azure resources (terraform destroy)
 	@echo "This destroys the entire deployment (AKS, ACR, KV, DNS, Front Door, Entra app+group)."

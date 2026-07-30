@@ -1,0 +1,14 @@
+# REMOTE Terraform state (opt-in). Local state is the default; copy this file to `backend.tf`
+# to switch state into Azure Storage (shared, locked, versioned) for team/CD use.
+#
+#   STATE_SA=<globally-unique-name> make state-backend   # creates the storage acct + backend.hcl
+#   cp terraform/backend.tf.example terraform/backend.tf
+#   make state-migrate                                   # one-time: moves local state up
+#   make infra                                           # thereafter inits with -backend-config
+#
+# Config lives in backend.hcl (git-ignored) so this file carries no account-specific values.
+# Keyless: use_azuread_auth = true -- no storage account keys in config or state.
+# See docs/remote-state.md.
+terraform {
+  backend "azurerm" {}
+}
