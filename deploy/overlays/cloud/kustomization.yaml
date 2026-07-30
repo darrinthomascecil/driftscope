@@ -4,7 +4,6 @@ namespace: driftscope
 resources:
   - ../../base
   - params.yaml           # DEPLOYMENT PARAMETERS -- edit to deploy your own (host/tenant/group)
-  - cloudflared.yaml
   - oauth2-proxy.yaml     # Entra OIDC relying party (Istio ext_authz provider) + group gate
   - oauth2-proxy-templates.yaml   # custom "no access" page for non-group members
   - istio-routing.yaml    # Gateway + VirtualService + STRICT mTLS

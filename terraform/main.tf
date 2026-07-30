@@ -64,9 +64,10 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 
   service_mesh_profile {
-    mode                             = "Istio"
-    revisions                        = [var.istio_revision]
-    internal_ingress_gateway_enabled = true
+    mode      = "Istio"
+    revisions = [var.istio_revision]
+    # Front Door reaches the EXTERNAL gateway (public IP). The tunnel (internal gateway) is gone.
+    external_ingress_gateway_enabled = true
   }
 }
 

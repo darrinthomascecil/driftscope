@@ -9,7 +9,7 @@ metadata:
   name: driftscope
 spec:
   selector:
-    istio: aks-istio-ingressgateway-internal   # managed internal gateway (no public IP)
+    istio: aks-istio-ingressgateway-external   # managed internal gateway (no public IP)
   servers:
     - port: { number: 80, name: http, protocol: HTTP }
       hosts: ["driftscope.justmakeitgo.net"]
@@ -71,4 +71,4 @@ spec:
     - from:
         - source:
             principals:
-              - cluster.local/ns/aks-istio-ingress/sa/aks-istio-ingressgateway-internal
+              - cluster.local/ns/aks-istio-ingress/sa/aks-istio-ingressgateway-external
