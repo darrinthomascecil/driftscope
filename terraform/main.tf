@@ -4,6 +4,12 @@ locals {
   subdomain         = "driftscope"
   # With a custom domain: driftscope.<domain>. Without: Front Door's default *.azurefd.net host.
   host = local.use_custom_domain ? "${local.subdomain}.${var.base_domain}" : azurerm_cdn_frontdoor_endpoint.this.host_name
+
+  # The name Front Door DIALS to reach the origin (SNI + DNS target), distinct from the public
+  # `host` above. Custom domain: origin.<domain> (A -> gateway IP) with a cert-manager DNS-01
+  # cert. No domain: the gateway's cloudapp FQDN, reached over HTTP (no cert issuable there).
+  origin_host      = local.use_custom_domain ? "origin.${var.base_domain}" : azurerm_public_ip.gateway.fqdn
+  use_https_origin = local.use_custom_domain # Front Door -> origin is HTTPS only when we can issue a real cert
 }
 
 resource "azurerm_resource_group" "this" {

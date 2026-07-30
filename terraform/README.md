@@ -2,17 +2,19 @@
 
 Provisions the cloud substrate DriftScope runs on, as code, so it's reproducible: resource
 group, **AKS** (Overlay CNI with **Cilium network policy** — the fix for the inert egress
-policy, managed Istio internal ingress, Workload Identity + OIDC), **ACR**, **Key Vault**
+policy, managed Istio **external** ingress, Workload Identity + OIDC), **ACR**, **Key Vault**
 (RBAC + soft-delete + purge-protection), and the AcrPull role. It also **generates**
-`deploy/overlays/cloud/params.yaml` from your values so the app manifests need no hand-editing.
+`deploy/overlays/cloud/params.yaml` and the `edge/` manifests from your values so the app
+manifests need no hand-editing.
 
 Scope: the Azure layer (`main.tf`), **Entra** (`entra.tf`, Phase 0.3), and the **edge** —
 **Azure DNS** (`dns.tf`) + **Azure Front Door Standard** (`frontdoor.tf`, Phase 0.4): managed
 TLS (browser-facing, no cert-manager) + WAF + DDoS + CDN, in front of the Istio gateway. This
 replaces the original Cloudflare tunnel — the deployment is now all-Azure. The gateway-side
-wiring (external gateway with the BYO IP, self-signed origin cert, X-Azure-FDID origin lock,
-remove cloudflared) is Phase 0.4b in the kustomize overlays. In-cluster mesh/SSO objects are the
-existing overlays + `mesh/`.
+wiring (external gateway on the BYO IP; **cert-manager DNS-01** origin cert for `origin.<domain>`
+via `certmanager.tf` + generated `edge/`; `X-Azure-FDID` origin lock; remove cloudflared) is
+Phase 0.4b in the kustomize overlays — see `docs/design-edge-origin-cert.md`. In-cluster mesh/SSO
+objects are the existing overlays + `mesh/`.
 
 ### Domain: bring your own, or don't
 - **No custom domain (default):** leave `base_domain` unset. The app runs on Front Door's

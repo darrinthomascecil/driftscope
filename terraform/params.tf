@@ -9,7 +9,5 @@ resource "local_file" "params" {
     tenant_id          = local.tenant_id
     allowed_group_id   = azuread_group.access.object_id
     allowed_group_name = var.allowed_group_name
-    origin_fqdn        = azurerm_public_ip.gateway.fqdn
-    frontdoor_id       = azurerm_cdn_frontdoor_profile.this.resource_guid
   })
 }

@@ -21,6 +21,6 @@ data:
   # Entra security group whose members may access the app: object id + display name (page text).
   ALLOWED_GROUP_ID: "82cb7474-d489-4fd7-b7e4-d7d6fad74d0c"
   ALLOWED_GROUP_NAME: "driftscope"
-  # Front Door edge (0.4b) -- TERRAFORM-GENERATED (placeholders until `terraform apply`):
-  ORIGIN_FQDN: "REPLACE.eastus.cloudapp.azure.com"   # gateway FQDN the origin cert is issued for
-  FRONTDOOR_ID: "REPLACE-FRONT-DOOR-GUID"            # X-Azure-FDID the gateway validates (origin lock)
+  # NOTE: the Front Door edge config (origin cert + X-Azure-FDID origin lock) is NOT here -- it
+  # lives in the gateway namespace (aks-istio-ingress), generated into edge/ by terraform/edge.tf.
+  # This ConfigMap is strictly the app-consumed config.

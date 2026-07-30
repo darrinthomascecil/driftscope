@@ -19,7 +19,7 @@ resource "azurerm_dns_txt_record" "fd_validation" {
   }
 }
 
-# The app hostname points at the Front Door endpoint.
+# The public app hostname points at the Front Door endpoint (CNAME -> *.azurefd.net).
 resource "azurerm_dns_cname_record" "app" {
   count               = local.use_custom_domain ? 1 : 0
   name                = local.subdomain
@@ -27,4 +27,16 @@ resource "azurerm_dns_cname_record" "app" {
   resource_group_name = azurerm_resource_group.this.name
   ttl                 = 3600
   record              = azurerm_cdn_frontdoor_endpoint.this.host_name
+}
+
+# The ORIGIN hostname points straight at the gateway public IP (A record). This is the name
+# Front Door dials for leg 2 and the name cert-manager issues the origin cert for. Distinct from
+# the public CNAME above so Front Door doesn't resolve the origin back to itself (loop).
+resource "azurerm_dns_a_record" "origin" {
+  count               = local.use_custom_domain ? 1 : 0
+  name                = "origin"
+  zone_name           = azurerm_dns_zone.this[0].name
+  resource_group_name = azurerm_resource_group.this.name
+  ttl                 = 3600
+  records             = [azurerm_public_ip.gateway.ip_address]
 }

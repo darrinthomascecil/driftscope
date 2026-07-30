@@ -11,7 +11,6 @@ data:
   TENANT_ID: "${tenant_id}"
   ALLOWED_GROUP_ID: "${allowed_group_id}"
   ALLOWED_GROUP_NAME: "${allowed_group_name}"
-  # Front Door edge (0.4b): the origin FQDN cert-manager issues a cert for, and the Front Door
-  # GUID the gateway validates (X-Azure-FDID) to reject non-Front-Door traffic.
-  ORIGIN_FQDN: "${origin_fqdn}"
-  FRONTDOOR_ID: "${frontdoor_id}"
+  # NOTE: the Front Door edge config (origin cert + X-Azure-FDID origin lock) is NOT here -- it
+  # lives in the gateway namespace (aks-istio-ingress), generated into deploy/overlays/cloud/edge/
+  # by terraform/edge.tf. This ConfigMap is strictly the app-consumed config.

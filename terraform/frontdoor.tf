@@ -1,12 +1,13 @@
 # Azure Front Door Standard: managed TLS (browser-facing) + WAF + DDoS + CDN, in front of the
-# Istio ingress gateway. The origin is a public IP with a <label>.<region>.cloudapp.azure.com DNS
-# name, locked to THIS Front Door (service tag + X-Azure-FDID header check, wired on the gateway
-# in 0.4b). Front Door -> origin runs HTTPS with a REAL Let's Encrypt cert on the gateway
-# (cert-manager, 0.4b) for that FQDN, and Front Door VALIDATES it -- authenticated + encrypted,
-# no disabled-cert-validation finding.
+# Istio ingress gateway. The origin is a public IP, locked to THIS Front Door (service tag +
+# X-Azure-FDID header check on the gateway). Leg 2 (Front Door -> origin):
+#   * custom domain -> HTTPS to origin.<domain>, a REAL cert-manager DNS-01 cert the gateway
+#     presents and Front Door VALIDATES -- authenticated + encrypted, no CWE-295 finding.
+#   * no domain (demo) -> HTTP to the cloudapp FQDN (DNS-01 can't cert a zone we don't own).
+# Full rationale + the rejected alternatives: docs/design-edge-origin-cert.md.
 
 # Static public IP the external Istio ingress gateway will use (BYO IP -> stable origin). The DNS
-# label gives it a real FQDN so a CA cert can be issued and Front Door can validate it.
+# label gives it a resolvable FQDN Front Door can dial as the demo-mode (HTTP) origin.
 resource "azurerm_public_ip" "gateway" {
   name                = "${var.name_prefix}-gw-pip"
   resource_group_name = azurerm_resource_group.this.name
@@ -45,7 +46,7 @@ resource "azurerm_cdn_frontdoor_origin_group" "gateway" {
 
   health_probe {
     path                = "/healthz" # exempted from SSO in 0.4b so this returns 200
-    protocol            = "Https"
+    protocol            = local.use_https_origin ? "Https" : "Http"
     interval_in_seconds = 100
     request_type        = "GET"
   }
@@ -56,14 +57,17 @@ resource "azurerm_cdn_frontdoor_origin" "gateway" {
   cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.gateway.id
   enabled                       = true
 
-  host_name          = azurerm_public_ip.gateway.fqdn # cloudapp FQDN -> Front Door validates a real cert for it
-  origin_host_header = local.host                     # HTTP Host for Istio routing (separate from the TLS name)
+  host_name          = local.origin_host # origin.<domain> (custom, DNS-01 cert) or cloudapp FQDN (demo, HTTP)
+  origin_host_header = local.host        # HTTP Host for Istio routing (separate from the TLS/SNI name)
   http_port          = 80
   https_port         = 443
   priority           = 1
   weight             = 1000
 
-  certificate_name_check_enabled = true # gateway presents a real Let's Encrypt cert for the FQDN; Front Door validates it
+  # Custom domain: gateway presents a real Let's Encrypt cert for origin.<domain> and Front Door
+  # validates it. Demo (no domain): leg 2 is HTTP, so there is no cert to validate -- see
+  # docs/design-edge-origin-cert.md for why the cloudapp FQDN can't get a DNS-01 cert.
+  certificate_name_check_enabled = local.use_https_origin
 }
 
 resource "azurerm_cdn_frontdoor_custom_domain" "this" {
@@ -86,7 +90,7 @@ resource "azurerm_cdn_frontdoor_route" "this" {
 
   supported_protocols    = ["Http", "Https"]
   patterns_to_match      = ["/*"]
-  forwarding_protocol    = "HttpsOnly" # Front Door -> origin encrypted
+  forwarding_protocol    = local.use_https_origin ? "HttpsOnly" : "HttpOnly" # leg 2: HTTPS with a real cert (custom) or HTTP (demo)
   https_redirect_enabled = true
   link_to_default_domain = local.use_custom_domain ? false : true # use the *.azurefd.net host when no custom domain
 }

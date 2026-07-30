@@ -1,18 +1,31 @@
-# Mesh entry + routing for driftscope, fronted by the AKS managed-Istio internal
+# Mesh entry + routing for driftscope, fronted by the AKS managed-Istio EXTERNAL
 # ingress gateway. Namespace is injected by the kustomization (namespace: driftscope).
 #
-# Request path: Cloudflare -> tunnel -> cloudflared (out of mesh) -> this Gateway
-#   -> VirtualService -> mTLS -> app sidecar. /oauth2/* is peeled off to oauth2-proxy.
+# Request path: Front Door -> external gateway public IP -> this Gateway -> VirtualService
+#   -> mTLS -> app sidecar. /oauth2/* is peeled off to oauth2-proxy. Leg 2 (Front Door ->
+#   gateway) is HTTPS on :443 with a cert-manager cert in custom-domain mode, else HTTP on :80.
+#   See docs/design-edge-origin-cert.md.
 apiVersion: networking.istio.io/v1
 kind: Gateway
 metadata:
   name: driftscope
 spec:
   selector:
-    istio: aks-istio-ingressgateway-external   # managed internal gateway (no public IP)
+    istio: aks-istio-ingressgateway-external   # managed external gateway (BYO public IP)
   servers:
     - port: { number: 80, name: http, protocol: HTTP }
-      hosts: ["driftscope.justmakeitgo.net"]
+      hosts: ["driftscope.justmakeitgo.net"]   # <- overwritten by kustomize replacements (HOST)
+    # HTTPS origin listener (custom-domain mode). Front Door dials origin.<domain> (SNI); the
+    # gateway presents the cert-manager cert in secret driftscope-origin-tls (issued into
+    # aks-istio-ingress, the gateway's own namespace, where Istio reads credentialName secrets).
+    # hosts:["*"] so any SNI terminates with that cert -- HTTP routing still keys off the Host
+    # header (the public HOST) via the VirtualService below. In demo mode the secret is absent
+    # and this listener stays dormant while Front Door uses the :80 HTTP origin. Harmless either way.
+    - port: { number: 443, name: https, protocol: HTTPS }
+      hosts: ["*"]
+      tls:
+        mode: SIMPLE
+        credentialName: driftscope-origin-tls
 ---
 apiVersion: networking.istio.io/v1
 kind: VirtualService
