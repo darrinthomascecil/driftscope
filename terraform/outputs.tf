@@ -72,5 +72,15 @@ output "frontdoor_id" {
 
 output "origin_fqdn" {
   value       = azurerm_public_ip.gateway.fqdn
-  description = "Gateway's cloudapp.azure.com FQDN -- cert-manager issues the origin cert for this (0.4b)."
+  description = "Gateway's cloudapp.azure.com FQDN -- the demo-mode (HTTP) origin. Production uses origin_host."
+}
+
+output "origin_host" {
+  value       = local.origin_host
+  description = "Name Front Door dials for leg 2: origin.<domain> (custom, DNS-01 cert) or the cloudapp FQDN (demo, HTTP)."
+}
+
+output "certmanager_client_id" {
+  value       = try(azurerm_user_assigned_identity.certmanager[0].client_id, null)
+  description = "Managed-identity client id for cert-manager Workload Identity (custom-domain mode). Feed to the cert-manager helm install -- see edge/README.md."
 }

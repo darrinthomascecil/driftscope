@@ -119,4 +119,4 @@ spec:
     - from:
         - source:
             principals:
-              - cluster.local/ns/aks-istio-ingress/sa/aks-istio-ingressgateway-internal
+              - cluster.local/ns/aks-istio-ingress/sa/aks-istio-ingressgateway-external

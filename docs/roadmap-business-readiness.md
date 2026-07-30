@@ -59,14 +59,20 @@ Decision: drop the Cloudflare dependency, go all-Azure. **Azure DNS** zone (name
 delegated at the registrar) + **Azure Front Door Standard** — managed TLS (browser-facing, so
 no cert-manager for the public cert) + WAF + DDoS + CDN, in front of the Istio gateway.
 Chose Standard (~$35/mo, origin locked to Front Door via `X-Azure-FDID` + service tag) over
-Premium (~$330/mo, Private Link). Front Door→origin runs HTTPS with a **real Let's Encrypt cert**
-on the gateway, issued for its `<label>.<region>.cloudapp.azure.com` FQDN, and Front Door
-**validates it** (`certificate_name_check = true`) — authenticated + encrypted, no
-disabled-cert-validation finding. (Self-signed was rejected: a security team flags disabled cert
-validation, CWE-295.) **0.4a** = the Terraform (DNS + Front Door + WAF + BYO gateway IP with a
-DNS label). **0.4b** = the overlay side: external gateway on the BYO IP, **cert-manager** issuing
-the origin cert (HTTP-01 for the cloudapp FQDN) → Istio Gateway HTTPS, the `X-Azure-FDID`
-origin-lock policy, exempt `/healthz` from SSO (Front Door health probe), and remove cloudflared.
+Premium (~$330/mo, Private Link). Front Door→origin (leg 2) runs HTTPS with a **real Let's Encrypt
+cert** on the gateway, issued via **cert-manager DNS-01** for **`origin.<domain>`** (an A record →
+the gateway IP, in the Azure DNS zone we own), and Front Door **validates it**
+(`certificate_name_check = true`) — authenticated + encrypted, no disabled-cert-validation finding
+(CWE-295; self-signed was rejected for the same reason). DNS-01 (not HTTP-01) because it's the
+robust, unattended renewal path and doesn't need the awkward ACME-challenge routing a classic
+Istio Gateway would require; the full analysis is in **`docs/design-edge-origin-cert.md`**. The
+domain-less **demo mode** can't DNS-01 the Microsoft-owned `cloudapp.azure.com` zone, so there
+leg 2 is **HTTP** over the Azure backbone (browser leg still HTTPS) — documented, demo-only.
+**0.4a** = the Terraform (DNS + Front Door + WAF + BYO gateway IP with a DNS label). **0.4b** =
+the overlay + edge side: external gateway on the BYO IP; **cert-manager** (Workload Identity) +
+DNS-01 `ClusterIssuer` + origin `Certificate` → Istio Gateway `:443` HTTPS; the `X-Azure-FDID`
+origin-lock policy; exempt `/healthz` from SSO (Front Door health probe); remove cloudflared.
+The edge objects live in `deploy/overlays/cloud/edge/` (Terraform-generated, applied directly).
 
 > **Premium + Private Link would obviate the origin cert entirely** — the Front Door→origin hop
 > would traverse a *private* connection (no public path), so there's no public MITM surface and no

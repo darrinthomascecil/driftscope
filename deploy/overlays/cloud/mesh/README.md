@@ -34,7 +34,7 @@ kubectl apply -f require-sso.authorizationpolicy.yaml
 Point the public hostname at the internal gateway (replaces the direct-to-app service):
 
 ```
-service: http://aks-istio-ingressgateway-internal.aks-istio-ingress.svc.cluster.local:80
+service: http://aks-istio-ingressgateway-external.aks-istio-ingress.svc.cluster.local:80
 ```
 
 ## Revision upgrades

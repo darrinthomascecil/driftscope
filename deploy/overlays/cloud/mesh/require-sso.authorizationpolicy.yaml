@@ -14,11 +14,11 @@ metadata:
 spec:
   selector:
     matchLabels:
-      istio: aks-istio-ingressgateway-internal
+      istio: aks-istio-ingressgateway-external
   action: CUSTOM
   provider:
     name: oauth2-proxy
   rules:
     - to:
         - operation:
-            notPaths: ["/oauth2/*"]
+            notPaths: ["/oauth2/*", "/healthz"] # /healthz public for the Front Door health probe

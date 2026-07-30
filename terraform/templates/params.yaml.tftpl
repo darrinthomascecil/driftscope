@@ -11,3 +11,6 @@ data:
   TENANT_ID: "${tenant_id}"
   ALLOWED_GROUP_ID: "${allowed_group_id}"
   ALLOWED_GROUP_NAME: "${allowed_group_name}"
+  # NOTE: the Front Door edge config (origin cert + X-Azure-FDID origin lock) is NOT here -- it
+  # lives in the gateway namespace (aks-istio-ingress), generated into deploy/overlays/cloud/edge/
+  # by terraform/edge.tf. This ConfigMap is strictly the app-consumed config.

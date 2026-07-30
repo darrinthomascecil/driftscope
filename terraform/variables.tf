@@ -26,6 +26,15 @@ variable "base_domain" {
   description = "Custom domain (optional). Unset => Front Door default *.azurefd.net hostname."
 }
 
+variable "acme_email" {
+  type    = string
+  default = ""
+  # Used only in custom-domain mode, for the Let's Encrypt account that issues the ORIGIN cert
+  # (cert-manager DNS-01). Optional -- Let's Encrypt allows an anonymous account -- but set it to
+  # get expiry/renewal-failure notifications. The public (browser) cert is Front Door's, not this.
+  description = "Email for the Let's Encrypt ACME account behind the origin cert (custom-domain mode only)."
+}
+
 variable "tenant_id" {
   type        = string
   default     = null
@@ -57,7 +66,7 @@ variable "key_vault_name" {
 
 variable "gateway_dns_label" {
   type        = string
-  description = "DNS label for the gateway's public IP -> <label>.<region>.cloudapp.azure.com (unique per region). This FQDN is what the origin cert is issued for and Front Door validates."
+  description = "DNS label for the gateway's public IP -> <label>.<region>.cloudapp.azure.com (unique per region). This is the demo-mode (HTTP) origin Front Door dials; custom-domain mode uses origin.<domain> with a DNS-01 cert instead."
 }
 
 # ---- Cluster shape ----

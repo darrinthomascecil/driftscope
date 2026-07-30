@@ -44,7 +44,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      istio: aks-istio-ingressgateway-internal
+      istio: aks-istio-ingressgateway-external
   action: ALLOW
   rules:
     - {}
@@ -61,7 +61,7 @@ metadata:
 spec:
   workloadSelector:
     labels:
-      istio: aks-istio-ingressgateway-internal
+      istio: aks-istio-ingressgateway-external
   configPatches:
     - applyTo: NETWORK_FILTER
       match:

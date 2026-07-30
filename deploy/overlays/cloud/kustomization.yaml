@@ -4,13 +4,13 @@ namespace: driftscope
 resources:
   - ../../base
   - params.yaml           # DEPLOYMENT PARAMETERS -- edit to deploy your own (host/tenant/group)
-  - cloudflared.yaml
   - oauth2-proxy.yaml     # Entra OIDC relying party (Istio ext_authz provider) + group gate
   - oauth2-proxy-templates.yaml   # custom "no access" page for non-group members
   - istio-routing.yaml    # Gateway + VirtualService + STRICT mTLS
   - networkpolicy.yaml    # egress lockdown (blocks IMDS + private ranges)
-  # Cluster-scoped mesh objects (ext_authz provider, gateway AuthorizationPolicy) live
-  # in mesh/ and are applied directly -- see mesh/README.md.
+  # Gateway-namespace objects are applied directly, outside this kustomization:
+  #   mesh/  -- ext_authz provider, mesh-wide STRICT + default-deny, path normalization
+  #   edge/  -- origin TLS (cert-manager) + X-Azure-FDID origin lock (Terraform-generated)
 images:
   # The ACR/image is a deployment parameter -- set to your registry (Phase 0.2: Terraform emits it).
   - name: driftscope
@@ -47,7 +47,8 @@ patches:
         path: /spec/template/metadata/labels/azure.workload.identity~1use
   - target: {kind: Service, name: driftscope}
     patch: |-
-      # ClusterIP only -- reached via the Cloudflare Tunnel, no public IP.
+      # ClusterIP only -- reached in-cluster via the Istio gateway (Front Door is the sole
+      # public entry point); the app Service itself has no public IP.
       - op: replace
         path: /spec/ports/0/port
         value: 80
