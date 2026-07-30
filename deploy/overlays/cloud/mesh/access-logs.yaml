@@ -1,0 +1,22 @@
+# Envoy access logging, mesh-wide, via the Telemetry API (current best practice -- targets
+# workloads by scope/label instead of the old mesh-wide meshConfig.accessLogFile).
+# Lives in the root namespace (aks-istio-system) so it applies to the whole mesh; applied
+# directly like the other objects in mesh/. See docs/design-observability.md.
+#
+# The default `envoy` provider logs to stdout in Istio's standard format, which includes
+# %RESPONSE_FLAGS% and %REQ(X-REQUEST-ID)% -- so `kubectl logs <pod> -c istio-proxy` shows
+# per-request lines that NAME the failure. Verified:
+#   app sidecar:     "GET /report" 403 -    rbac_access_denied_matched_policy[none]   <- RBAC deny
+#   gateway sidecar: "GET /report" 302 UAEX ext_authz_denied                          <- SSO/ext_authz deny
+#
+# NEXT (edge correlation): define a custom-format provider in the shared meshConfig that adds
+# %REQ(CF-RAY)% so a Cloudflare 530/524 can be joined to the in-cluster request by id.
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: mesh-access-logs
+  namespace: aks-istio-system
+spec:
+  accessLogging:
+    - providers:
+        - name: envoy
