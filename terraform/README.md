@@ -14,7 +14,15 @@ wiring (external gateway with the BYO IP, self-signed origin cert, X-Azure-FDID 
 remove cloudflared) is Phase 0.4b in the kustomize overlays. In-cluster mesh/SSO objects are the
 existing overlays + `mesh/`.
 
-After apply, delegate the zone: add the four `dns_name_servers` (output) at your registrar.
+### Domain: bring your own, or don't
+- **No custom domain (default):** leave `base_domain` unset. The app runs on Front Door's
+  `*.azurefd.net` hostname — no domain ownership, no Azure DNS zone, no registrar delegation.
+  The URL is the `app_url` output. Ideal for demos / clone-and-run.
+- **Custom domain:** set `base_domain` (e.g. `acme.com`) → app at `driftscope.acme.com` with a
+  managed cert + an Azure DNS zone. After apply, delegate by adding the four `dns_name_servers`
+  (output) at your registrar.
+
+The chosen host flows automatically into the Entra redirect URI, `params.yaml`, and oauth2-proxy.
 
 ## Use
 

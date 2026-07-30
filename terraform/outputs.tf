@@ -45,9 +45,14 @@ output "allowed_group_id" {
   description = "Object id of the access group (flows into params.yaml)."
 }
 
+output "app_url" {
+  value       = "https://${local.host}"
+  description = "Where the app is served -- your custom domain, or the Front Door *.azurefd.net default."
+}
+
 output "dns_name_servers" {
-  value       = azurerm_dns_zone.this.name_servers
-  description = "Add these at your domain registrar to delegate the zone to Azure DNS."
+  value       = local.use_custom_domain ? azurerm_dns_zone.this[0].name_servers : []
+  description = "Delegate these at your registrar (empty when running on the *.azurefd.net default host)."
 }
 
 output "frontdoor_endpoint_host" {

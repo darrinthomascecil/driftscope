@@ -63,6 +63,7 @@ resource "azurerm_cdn_frontdoor_origin" "gateway" {
 }
 
 resource "azurerm_cdn_frontdoor_custom_domain" "this" {
+  count                    = local.use_custom_domain ? 1 : 0
   name                     = "driftscope"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
   host_name                = local.host
@@ -77,17 +78,18 @@ resource "azurerm_cdn_frontdoor_route" "this" {
   cdn_frontdoor_endpoint_id       = azurerm_cdn_frontdoor_endpoint.this.id
   cdn_frontdoor_origin_group_id   = azurerm_cdn_frontdoor_origin_group.gateway.id
   cdn_frontdoor_origin_ids        = [azurerm_cdn_frontdoor_origin.gateway.id]
-  cdn_frontdoor_custom_domain_ids = [azurerm_cdn_frontdoor_custom_domain.this.id]
+  cdn_frontdoor_custom_domain_ids = local.use_custom_domain ? [azurerm_cdn_frontdoor_custom_domain.this[0].id] : []
 
   supported_protocols    = ["Http", "Https"]
   patterns_to_match      = ["/*"]
   forwarding_protocol    = "HttpsOnly" # Front Door -> origin encrypted
   https_redirect_enabled = true
-  link_to_default_domain = false
+  link_to_default_domain = local.use_custom_domain ? false : true # use the *.azurefd.net host when no custom domain
 }
 
 resource "azurerm_cdn_frontdoor_custom_domain_association" "this" {
-  cdn_frontdoor_custom_domain_id = azurerm_cdn_frontdoor_custom_domain.this.id
+  count                          = local.use_custom_domain ? 1 : 0
+  cdn_frontdoor_custom_domain_id = azurerm_cdn_frontdoor_custom_domain.this[0].id
   cdn_frontdoor_route_ids        = [azurerm_cdn_frontdoor_route.this.id]
 }
 
@@ -129,7 +131,8 @@ resource "azurerm_cdn_frontdoor_security_policy" "this" {
       association {
         patterns_to_match = ["/*"]
         domain {
-          cdn_frontdoor_domain_id = azurerm_cdn_frontdoor_custom_domain.this.id
+          # associate the custom domain if there is one, else the default endpoint
+          cdn_frontdoor_domain_id = local.use_custom_domain ? azurerm_cdn_frontdoor_custom_domain.this[0].id : azurerm_cdn_frontdoor_endpoint.this.id
         }
       }
     }

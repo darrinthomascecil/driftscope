@@ -1,7 +1,9 @@
 locals {
-  tenant_id = coalesce(var.tenant_id, data.azurerm_client_config.current.tenant_id)
-  subdomain = "driftscope"
-  host      = "${local.subdomain}.${var.base_domain}"
+  tenant_id         = coalesce(var.tenant_id, data.azurerm_client_config.current.tenant_id)
+  use_custom_domain = var.base_domain != null && var.base_domain != ""
+  subdomain         = "driftscope"
+  # With a custom domain: driftscope.<domain>. Without: Front Door's default *.azurefd.net host.
+  host = local.use_custom_domain ? "${local.subdomain}.${var.base_domain}" : azurerm_cdn_frontdoor_endpoint.this.host_name
 }
 
 resource "azurerm_resource_group" "this" {

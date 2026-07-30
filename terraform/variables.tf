@@ -18,8 +18,12 @@ variable "location" {
 
 # ---- The public identity of YOUR deployment (drives the app config / params.yaml) ----
 variable "base_domain" {
-  type        = string
-  description = "Your domain. The app is served at driftscope.<base_domain> (e.g. acme.com)."
+  type    = string
+  default = null
+  # LEAVE UNSET to run on Front Door's default *.azurefd.net hostname -- no domain ownership,
+  # no Azure DNS zone, no registrar delegation needed (great for demos / clone-and-run).
+  # SET it (e.g. "acme.com") to serve at driftscope.<base_domain> with a managed cert + Azure DNS.
+  description = "Custom domain (optional). Unset => Front Door default *.azurefd.net hostname."
 }
 
 variable "tenant_id" {
