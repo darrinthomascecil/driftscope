@@ -36,9 +36,11 @@ kubectl apply -f grafana.yaml
   `connection_security_policy="unknown"` (health probes, denied requests). Tighten it
   with `reporter="destination"` and by excluding probe sources before treating it as
   actionable — otherwise it's noisy.
-- No **Alertmanager** yet: Prometheus *evaluates* the rules (you can see them firing at
-  `/alerts`), but delivering notifications (email/Slack/Teams) needs an Alertmanager +
-  a receiver. That's the last-mile hookup.
+- **Alertmanager is deployed** (`alertmanager.yaml`) and wired to Prometheus (verified:
+  `MeshAuthzDenied` routes to it). It uses a **placeholder webhook** (`example.invalid`) read
+  from the `alertmanager-webhook` Secret, so delivery fails harmlessly until you set a real
+  URL. To go live, replace the Secret (Slack/webhook/PagerDuty adapter) and restart:
+  `kubectl -n monitoring create secret generic alertmanager-webhook --from-literal=webhook-url='https://...' --dry-run=client -o yaml | kubectl apply -f - && kubectl -n monitoring rollout restart deployment alertmanager`
 - Retention is 6h on an `emptyDir` — this is a security-signal store, not long-term
   metrics. For history, point it at a PVC or Azure Monitor managed Prometheus.
 - Not exposed through the gateway/SSO. If you want Grafana behind Entra like the app,

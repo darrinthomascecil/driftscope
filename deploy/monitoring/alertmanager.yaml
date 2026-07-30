@@ -1,0 +1,85 @@
+# Alertmanager -- the delivery half of the alerting loop. Prometheus evaluates the rules
+# (deploy/monitoring/prometheus.yaml) and pushes firing alerts here; Alertmanager routes,
+# groups, dedupes, and delivers them. Out of mesh, internal-only, like the rest of monitoring/.
+#
+# PLACEHOLDER RECEIVER: the webhook URL is read from a file (url_file) mounted from the
+# `alertmanager-webhook` Secret, so it's swappable without touching config. Until you set a
+# real URL (Slack incoming-webhook / a bridge / PagerDuty-events adapter), delivery attempts
+# will fail harmlessly and log. To go live:
+#   kubectl -n monitoring create secret generic alertmanager-webhook \
+#     --from-literal=webhook-url='https://hooks.slack.com/services/XXX/YYY/ZZZ' \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl -n monitoring rollout restart deployment alertmanager
+---
+apiVersion: v1
+kind: Secret
+metadata: { name: alertmanager-webhook, namespace: monitoring }
+type: Opaque
+stringData:
+  # REPLACE with your real Slack/webhook/PagerDuty-adapter URL.
+  webhook-url: "https://example.invalid/REPLACE-WITH-YOUR-WEBHOOK-URL"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: alertmanager-config, namespace: monitoring }
+data:
+  alertmanager.yml: |
+    route:
+      receiver: null-default          # unrouted alerts go nowhere (avoids noise)
+      group_by: ['alertname', 'severity']
+      group_wait: 30s                 # wait to batch related alerts into one notification
+      group_interval: 5m
+      repeat_interval: 4h             # re-notify cadence for a still-firing alert
+      routes:
+        - matchers: ['severity = "critical"']   # e.g. MeshAuthzDenied (lateral movement)
+          receiver: notify
+          repeat_interval: 1h                    # page more often
+        - matchers: ['severity = "warning"']     # NonMutualTLS, SSOUnauthenticatedSpike
+          receiver: notify
+    inhibit_rules:
+      # when a critical alert fires, mute the warnings that share its alertname
+      - source_matchers: ['severity = "critical"']
+        target_matchers: ['severity = "warning"']
+        equal: ['alertname']
+    receivers:
+      - name: null-default
+      - name: notify
+        webhook_configs:
+          - url_file: /etc/alertmanager/secrets/webhook-url   # swap the Secret, not this file
+            send_resolved: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: alertmanager, namespace: monitoring, labels: { app: alertmanager } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: alertmanager } }
+  template:
+    metadata: { labels: { app: alertmanager } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 65534, fsGroup: 65534 }
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.28.1
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+            - --storage.path=/alertmanager
+          ports: [ { containerPort: 9093, name: http } ]
+          volumeMounts:
+            - { name: config, mountPath: /etc/alertmanager }
+            - { name: webhook, mountPath: /etc/alertmanager/secrets, readOnly: true }
+            - { name: data, mountPath: /alertmanager }
+          resources:
+            requests: { cpu: 10m, memory: 48Mi }
+            limits: { memory: 96Mi }
+      volumes:
+        - { name: config, configMap: { name: alertmanager-config } }
+        - { name: webhook, secret: { secretName: alertmanager-webhook } }
+        - { name: data, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: alertmanager, namespace: monitoring }
+spec:
+  selector: { app: alertmanager }
+  ports: [ { port: 9093, targetPort: 9093 } ]
