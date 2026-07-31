@@ -18,6 +18,15 @@ The private key is the one real secret. Two ways to hold it, in order of prefere
 Both always need GITHUB_APP_ID and GITHUB_APP_INSTALLATION_ID. When none of the App
 configuration is present, `installation_token()` returns None and the caller falls
 through to a `GITHUB_TOKEN`/`gh` credential -- so this is inert until opted into.
+
+## Multiple apps (bring-your-own)
+
+`installation_token(auth)` takes a `GitHubAppAuth` describing *which* app to mint for, so
+a multi-tenant server can hold many. Called with no argument it reads the process env (the
+single-app default), preserving the original behaviour. The token cache is keyed by
+`GitHubAppAuth.cache_key()` -- app + installation + signing reference -- so two tenants'
+tokens never collide. Tenant apps always sign via Key Vault; only the env default can
+reach the local-PEM path.
 """
 
 from __future__ import annotations
@@ -33,38 +42,56 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 
+from .forge.identity import GitHubAppAuth, KeyVaultKeyRef
+
 _KV_API_VERSION = "7.4"
-# Cache the installation token across a run; refresh once it is within the skew of
-# expiry. Tokens last ~1h and minting costs two HTTPS calls, so this matters on a
-# multi-repo scan.
+# Cache installation tokens across a run; refresh once within the skew of expiry. Tokens
+# last ~1h and minting costs two HTTPS calls, so this matters on a multi-repo scan. Keyed
+# by GitHubAppAuth.cache_key() so tenant A never receives tenant B's token.
 _REFRESH_SKEW_SECS = 300
-_CACHE: dict[str, object] = {}  # {"token": str, "exp": float}
+_CACHE: dict[str, dict[str, object]] = {}  # cache_key -> {"token": str, "exp": float}
 
 
 def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
 
-def _configured() -> bool:
-    return bool(os.environ.get("GITHUB_APP_ID") and os.environ.get("GITHUB_APP_INSTALLATION_ID"))
+def _auth_from_env() -> GitHubAppAuth | None:
+    """The single-app GitHub App configured in the process env, or None.
+
+    Reuses `env_default_identity` so the env -> auth mapping lives in one place; returns
+    just the `GitHubAppAuth`, which is what this module operates on.
+    """
+    from .forge.identity import env_default_identity
+
+    ident = env_default_identity()
+    return ident.github if ident else None
 
 
-def _sign(signing_input: str) -> str | None:
-    """RS256-sign the JWT signing input, returning the base64url signature or None."""
-    vault = os.environ.get("GITHUB_APP_KEY_VAULT_URI")
-    key_name = os.environ.get("GITHUB_APP_KEY_NAME")
-    if vault and key_name:
-        return _sign_via_key_vault(signing_input, vault, key_name)
+def _sign(signing_input: str, auth: GitHubAppAuth | None = None) -> str | None:
+    """RS256-sign the JWT signing input for `auth`, returning the base64url signature.
+
+    A `signing_key` reference signs remotely via Key Vault; its absence (env default only)
+    falls back to a local PEM via openssl. `auth` defaults to the process env.
+    """
+    if auth is None:
+        auth = _auth_from_env()
+    if auth is None:
+        return None
+    if auth.signing_key is not None:
+        return _sign_via_key_vault(signing_input, auth.signing_key)
     if os.environ.get("GITHUB_APP_PRIVATE_KEY_FILE") or os.environ.get("GITHUB_APP_PRIVATE_KEY"):
         return _sign_via_openssl(signing_input)
     return None
 
 
-def _sign_via_key_vault(signing_input: str, vault: str, key_name: str) -> str | None:
+def _sign_via_key_vault(signing_input: str, key_ref: KeyVaultKeyRef) -> str | None:
     """Model A: sign the SHA-256 digest with Key Vault, reached via workload identity.
 
     Key Vault's `sign` takes the *digest*, not the data, and returns the signature as
-    base64url -- which is exactly the JWT's third segment, so it is used verbatim.
+    base64url -- which is exactly the JWT's third segment, so it is used verbatim. The KV
+    token is the *server's* workload identity (not any tenant's), so a tenant needs only to
+    grant the server's identity Crypto User on their vault.
     """
     from .wi import federated_token_for
 
@@ -72,9 +99,9 @@ def _sign_via_key_vault(signing_input: str, vault: str, key_name: str) -> str | 
     if not kv_token:
         return None
     digest = hashlib.sha256(signing_input.encode()).digest()
-    version = os.environ.get("GITHUB_APP_KEY_VERSION", "")
-    path = f"keys/{key_name}/{version}/sign" if version else f"keys/{key_name}/sign"
-    url = f"{vault.rstrip('/')}/{path}?api-version={_KV_API_VERSION}"
+    version = key_ref.key_version
+    path = f"keys/{key_ref.key_name}/{version}/sign" if version else f"keys/{key_ref.key_name}/sign"
+    url = f"{key_ref.vault_uri.rstrip('/')}/{path}?api-version={_KV_API_VERSION}"
     body = json.dumps({"alg": "RS256", "value": _b64url(digest)}).encode()
     req = urllib.request.Request(url, data=body, headers={
         "Authorization": f"Bearer {kv_token}",
@@ -117,24 +144,30 @@ def _sign_via_openssl(signing_input: str) -> str | None:
                 pass
 
 
-def _app_jwt() -> str | None:
+def _app_jwt(auth: GitHubAppAuth | None = None) -> str | None:
     """A short-lived JWT that authenticates as the App itself, or None if unsignable."""
-    app_id = os.environ.get("GITHUB_APP_ID")
-    if not app_id:
+    if auth is None:
+        auth = _auth_from_env()
+    if auth is None:
         return None
     now = int(time.time())
     header = _b64url(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
     # iat backdated 60s for clock skew; exp 9 min out (GitHub caps the App JWT at 10).
-    claims = _b64url(json.dumps({"iat": now - 60, "exp": now + 540, "iss": app_id}).encode())
+    claims = _b64url(json.dumps({"iat": now - 60, "exp": now + 540, "iss": auth.app_id}).encode())
     signing_input = f"{header}.{claims}"
-    signature = _sign(signing_input)
+    signature = _sign(signing_input, auth)
     return f"{signing_input}.{signature}" if signature else None
 
 
-def _exchange_for_installation_token(app_jwt: str) -> tuple[str, float] | None:
+def _exchange_for_installation_token(
+    app_jwt: str, auth: GitHubAppAuth | None = None
+) -> tuple[str, float] | None:
     """Trade the App JWT for an installation token; return (token, expiry_epoch)."""
-    installation = os.environ.get("GITHUB_APP_INSTALLATION_ID")
-    url = f"https://api.github.com/app/installations/{installation}/access_tokens"
+    if auth is None:
+        auth = _auth_from_env()
+    if auth is None:
+        return None
+    url = f"https://api.github.com/app/installations/{auth.installation_id}/access_tokens"
     req = urllib.request.Request(url, data=b"", headers={
         "Authorization": f"Bearer {app_jwt}",
         "Accept": "application/vnd.github+json",
@@ -157,11 +190,13 @@ def _exchange_for_installation_token(app_jwt: str) -> tuple[str, float] | None:
     return token, exp_epoch
 
 
-def installation_token() -> str | None:
+def installation_token(auth: GitHubAppAuth | None = None) -> str | None:
     """A GitHub App installation token, minted on demand and cached until near expiry.
 
-    Returns None when the App is not configured or any step fails, so the caller falls
-    through to another GitHub credential rather than erroring.
+    `auth` selects which App to mint for (multi-tenant); called with no argument it reads
+    the process env (the single-app default). Returns None when the App is not configured
+    or any step fails, so the caller falls through to another GitHub credential rather than
+    erroring. The cache is keyed by `auth.cache_key()`, so tenants never share a token.
 
     REVOCATION LAG -- a security caveat. The token is cached until ~REFRESH_SKEW_SECS
     before its ~1h expiry, and driftscope does NOT re-check the installation's current
@@ -174,20 +209,25 @@ def installation_token() -> str | None:
     prompt revocation matters, shorten REFRESH_SKEW_SECS toward the token lifetime (mint
     per scan), or restart the process to drop the cache -- which is what a redeploy does.
     """
-    if not _configured():
+    if auth is None:
+        auth = _auth_from_env()
+    if auth is None:
         return None
-    cached_token = _CACHE.get("token")
-    cached_exp = _CACHE.get("exp")
-    if cached_token and isinstance(cached_exp, (int, float)) and time.time() < cached_exp - _REFRESH_SKEW_SECS:
-        return cached_token  # type: ignore[return-value]
+    key = auth.cache_key()
+    entry = _CACHE.get(key)
+    if entry:
+        cached_token = entry.get("token")
+        cached_exp = entry.get("exp")
+        if cached_token and isinstance(cached_exp, (int, float)) \
+                and time.time() < cached_exp - _REFRESH_SKEW_SECS:
+            return cached_token  # type: ignore[return-value]
 
-    app_jwt = _app_jwt()
+    app_jwt = _app_jwt(auth)
     if not app_jwt:
         return None
-    minted = _exchange_for_installation_token(app_jwt)
+    minted = _exchange_for_installation_token(app_jwt, auth)
     if not minted:
         return None
     token, exp = minted
-    _CACHE["token"] = token
-    _CACHE["exp"] = exp
+    _CACHE[key] = {"token": token, "exp": exp}
     return token

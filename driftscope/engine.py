@@ -12,7 +12,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from .forge.identity import ForgeIdentity
 
 from . import advisor
 from .ghub import delta as ghdelta
@@ -67,6 +70,7 @@ def build_context(
     cache_dir: Path | None = None,
     cache_ttl: int | None = None,
     no_cache: bool = False,
+    identity: "ForgeIdentity | None" = None,
 ) -> Context:
     cache = Cache(
         root=cache_dir or default_cache_dir(),
@@ -74,7 +78,9 @@ def build_context(
         enabled=not no_cache,
     )
     client = Client(cache=cache, offline=offline)
-    gh = GitHub(cache=cache, offline=offline, enabled=not no_github)
+    # Bind the resolved bring-your-own identity onto both forge clients, so the issue
+    # delta and release-velocity API calls authenticate as the SAME app that cloned.
+    gh = GitHub(cache=cache, offline=offline, enabled=not no_github, identity=identity)
 
     # Both forges share the disk cache and the offline switch, so --offline and
     # --no-github (now --no-forge) mean the same thing regardless of where a
@@ -85,7 +91,7 @@ def build_context(
 
     forges = {
         GITHUB: GitHubForge(gh),
-        AZURE_DEVOPS: AdoForge(cache, offline=offline, enabled=not no_github),
+        AZURE_DEVOPS: AdoForge(cache, offline=offline, enabled=not no_github, identity=identity),
     }
     return Context(client=client, github=gh, allow_az=not no_az, forges=forges)
 

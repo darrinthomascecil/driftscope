@@ -141,6 +141,16 @@ def build_parser() -> argparse.ArgumentParser:
              "(a full dev.azure.com URL needs no flag)",
     )
     s.add_argument(
+        "--forge-auth", metavar="FILE",
+        help="path to a forge-auth JSON registry of bring-your-own GitHub App / ADO "
+             "Entra identities (also reads $DRIFTSCOPE_FORGE_AUTH)",
+    )
+    s.add_argument(
+        "--identity", metavar="NAME",
+        help="use this named identity from the forge-auth registry to authenticate the "
+             "clone and forge API calls (default: auto-match by host/owner)",
+    )
+    s.add_argument(
         "--ecosystem",
         action="append",
         metavar="NAME",
@@ -248,6 +258,10 @@ def build_parser() -> argparse.ArgumentParser:
                          "DRIFTSCOPE_ALLOW_HOSTS (comma-separated). Default: allow all.")
     sv.add_argument("--cache-dir", default=None,
                     help="shared on-disk HTTP cache (defaults to $DRIFTSCOPE_CACHE)")
+    sv.add_argument("--forge-auth", default=None, metavar="FILE",
+                    help="path to a forge-auth JSON registry of bring-your-own GitHub App "
+                         "/ ADO Entra identities (also reads $DRIFTSCOPE_FORGE_AUTH). Scans "
+                         "select one via the 'identity' field in the POST body.")
     return p
 
 
@@ -260,17 +274,57 @@ def cmd_ecosystems() -> int:
     return 0
 
 
+def _resolve_identity(args: argparse.Namespace):
+    """The bring-your-own identity for this scan, or None (unconfigured -> today's flow).
+
+    Only resolves for remote targets, and only when a registry source is present (the
+    --forge-auth flag, $DRIFTSCOPE_FORGE_AUTH, or an explicit --identity). Returns None
+    otherwise, so a plain local/remote scan is byte-for-byte unchanged.
+    """
+    from .source import looks_remote, normalize_remote
+
+    name = getattr(args, "identity", None)
+    forge_auth = getattr(args, "forge_auth", None)
+    if not looks_remote(args.path):
+        return None
+    if not (name or forge_auth or os.environ.get("DRIFTSCOPE_FORGE_AUTH")):
+        return None
+
+    from .forge.identity import (
+        IdentityForbidden, IdentityRegistry, RegistryError, UnknownIdentity, target_selector,
+    )
+
+    registry = IdentityRegistry.load(forge_auth)
+    remote = normalize_remote(args.path, ado_org=args.ado_org)
+    host, owner, forge = target_selector(remote)
+    return registry.resolve(host, owner, name=name, forge=forge)
+
+
 def cmd_scan(args: argparse.Namespace) -> int:
+    from .forge.identity import IdentityForbidden, RegistryError, UnknownIdentity
+
+    try:
+        identity = _resolve_identity(args)
+    except RegistryError as e:
+        print(f"driftscope: forge-auth: {e}", file=sys.stderr)
+        return 2
+    except UnknownIdentity as e:
+        print(f"driftscope: unknown identity {e}", file=sys.stderr)
+        return 2
+    except IdentityForbidden as e:
+        print(f"driftscope: {e}", file=sys.stderr)
+        return 2
+
     try:
         with open_source(args.path, ref=args.ref, keep=args.keep_clone,
-                         ado_org=args.ado_org) as src:
-            return _scan_source(args, src)
+                         ado_org=args.ado_org, identity=identity) as src:
+            return _scan_source(args, src, identity=identity)
     except CloneError as e:
         print(f"driftscope: {e}", file=sys.stderr)
         return 2
 
 
-def _scan_source(args: argparse.Namespace, src) -> int:
+def _scan_source(args: argparse.Namespace, src, identity=None) -> int:
     root = src.path
     if src.cloned:
         print(
@@ -285,6 +339,7 @@ def _scan_source(args: argparse.Namespace, src) -> int:
         cache_dir=Path(args.cache_dir).expanduser() if args.cache_dir else None,
         cache_ttl=args.cache_ttl,
         no_cache=args.no_cache,
+        identity=identity,
     )
 
     report = run_scan(
@@ -454,6 +509,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         max_concurrent=args.max_concurrent,
         allow_hosts=tuple(dict.fromkeys(hosts)),
         cache_dir=args.cache_dir,
+        forge_auth=args.forge_auth,
     )
     return 0
 

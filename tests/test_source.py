@@ -152,7 +152,7 @@ def fake_token(monkeypatch):
     """Stand in for `az account get-access-token` -- tests never shell out."""
     monkeypatch.setattr(
         src_mod, "ado_credential",
-        lambda: AdoCredential("TOKEN123", "Bearer", "az"),
+        lambda identity=None: AdoCredential("TOKEN123", "Bearer", "az"),
     )
 
 
@@ -176,7 +176,7 @@ def test_github_clone_injects_nothing_without_a_github_token(monkeypatch):
     must never reach for the ADO credential the way the old code implicitly could."""
     import driftscope.http as http_mod
 
-    monkeypatch.setattr(http_mod, "github_token", lambda: None)
+    monkeypatch.setattr(http_mod, "github_token", lambda identity=None: None)
     assert _auth_env_for("https://github.com/org/repo") == {}
 
 
@@ -187,7 +187,7 @@ def test_github_clone_injects_token_as_basic_x_access_token(monkeypatch):
     `x-access-token` is what a GitHub App installation token expects."""
     import driftscope.http as http_mod
 
-    monkeypatch.setattr(http_mod, "github_token", lambda: "ghs_installtoken")
+    monkeypatch.setattr(http_mod, "github_token", lambda identity=None: "ghs_installtoken")
     env = _auth_env_for("https://github.com/org/repo")
     assert env["GIT_CONFIG_KEY_0"] == "http.extraheader"
     expected = "Basic " + base64.b64encode(b"x-access-token:ghs_installtoken").decode()
@@ -199,7 +199,7 @@ def test_github_clone_injects_token_as_basic_x_access_token(monkeypatch):
 def test_no_token_means_no_auth_env(monkeypatch):
     """`az` missing or logged out falls back to whatever git is configured with,
     rather than producing a header with an empty token."""
-    monkeypatch.setattr(src_mod, "ado_credential", lambda: None)
+    monkeypatch.setattr(src_mod, "ado_credential", lambda identity=None: None)
     assert _auth_env_for(ADO_URL) == {}
 
 

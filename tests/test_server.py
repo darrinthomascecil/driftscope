@@ -33,7 +33,7 @@ def local_clone(monkeypatch):
     """Make open_source yield the stale-estate fixture instead of cloning."""
 
     @contextmanager
-    def fake(target, *, ref=None, keep=False, ado_org=None):
+    def fake(target, *, ref=None, keep=False, ado_org=None, identity=None):
         yield Source(display=target, path=FIXTURE)
 
     monkeypatch.setattr(server, "open_source", fake)
@@ -147,6 +147,7 @@ def live_server(local_clone):
     httpd.ds_sem = threading.Semaphore(2)
     httpd.ds_allow_hosts = ()
     httpd.ds_cache_dir = None
+    httpd.ds_registry = None
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
     host, port = httpd.server_address
@@ -279,7 +280,7 @@ def test_scan_multi_json_compares_repos(monkeypatch):
     from driftscope import server
     from driftscope.models import Report, Finding, Component, Resolution, Lag, ScanStats, SEV_HIGH
 
-    def fake_produce(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
+    def fake_produce(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry=None):
         # repo-a pins ioredis 4.3, repo-b pins 4.4 -> divergence
         ver = "4.3.0" if req["repo"].endswith("a") else "4.4.0"
         f = Finding(component=Component(ecosystem="npm", name="ioredis", current=ver, source="p"),
@@ -304,7 +305,7 @@ def test_scan_multi_isolates_a_failed_repo(monkeypatch):
     from driftscope import server
     from driftscope.models import Report, Finding, Component, Resolution, Lag, ScanStats, SEV_HIGH
 
-    def fake_produce(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
+    def fake_produce(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry=None):
         if req["repo"].endswith("bad"):
             return 400, None, "repo not found"
         f = Finding(component=Component(ecosystem="npm", name="x", current="1.0", source="p"),
