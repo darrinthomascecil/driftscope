@@ -45,6 +45,8 @@ env:
 jobs:
   build-sign:
     runs-on: ubuntu-latest
+    # Backstop: no single run should ever hang for hours on a wedged network call.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -130,16 +132,30 @@ jobs:
       # workflow. If this step is green, a consumer running the same command will succeed too.
       - name: Verify signature & SBOM attestation
         if: steps.gate.outputs.push == 'true'
+        # Verify hits Sigstore's Rekor/TUF backends, which can be transiently slow. Cap each
+        # attempt and retry, so a blip self-heals but a real outage fails FAST and red -- never a
+        # multi-hour hang. `timeout-minutes` is the hard backstop if the retry logic itself wedges.
+        timeout-minutes: 10
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           IDENTITY: ^https://github.com/${{ github.repository }}/\.github/workflows/release\.yml@.+$
           ISSUER: https://token.actions.githubusercontent.com
         run: |
-          cosign verify \
+          set -euo pipefail
+          retry() {   # up to 3 attempts, each hard-capped at 180s
+            for a in 1 2 3; do
+              if timeout 180 "$@"; then return 0; fi
+              echo "::warning::verify attempt ${a} failed or timed out; retrying"
+              sleep 10
+            done
+            echo "::error::cosign verification did not complete (Sigstore backend unreachable?)"
+            return 1
+          }
+          retry cosign verify \
             --certificate-identity-regexp "${IDENTITY}" \
             --certificate-oidc-issuer "${ISSUER}" \
             "${IMAGE}@${DIGEST}"
-          cosign verify-attestation --type spdxjson \
+          retry cosign verify-attestation --type spdxjson \
             --certificate-identity-regexp "${IDENTITY}" \
             --certificate-oidc-issuer "${ISSUER}" \
             "${IMAGE}@${DIGEST}"
