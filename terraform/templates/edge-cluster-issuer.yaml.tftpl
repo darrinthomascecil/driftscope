@@ -18,6 +18,12 @@ spec:
       name: letsencrypt-dns-account-key
     solvers:
       - dns01:
+%{ if cname_follow ~}
+          # cloudflare mode: the apex is external, so the _acme-challenge record is a static CNAME
+          # in Cloudflare pointing into ${zone_name} (an Azure zone we control). Follow it and write
+          # the TXT there. In azure mode this is absent and cert-manager writes to the apex directly.
+          cnameStrategy: Follow
+%{ endif ~}
           azureDNS:
             hostedZoneName: ${zone_name}
             resourceGroupName: ${resource_group}

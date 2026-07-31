@@ -10,7 +10,8 @@ resource "local_file" "edge_cluster_issuer" {
   file_permission = "0644"
   content = templatefile("${path.module}/templates/edge-cluster-issuer.yaml.tftpl", {
     enabled         = local.use_custom_domain
-    zone_name       = var.base_domain == null ? "" : var.base_domain
+    zone_name       = local.use_custom_domain ? local.acme_zone : ""
+    cname_follow    = local.cname_follow
     resource_group  = azurerm_resource_group.this.name
     subscription_id = var.subscription_id
     client_id       = try(azurerm_user_assigned_identity.certmanager[0].client_id, "")

@@ -51,8 +51,31 @@ output "app_url" {
 }
 
 output "dns_name_servers" {
-  value       = local.use_custom_domain ? azurerm_dns_zone.this[0].name_servers : []
-  description = "Delegate these at your registrar (empty when running on the *.azurefd.net default host)."
+  value       = local.dns_in_azure ? azurerm_dns_zone.this[0].name_servers : []
+  description = "azure mode: delegate these at your registrar (empty otherwise)."
+}
+
+output "frontdoor_managed_cert_validation_token" {
+  value       = local.use_custom_domain ? one(azurerm_cdn_frontdoor_custom_domain.this[*].validation_token) : null
+  description = "Value for the `_dnsauth.driftscope` TXT record (Front Door managed-cert validation)."
+}
+
+output "acme_delegation_name_servers" {
+  value       = local.dns_in_cloudflare ? azurerm_dns_zone.acme[0].name_servers : []
+  description = "cloudflare mode: the `acme` NS record's value -- delegates acme.<domain> to Azure so cert-manager can answer the origin-cert DNS-01 challenge."
+}
+
+# cloudflare mode: the exact records to add BY HAND in Cloudflare. All DNS-only (grey cloud);
+# static -- set once and never touched by automation. Empty in azure mode.
+output "cloudflare_records" {
+  description = "cloudflare mode: add these records by hand in Cloudflare (all DNS-only / grey cloud)."
+  value = local.dns_in_cloudflare ? [
+    { name = local.subdomain, type = "CNAME", value = azurerm_cdn_frontdoor_endpoint.this.host_name, note = "app -> Front Door; DNS-only" },
+    { name = "_dnsauth.${local.subdomain}", type = "TXT", value = try(azurerm_cdn_frontdoor_custom_domain.this[0].validation_token, ""), note = "Front Door managed-cert validation" },
+    { name = "origin", type = "A", value = azurerm_public_ip.gateway.ip_address, note = "Front Door -> origin; DNS-only" },
+    { name = "acme", type = "NS", value = try(join(" ; ", one(azurerm_dns_zone.acme[*].name_servers)), ""), note = "delegate acme.<domain> to Azure (cert-manager DNS-01)" },
+    { name = "_acme-challenge.origin", type = "CNAME", value = "origin.${local.acme_zone}", note = "origin-cert challenge -> delegated zone" },
+  ] : []
 }
 
 output "frontdoor_endpoint_host" {

@@ -26,6 +26,23 @@ variable "base_domain" {
   description = "Custom domain (optional). Unset => Front Door default *.azurefd.net hostname."
 }
 
+variable "dns_provider" {
+  type    = string
+  default = "azure"
+  # "azure" (default): Terraform creates the Azure DNS zone + all records; you delegate the
+  #   domain's name servers to Azure at your registrar. Fully automated, one source of truth.
+  # "cloudflare": DNS stays in Cloudflare (or any external provider). Terraform creates NO public
+  #   records -- you add the handful printed by `terraform output cloudflare_records` BY HAND
+  #   (all DNS-only / grey-cloud), and cert-manager's DNS-01 origin-cert challenge is delegated to
+  #   a small Azure `acme.<base_domain>` zone (one static NS record in Cloudflare). Nothing in
+  #   Cloudflare is Terraform-managed. Only relevant when base_domain is set. See docs/edge-frontdoor-cloudflare-dns.md.
+  description = "DNS host for base_domain: \"azure\" (Terraform-managed Azure DNS) or \"cloudflare\" (external DNS, records added by hand)."
+  validation {
+    condition     = contains(["azure", "cloudflare"], var.dns_provider)
+    error_message = "dns_provider must be \"azure\" or \"cloudflare\"."
+  }
+}
+
 variable "acme_email" {
   type    = string
   default = ""

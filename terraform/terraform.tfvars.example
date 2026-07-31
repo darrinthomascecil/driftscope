@@ -6,7 +6,15 @@ gateway_dns_label = "driftscope-gw-12345" # -> driftscope-gw-12345.<region>.clou
 
 # OPTIONAL custom domain. OMIT to run on Front Door's default *.azurefd.net hostname
 # (no domain ownership / DNS delegation needed -- the app URL is a terraform output).
-# base_domain = "example.com"              # -> app at driftscope.example.com (+ Azure DNS zone)
+# base_domain = "example.com"              # -> app at driftscope.example.com
+
+# Where base_domain's DNS is hosted (only relevant with base_domain set):
+#   "azure"      (default) Terraform creates the Azure DNS zone + records; delegate NS at registrar.
+#   "cloudflare"           DNS stays external; add the records from `terraform output cloudflare_records`
+#                          BY HAND (grey-cloud). cert-manager DNS-01 uses a delegated acme.<domain>
+#                          Azure zone -- nothing in Cloudflare is Terraform-managed.
+#                          See docs/edge-frontdoor-cloudflare-dns.md.
+# dns_provider = "cloudflare"
 
 # Terraform CREATES the Entra access group; add yourself so you can log in:
 admin_members = ["you@your-tenant.onmicrosoft.com"]

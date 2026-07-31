@@ -1,7 +1,16 @@
 locals {
   tenant_id         = coalesce(var.tenant_id, data.azurerm_client_config.current.tenant_id)
   use_custom_domain = var.base_domain != null && var.base_domain != ""
-  subdomain         = "driftscope"
+  # Where the domain's DNS lives. In "azure" mode Terraform owns the zone + records; in
+  # "cloudflare" mode DNS is external (records added by hand) and only a small delegated
+  # `acme.<domain>` zone is created in Azure so cert-manager's DNS-01 challenge can be answered.
+  dns_in_azure      = local.use_custom_domain && var.dns_provider == "azure"
+  dns_in_cloudflare = local.use_custom_domain && var.dns_provider == "cloudflare"
+  # The zone cert-manager writes _acme-challenge TXT records into: the apex in azure mode, the
+  # delegated sub-zone in cloudflare mode (reached via a static CNAME + NS delegation in Cloudflare).
+  acme_zone    = local.dns_in_cloudflare ? "acme.${var.base_domain}" : var.base_domain
+  cname_follow = local.dns_in_cloudflare
+  subdomain    = "driftscope"
   # With a custom domain: driftscope.<domain>. Without: Front Door's default *.azurefd.net host.
   host = local.use_custom_domain ? "${local.subdomain}.${var.base_domain}" : azurerm_cdn_frontdoor_endpoint.this.host_name
 
