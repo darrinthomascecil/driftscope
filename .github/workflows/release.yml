@@ -105,10 +105,11 @@ jobs:
 
       - name: Install cosign
         if: steps.gate.outputs.push == 'true'
-        # installer @v4 is REQUIRED to install cosign 3.x: v3 switched release signing from a
-        # detached `.sig` to a `.sigstore.json` bundle, and the older @v3 installer 404s trying to
-        # fetch the now-absent `.sig`. @v4 verifies the new bundle format.
-        uses: sigstore/cosign-installer@v4
+        # installer v4 is REQUIRED to install cosign 3.x: v3 switched release signing from a
+        # detached `.sig` to a `.sigstore.json` bundle, and the older v3 installer 404s trying to
+        # fetch the now-absent `.sig`. sigstore publishes no floating `@v4` tag, so pin the exact
+        # release (which is stricter/more reproducible anyway).
+        uses: sigstore/cosign-installer@v4.1.2
         with:
           # Pin the cosign BINARY for reproducibility (the action's default floats). Current major.
           cosign-release: v3.1.2
