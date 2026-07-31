@@ -1,8 +1,12 @@
-# Remote Terraform state (opt-in)
+# Remote Terraform state (default)
 
-By default `make up` keeps Terraform state **local** (`terraform/terraform.tfstate`, git-ignored).
-That's fine for a solo demo. For a **team or CD**, move state into Azure Storage — shared, locked,
-versioned, and off anyone's laptop. This page is that switch.
+`make up` provisions **remote** Terraform state by default: an Azure Storage backend that is
+shared, locked, versioned, and off anyone's laptop. A lone local state file is exactly how a
+deployment silently drifts — an interrupted apply/destroy leaves state and Azure disagreeing with
+no lock, no history, and no shared source of truth to reconcile against. Remote state closes that.
+
+Opt out for a throwaway demo with `LOCAL_STATE=1 make up` (local `terraform/terraform.tfstate`,
+git-ignored). A bare `terraform` invocation with no generated `backend.tf` also stays local.
 
 ## Why bother
 
@@ -16,22 +20,32 @@ versioned, and off anyone's laptop. This page is that switch.
 
 Keyless throughout: `use_azuread_auth = true` — no storage account keys in config, state, or CI.
 
-## Enable it
+## How it works (automatic)
+
+`make up` runs `make state` before `infra`. That step (`state-backend.sh`) is idempotent and:
+
+1. Creates the backend storage (resource group + StorageV2 account + container) if absent, and
+   **reuses** the storage account already recorded in `backend.hcl` on re-runs — it never spawns a
+   second account. The account name is auto-generated (`dstf…`) unless you set `STATE_SA`.
+2. Writes `terraform/backend.hcl` (the per-deployment config) and generates `terraform/backend.tf`
+   (activates the `azurerm` backend). Both are git-ignored; the `.example` files are the committed
+   templates. `make infra` then inits with `-backend-config=backend.hcl` automatically.
 
 ```sh
-# 1. Create the backend (idempotent). Pick a globally-unique storage account name.
-STATE_SA=driftscopetfstate12345 make state-backend      # writes terraform/backend.hcl
-
-# 2. Turn on the azurerm backend and migrate your existing local state up.
-cp terraform/backend.tf.example terraform/backend.tf
-make state-migrate                                       # one-time: terraform init -migrate-state
-
-# 3. From now on, everything is normal — init picks up backend.hcl automatically.
-make infra      # or the full  make up
+make up                       # default: provisions remote state, then infra -> ... -> app
+LOCAL_STATE=1 make up         # opt out: local state (throwaway demo only)
+STATE_SA=mystatestore123 make up   # pin the storage account name instead of auto-generating
 ```
 
-`backend.tf` and `backend.hcl` are git-ignored (per-deployment); the `.example` files are the
-committed templates. The Makefile keys off `backend.hcl`: present → remote, absent → local.
+### Migrating an existing local state up
+
+If you already applied with local state and are switching a deployment to remote, move the
+existing state into the backend once (rather than starting a fresh empty remote state):
+
+```sh
+make state          # provision the backend + generate backend.tf/backend.hcl
+make state-migrate  # one-time: terraform init -migrate-state -backend-config=backend.hcl
+```
 
 ## What the backend storage account looks like
 

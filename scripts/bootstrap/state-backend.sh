@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
 # Create (idempotently) the Azure Storage backend that holds Terraform state REMOTELY, with
 # blob versioning + soft-delete + locking, so state lives off local disk and a team/CD can share
-# it safely. OPT-IN -- local state stays the default (see docs/remote-state.md). Keyless: uses
-# your AAD identity, no account keys anywhere.
+# it safely. This is the DEFAULT path (`make up` runs it); opt out with LOCAL_STATE=1. Keyless:
+# uses your AAD identity, no account keys anywhere. See docs/remote-state.md.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 : "${STATE_RG:=driftscope-tfstate}"
 : "${STATE_LOCATION:=eastus}"
 : "${STATE_CONTAINER:=tfstate}"
-STATE_SA="${STATE_SA:-}"
-[ -n "$STATE_SA" ] || die "set STATE_SA to a globally-unique storage account name \
-(3-24 lowercase alphanumeric), e.g.  STATE_SA=driftscopetfstate12345 make state-backend"
+
+# Idempotent storage-account name: reuse the one already recorded in backend.hcl (so re-running
+# `make up` never creates a second account), else honour an explicit STATE_SA, else generate a
+# globally-unique one. Storage account names are 3-24 lowercase alphanumeric.
+BACKEND_HCL="$REPO/terraform/backend.hcl"
+if [ -z "${STATE_SA:-}" ] && [ -f "$BACKEND_HCL" ]; then
+  STATE_SA="$(sed -n 's/^storage_account_name *= *"\([^"]*\)".*/\1/p' "$BACKEND_HCL")"
+  _rg="$(sed -n 's/^resource_group_name *= *"\([^"]*\)".*/\1/p' "$BACKEND_HCL")"
+  [ -n "$_rg" ] && STATE_RG="$_rg"
+fi
+STATE_SA="${STATE_SA:-dstf$(openssl rand -hex 6)}"
 
 SUB="$(az account show --query id -o tsv)"
 
@@ -47,4 +55,18 @@ subscription_id      = "$SUB"
 EOF
 
 log "wrote terraform/backend.hcl"
-log "next:  cp terraform/backend.tf.example terraform/backend.tf  &&  make state-migrate"
+
+# Activate the azurerm backend so `terraform init` uses it. Generated (not committed) so a bare
+# `terraform` invocation without this file still defaults to local -- the backend is opt-in at the
+# file level, default at the `make up` level.
+if [ ! -f "$REPO/terraform/backend.tf" ]; then
+  cp "$REPO/terraform/backend.tf.example" "$REPO/terraform/backend.tf"
+  log "activated terraform/backend.tf (azurerm backend)"
+fi
+
+# If a LOCAL state file with resources already exists, it must be migrated up (one-time) rather
+# than silently starting a fresh empty remote state. A brand-new deploy has neither and just inits.
+if [ -s "$REPO/terraform/terraform.tfstate" ] && grep -q '"resources"' "$REPO/terraform/terraform.tfstate" 2>/dev/null \
+   && grep -q '"instances"' "$REPO/terraform/terraform.tfstate" 2>/dev/null; then
+  warn "existing LOCAL state detected -- run \`make state-migrate\` once to move it into the backend"
+fi
