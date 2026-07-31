@@ -27,9 +27,8 @@ resource "azurerm_user_assigned_identity" "eso" {
 }
 
 resource "azurerm_federated_identity_credential" "eso" {
-  name                = "eso"
-  resource_group_name = azurerm_resource_group.this.name
-  parent_id           = azurerm_user_assigned_identity.eso.id
+  name      = "eso"
+  parent_id = azurerm_user_assigned_identity.eso.id
   audience            = ["api://AzureADTokenExchange"]
   issuer              = azurerm_kubernetes_cluster.this.oidc_issuer_url
   subject             = "system:serviceaccount:driftscope:driftscope-eso"
@@ -49,5 +48,6 @@ resource "local_file" "external_secrets" {
   content = templatefile("${path.module}/templates/external-secrets.yaml.tftpl", {
     eso_client_id = azurerm_user_assigned_identity.eso.client_id
     key_vault_uri = azurerm_key_vault.this.vault_uri
+    tenant_id     = local.tenant_id
   })
 }

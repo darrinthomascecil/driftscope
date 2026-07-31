@@ -106,8 +106,11 @@ COPY --from=ghcli /usr/local/bin/gh /usr/local/bin/gh
 # with PYTHONPATH plus a symlink into the wheel's bin/. That worked, but it hand-
 # rolled what pip already does and depended on the wheel's internal layout, for
 # no benefit -- it costs ~15MB of pip metadata to just do it properly.)
-RUN --mount=from=builder,source=/dist,target=/dist \
-    pip install --no-cache-dir --no-deps /dist/*.whl
+# COPY (not a BuildKit `RUN --mount`) so the image builds on the classic builder too --
+# e.g. `az acr build`, which the bootstrap uses so no local Docker/BuildKit is required. The
+# wheel is <300KB; removing it in the same layer keeps it out of the final image.
+COPY --from=builder /dist /tmp/dist
+RUN pip install --no-cache-dir --no-deps /tmp/dist/*.whl && rm -rf /tmp/dist
 
 # Scanning is a read-only operation on untrusted repositories: nothing here needs
 # root, and `git clone` runs with hooks disabled precisely because the target is

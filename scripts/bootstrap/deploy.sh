@@ -13,7 +13,10 @@ kubectl apply -k "$OVERLAY"
 #     kubectl describe externalsecret oauth2-proxy -n driftscope
 log "waiting for External Secrets to sync oauth2-proxy from Key Vault"
 kubectl wait --for=condition=Ready externalsecret/oauth2-proxy -n driftscope --timeout=120s \
+  && kubectl -n driftscope rollout restart deploy/oauth2-proxy >/dev/null 2>&1 \
   || warn "ExternalSecret not Ready -- check ESO + the driftscope-eso identity (Key Vault Secrets User). Fallback: make secret"
+# ^ the restart is a nudge: oauth2-proxy pods scheduled before the Secret existed sit in
+#   CreateContainerConfigError and self-heal on the kubelet's retry; this just makes pickup prompt.
 
 # 2. Mesh-wide hardening. The app overlay's ALLOW policies exist now, so applying the
 #    default-deny here won't cut off the gateway/app/oauth2-proxy.

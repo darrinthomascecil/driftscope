@@ -47,6 +47,9 @@ deploy: ## Apply the app + mesh hardening + edge TLS/origin-lock, then print the
 url: ## Print the app URL
 	@$(TF) output -raw app_url; echo
 
+kustomize: ## Install the standalone kustomize binary for this platform (Linux/macOS; not brew)
+	@$(B)/install-kustomize.sh
+
 state-backend: ## (opt-in) Create the Azure Storage remote-state backend; writes terraform/backend.hcl
 	@$(B)/state-backend.sh
 

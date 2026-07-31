@@ -1,9 +1,16 @@
 # Defense in depth for the SSRF surface: even if the app-level --allow-host guard were
 # ever misconfigured or bypassed (e.g. an RCE in the pod), this blocks the app pod's
 # egress to the cloud metadata endpoint and private ranges -- so the node's managed
-# identity token can't be exfiltrated. Egress-only, so it never interferes with kubelet
-# health probes or the cloudflared -> app path. Requires a network-policy engine on the
-# cluster (AKS: --network-policy cilium/azure); a harmless no-op where none is present.
+# identity token can't be exfiltrated. Requires a network-policy engine on the cluster
+# (AKS: --network-policy cilium/azure); a harmless no-op where none is present.
+#
+# CILIUM GOTCHA (learned the hard way): `ipBlock` CIDRs only match EXTERNAL (world) traffic.
+# Cilium classifies in-cluster destinations by workload IDENTITY, not IP, so an
+# `ipBlock: 10.0.0.0/16` allow does NOT cover istiod / kube-dns / mesh pods even though their
+# IPs sit in that range. In-cluster egress must be granted with a namespaceSelector. Without
+# it, the app's Istio sidecar can't reach istiod (XDS/CA on :15012) and the pod hangs forever
+# in PodInitializing. So: allow in-cluster by selector, and block metadata/private ranges on
+# the separate external (ipBlock) rule -- the excepts there apply only to world traffic.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -17,11 +24,17 @@ spec:
       app.kubernetes.io/name: driftscope
   policyTypes: [Egress]
   egress:
-    # DNS anywhere (kube-dns lives on the service network)
+    # In-cluster egress: the Istio sidecar -> istiod, kube-dns, and mesh pods. Identity-based
+    # (namespaceSelector), because Cilium won't match these via ipBlock CIDRs (see header).
+    - to:
+        - namespaceSelector: {}
+    # DNS. kube-dns is in-cluster (already covered above); kept explicit for robustness.
     - ports:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }
-    # HTTPS/HTTP to the public internet, but NEVER metadata or private ranges
+    # External internet on 80/443, but NEVER cloud metadata or private ranges. These excepts
+    # apply to WORLD/CIDR destinations only; in-cluster traffic is allowed by the selector above,
+    # so excepting 10.0.0.0/8 here does not (and cannot) block the cluster's own CIDRs.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
