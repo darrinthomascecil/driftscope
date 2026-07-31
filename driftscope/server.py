@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -74,7 +75,7 @@ def _severity_counts(report) -> dict:
 
 
 def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry=None,
-                   caller=None):
+                   caller=None, request_id=None):
     """Validate, clone, and scan one repo. Returns (status, Report|None, error|None).
 
     The report-producing core, split out of scan_request so the multi-repo endpoint
@@ -86,17 +87,45 @@ def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None, reg
     whose match rules exclude the target is a 403 -- resolved per repo, so a `/scan-multi`
     call scans each tenant's repo under that tenant's own app.
     """
+    from . import audit
+    from .source import strip_userinfo
+
     _p = on_progress or (lambda _e: None)
     repo = req.get("repo") or req.get("url")
+
+    # One audit event per request -- for EVERY outcome, allow or deny (an audit trail is mostly
+    # about the denials). Records who (opaque subject), what (repo, userinfo-stripped), which app
+    # ran, and the decision. Never a token, secret, or repo contents. See docs/audit-logging.md.
+    _base = {
+        "request_id": request_id,
+        "repo": strip_userinfo(repo) if isinstance(repo, str) else repo,
+        "requested_identity": req.get("identity"),
+        **audit.caller_fields(caller),
+    }
+
+    def _done(status, report=None, error=None, identity=None):
+        audit.emit(
+            "scan",
+            status=status,
+            outcome=("allowed" if status == 200
+                     else "denied" if status in (400, 401, 403) else "error"),
+            identity=(identity.name if identity is not None else None),
+            forge=(identity.forge if identity is not None else None),
+            findings=(len(report.findings) if report is not None else None),
+            error=error,
+            **_base,
+        )
+        return status, report, error
+
     if not isinstance(repo, str) or not repo.strip():
-        return 400, None, "body must be a JSON object with a 'repo' git URL"
+        return _done(400, error="body must be a JSON object with a 'repo' git URL")
     if not looks_remote(repo):
-        return 400, None, f"'repo' must be a remote git URL, got {repo!r}"
+        return _done(400, error=f"'repo' must be a remote git URL, got {repo!r}")
     if not _allowed(_host_of(repo), allow_hosts):
-        return 403, None, f"host {_host_of(repo)!r} is not in the clone allowlist"
+        return _done(403, error=f"host {_host_of(repo)!r} is not in the clone allowlist")
     ecosystems = req.get("ecosystems")
     if ecosystems is not None and not isinstance(ecosystems, list):
-        return 400, None, "'ecosystems' must be a list of ecosystem names"
+        return _done(400, error="'ecosystems' must be a list of ecosystem names")
 
     identity = None
     if registry is not None:
@@ -110,11 +139,11 @@ def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None, reg
             identity = registry.resolve(host, owner, name=req.get("identity"), forge=forge,
                                         caller=caller)
         except UnknownIdentity as e:
-            return 400, None, f"unknown identity {e}"
+            return _done(400, error=f"unknown identity {e}")
         except Unauthenticated as e:
-            return 401, None, f"authentication required: {e}"
+            return _done(401, error=f"authentication required: {e}")
         except IdentityForbidden as e:
-            return 403, None, str(e)
+            return _done(403, error=str(e))
 
     import time
 
@@ -151,12 +180,12 @@ def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None, reg
             if src.cloned:
                 report.source = {"remote": src.remote, "ref": src.ref, "commit": src.commit}
     except CloneError as e:
-        return 400, None, str(e)
+        return _done(400, error=str(e), identity=identity)
     except ScanTimeout as e:
-        return 422, None, f"scan aborted: {e}"
+        return _done(422, error=f"scan aborted: {e}", identity=identity)
     except Exception as e:  # a scan bug must not take the server down
-        return 500, None, f"scan failed: {type(e).__name__}: {e}"
-    return 200, report, None
+        return _done(500, error=f"scan failed: {type(e).__name__}: {e}", identity=identity)
+    return _done(200, report=report, identity=identity)
 
 
 def render_report(report, fmt):
@@ -182,7 +211,8 @@ MAX_REPOS = 12  # a fleet compare clones every repo; cap so one call can't run a
 SSE_HEARTBEAT_SECS = 15
 
 
-def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry=None, caller=None):
+def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry=None, caller=None,
+              request_id=None):
     """Scan several repos and compare them. Returns (repo_results, FleetComparison).
 
     Sequential on purpose: the disk cache makes later repos cheap (a shared dep is
@@ -203,6 +233,7 @@ def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry
         # resolution event's own `total` (its component count).
         _status, report, error = produce_report(
             sub, cache_dir=cache_dir, allow_hosts=allow_hosts, registry=registry, caller=caller,
+            request_id=request_id,
             on_progress=lambda ev: _p({**ev, "repo_index": i + 1, "repo_total": len(repos)}),
         )
         if report is not None:
@@ -245,6 +276,7 @@ def scan_request(
     on_progress=None,
     registry=None,
     caller=None,
+    request_id=None,
 ) -> tuple[int, str, bytes, dict]:
     """Clone, scan, and render one request. Returns (status, content_type, body, headers).
 
@@ -267,7 +299,7 @@ def scan_request(
 
     status, report, error = produce_report(
         req, cache_dir=cache_dir, allow_hosts=allow_hosts, on_progress=on_progress,
-        registry=registry, caller=caller,
+        registry=registry, caller=caller, request_id=request_id,
     )
     if report is None:
         return err(status, error)
@@ -374,12 +406,15 @@ class _Handler(BaseHTTPRequestHandler):
         # Authenticate the caller once (None when authz is disabled). Its verified app
         # roles gate which forge identity the scan may use -- see forge/identity.resolve.
         caller = authz.authenticate(self.headers)
+        # Correlation id for the audit trail: honour a caller/proxy-supplied one, else mint one.
+        request_id = (self.headers.get("X-Request-Id")
+                      or self.headers.get("traceparent") or uuid.uuid4().hex)
         try:
             stream = "stream=1" in query
             if path == "/scan-multi":
-                self._scan_multi(req, stream, caller)
+                self._scan_multi(req, stream, caller, request_id)
             elif stream:
-                self._scan_streaming(req, caller)
+                self._scan_streaming(req, caller, request_id)
             else:
                 code, content_type, body, headers = scan_request(
                     req,
@@ -387,12 +422,13 @@ class _Handler(BaseHTTPRequestHandler):
                     allow_hosts=self.server.ds_allow_hosts,  # type: ignore[attr-defined]
                     registry=self.server.ds_registry,  # type: ignore[attr-defined]
                     caller=caller,
+                    request_id=request_id,
                 )
                 self._send(code, content_type, body, headers)
         finally:
             sem.release()
 
-    def _scan_multi(self, req, stream, caller=None):
+    def _scan_multi(self, req, stream, caller=None, request_id=None):
         repos = req.get("repos")
         if not isinstance(repos, list) or not repos:
             self._json(400, {"error": "body must include a non-empty 'repos' list of git URLs"})
@@ -404,7 +440,8 @@ class _Handler(BaseHTTPRequestHandler):
         allow = self.server.ds_allow_hosts         # type: ignore[attr-defined]
         if not stream:
             results, fc = run_multi(req, cache_dir=cache_dir, allow_hosts=allow,
-                                    registry=self.server.ds_registry, caller=caller)  # type: ignore[attr-defined]
+                                    registry=self.server.ds_registry, caller=caller,  # type: ignore[attr-defined]
+                                    request_id=request_id)
             self._json(200, multi_json(results, fc))
             return
 
@@ -417,7 +454,7 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 results, fc = run_multi(req, cache_dir=cache_dir, allow_hosts=allow,
                                         registry=self.server.ds_registry,  # type: ignore[attr-defined]
-                                        caller=caller,
+                                        caller=caller, request_id=request_id,
                                         on_progress=lambda ev: q.put(("progress", ev)))
                 repos_out = []
                 for r in results:
@@ -473,7 +510,7 @@ class _Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass  # client disconnected; let the worker finish and be GC'd
 
-    def _scan_streaming(self, req, caller=None):
+    def _scan_streaming(self, req, caller=None, request_id=None):
         """Run the scan in a worker thread, streaming phase events as SSE.
 
         Progress events (`cloning`, `resolving` per ecosystem, `deltas`, `vulns`,
@@ -491,7 +528,7 @@ class _Handler(BaseHTTPRequestHandler):
                     cache_dir=self.server.ds_cache_dir,  # type: ignore[attr-defined]
                     allow_hosts=self.server.ds_allow_hosts,  # type: ignore[attr-defined]
                     registry=self.server.ds_registry,  # type: ignore[attr-defined]
-                    caller=caller,
+                    caller=caller, request_id=request_id,
                     on_progress=lambda ev: q.put(("progress", ev)),
                 )
             except Exception as e:  # a scan bug must not wedge the stream

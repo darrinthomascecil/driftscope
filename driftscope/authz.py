@@ -192,6 +192,10 @@ class Caller:
     roles: frozenset[str]
     ok: bool
     reason: str | None = None
+    # Stable identity for the audit trail (the "who"): Entra object id, then subject, then UPN.
+    # An opaque id rather than an email keeps PII out of logs. None when unauthenticated.
+    subject: str | None = None
+    tenant: str | None = None
 
 
 def _bearer(headers) -> str | None:
@@ -226,4 +230,6 @@ def authenticate(headers, config: "AuthzConfig | None" = None) -> "Caller | None
         return Caller(frozenset(), False, f"token validation unavailable: {e}")
     raw_roles = payload.get(config.roles_claim) or []
     roles = frozenset(raw_roles) if isinstance(raw_roles, list) else frozenset()
-    return Caller(roles, True)
+    # Prefer the Entra object id (stable, opaque) over sub/UPN for the audit subject.
+    subject = payload.get("oid") or payload.get("sub") or payload.get("preferred_username")
+    return Caller(roles, True, subject=subject, tenant=payload.get("tid"))
