@@ -60,7 +60,12 @@ class UnknownIdentity(Exception):
 
 
 class IdentityForbidden(Exception):
-    """A named identity's match rules do not permit the requested target (-> 403)."""
+    """The caller may not use this identity -- match rules exclude the target, or the caller
+    lacks an authorized app role for it (-> 403)."""
+
+
+class Unauthenticated(Exception):
+    """An identity requires an app role but the caller presented no valid token (-> 401)."""
 
 
 @dataclass(frozen=True)
@@ -151,6 +156,9 @@ class ForgeIdentity:
     github: GitHubAppAuth | None = None
     ado: AdoEntraAuth | None = None
     source: str = "config"  # "config" | "env-default"
+    # Entra **app-role** values a caller must hold (in the token's `roles` claim) to use this
+    # identity. Empty = no per-caller restriction (the edge access-group gate is the control).
+    principals: tuple[str, ...] = ()
 
     def cache_key(self) -> str:
         """Stable, secret-free token-cache key. Never host-alone (isolation invariant)."""
@@ -222,7 +230,9 @@ def _parse_identity(d: dict) -> ForgeIdentity:
             secret=secret,
             federated=(kind == "federated"),
         )
-    return ForgeIdentity(name=name, forge=forge, match=match, github=github, ado=ado)
+    principals = tuple(d.get("principals") or ())
+    return ForgeIdentity(name=name, forge=forge, match=match, github=github, ado=ado,
+                         principals=principals)
 
 
 def env_default_identity() -> ForgeIdentity | None:
@@ -291,10 +301,14 @@ def target_selector(remote: str) -> tuple[str, str | None, str]:
 class IdentityRegistry:
     """The set of configured identities plus the env default, with a per-target resolver."""
 
-    def __init__(self, identities: list[ForgeIdentity], default: ForgeIdentity | None = None):
+    def __init__(self, identities: list[ForgeIdentity], default: ForgeIdentity | None = None,
+                 require_authorization: bool = False):
         self._identities = list(identities)
         self._by_name = {i.name: i for i in self._identities}
         self._default = default
+        # Strict mode: every resolved identity must be authorized by a caller app role. The
+        # server refuses to start in this mode unless token validation is configured.
+        self.require_authorization = require_authorization
 
     @classmethod
     def load(cls, path: str | None = None) -> "IdentityRegistry":
@@ -318,13 +332,20 @@ class IdentityRegistry:
             version = doc.get("version")
             if version != 1:
                 raise RegistryError(f"forge-auth: unsupported version {version!r} (expected 1)")
+            strict = bool(doc.get("require_authorization"))
             seen: set[str] = set()
             for entry in (doc.get("identities") or []):
                 ident = _parse_identity(entry)
                 if ident.name in seen:
                     raise RegistryError(f"forge-auth: duplicate identity name {ident.name!r}")
+                if strict and not ident.principals:
+                    raise RegistryError(
+                        f"forge-auth: require_authorization is set but identity {ident.name!r} "
+                        f"has no 'principals' -- every identity must be caller-authorized"
+                    )
                 seen.add(ident.name)
                 identities.append(ident)
+            return cls(identities, env_default_identity(), require_authorization=strict)
         return cls(identities, env_default_identity())
 
     def get(self, name: str) -> ForgeIdentity | None:
@@ -332,8 +353,35 @@ class IdentityRegistry:
             return self._by_name[name]
         return self._default if (self._default and self._default.name == name) else None
 
+    def _authorize(self, ident: ForgeIdentity, caller) -> None:
+        """Enforce that `caller` may use `ident`. No-op when caller authz is disabled.
+
+        `caller` is a `authz.Caller` or None. None means authorization is disabled (no token
+        validation configured) -- the single-tenant default, where the edge access-group gate
+        is the only control, so this is a no-op. When enabled, an identity that declares
+        `principals` requires the caller to hold an intersecting app role (401 if the caller
+        presented no valid token, 403 if authenticated but lacking the role). In strict mode
+        even a principal-less identity is denied -- but load() already rejects those, so this
+        is defense in depth for the env default.
+        """
+        if caller is None:
+            return
+        principals = set(ident.principals)
+        if principals:
+            if not getattr(caller, "ok", False):
+                raise Unauthenticated(getattr(caller, "reason", None) or "authentication required")
+            if not (caller.roles & principals):
+                raise IdentityForbidden(
+                    f"caller holds no app role authorizing identity {ident.name!r}"
+                )
+        elif self.require_authorization:
+            raise IdentityForbidden(
+                f"identity {ident.name!r} declares no authorized principals (strict mode)"
+            )
+
     def resolve(
-        self, host: str, owner: str | None, *, name: str | None = None, forge: str | None = None
+        self, host: str, owner: str | None, *, name: str | None = None, forge: str | None = None,
+        caller=None,
     ) -> ForgeIdentity | None:
         """The identity for a target, by precedence:
 
@@ -348,6 +396,11 @@ class IdentityRegistry:
         precedence (which already includes the env App, `GITHUB_TOKEN`, and `gh`), so an
         unconfigured target behaves exactly as it did before this module existed. The env
         default is still reachable by explicitly requesting `name="default"`.
+
+        `caller` (an `authz.Caller`) authorizes the resolved identity: the chosen identity is
+        also gated on the caller's app roles (see `_authorize`). Auto-match selects by host/
+        owner/forge first, then authorizes -- so an unauthorized target is a 401/403, never a
+        silent fall-through to an unauthenticated clone. `caller=None` disables the check.
         """
         if name is not None:
             ident = self.get(name)
@@ -357,10 +410,12 @@ class IdentityRegistry:
                 raise IdentityForbidden(
                     f"identity {name!r} may not access {owner or '?'} on {host}"
                 )
+            self._authorize(ident, caller)
             return ident
         for ident in self._identities:
             if forge and ident.forge != forge:
                 continue
             if ident.match.permits(host, owner):
+                self._authorize(ident, caller)
                 return ident
         return None
