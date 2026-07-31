@@ -20,7 +20,14 @@ LOCAL_STATE ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up down preflight state infra image cluster secret deploy url state-backend state-migrate
+.PHONY: help up down preflight state infra image cluster secret deploy url state-backend state-migrate verify-image
+
+# Keyless cosign verification of a published image. No secrets, no key files: it checks the
+# signature chains to a Fulcio cert whose identity is THIS repo's release workflow, issued by
+# GitHub's OIDC. Override IMAGE (defaults to :latest); relax IDENTITY only if verifying a PR build.
+IMAGE    ?= ghcr.io/darrinthomascecil/driftscope:latest
+IDENTITY ?= ^https://github.com/darrinthomascecil/driftscope/\.github/workflows/release\.yml@refs/tags/v
+ISSUER   := https://token.actions.githubusercontent.com
 
 help: ## Show this help
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
@@ -66,6 +73,14 @@ state-backend: ## Create the Azure Storage remote-state backend directly (also r
 
 state-migrate: ## One-time: migrate an existing LOCAL state into the remote backend
 	@$(TF) init -input=false -migrate-state -backend-config=backend.hcl
+
+verify-image: ## Verify a published image's cosign signature + SBOM (IMAGE=... ; keyless, no secrets)
+	@command -v cosign >/dev/null || { echo "cosign not found -- https://docs.sigstore.dev/cosign/installation"; exit 1; }
+	@echo "verifying signature: $(IMAGE)"
+	@cosign verify --certificate-identity-regexp '$(IDENTITY)' --certificate-oidc-issuer '$(ISSUER)' '$(IMAGE)' >/dev/null
+	@echo "verifying SBOM attestation: $(IMAGE)"
+	@cosign verify-attestation --type spdxjson --certificate-identity-regexp '$(IDENTITY)' --certificate-oidc-issuer '$(ISSUER)' '$(IMAGE)' >/dev/null
+	@echo "OK: signature + SBOM verified, signed by $(IMAGE) release workflow"
 
 down: ## Tear down ALL Azure resources (terraform destroy)
 	@echo "This destroys the entire deployment (AKS, ACR, KV, DNS, Front Door, Entra app+group)."

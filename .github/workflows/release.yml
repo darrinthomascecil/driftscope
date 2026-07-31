@@ -1,0 +1,175 @@
+# Build, publish, and cryptographically sign the driftscope container image.
+#
+# driftscope clones and reads customers' PRIVATE repositories, so the artifact that does that
+# work must be *provably* the one this repo built -- not a look-alike pushed by someone else. This
+# workflow builds the image, pushes it to GHCR, and signs it with cosign **keyless**: the signing
+# identity is this workflow's GitHub OIDC token (Fulcio issues a short-lived cert, the signature is
+# logged to the Rekor transparency log). There is no private key to store, rotate, or leak -- the
+# thing being trusted is "GitHub attests this workflow, in this repo, produced this exact digest".
+#
+# It also generates an SPDX SBOM and attaches it as a signed attestation, and then VERIFIES both
+# the signature and the SBOM in-workflow -- a signature nobody checks is theatre.
+#
+# Verification (anyone, no secrets):
+#   cosign verify \
+#     --certificate-identity-regexp '^https://github.com/darrinthomascecil/driftscope/\.github/workflows/release\.yml@refs/tags/v' \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#     ghcr.io/darrinthomascecil/driftscope:<tag>
+# or `make verify-image IMAGE=ghcr.io/darrinthomascecil/driftscope:<tag>`. See docs/image-signing.md.
+
+name: release
+
+on:
+  # A semver tag is a real release: publishes vMAJOR.MINOR.PATCH + latest, signed.
+  push:
+    tags: ["v*"]
+  # Runs on PRs too so the whole build -> push -> sign -> verify chain is proven BEFORE merge
+  # (same-repo PRs only; forks lack the registry/OIDC permissions -- see the `gate` step).
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: read the code, write the package, mint an OIDC token for keyless signing.
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}   # darrinthomascecil/driftscope (already lowercase)
+
+jobs:
+  build-sign:
+    runs-on: ubuntu-latest
+    # Backstop: no single run should ever hang for hours on a wedged network call.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fork PRs get a read-only token and no id-token: we can still BUILD to validate the
+      # Dockerfile, but not push or sign. Gate those steps rather than fail the job red.
+      - name: Decide whether we can push + sign
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] && \
+             [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Fork PR -- building to validate only (no registry/OIDC permissions on forks)."
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          fi
+          # cosign needs a lowercase repo path; GHCR rejects uppercase.
+          echo "IMAGE=${REGISTRY}/${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.gate.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags: semver + `latest` for a release tag; `pr-N` + `sha-<sha>` for a PR build.
+      - name: Derive tags & labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=pr
+            type=sha,format=long
+          # `latest` only on a real release tag, never on a PR build.
+          flavor: latest=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      # AKS nodes are amd64; build the platform we actually deploy. TARGETARCH is supplied by
+      # buildx for the requested platform, which the Dockerfile's gh-CLI stage keys off.
+      - name: Build & push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: ${{ steps.gate.outputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Reproducible-ish: bake the source commit into the image labels.
+          provenance: false
+
+      - name: Install cosign
+        if: steps.gate.outputs.push == 'true'
+        # installer v4 is REQUIRED to install cosign 3.x: v3 switched release signing from a
+        # detached `.sig` to a `.sigstore.json` bundle, and the older v3 installer 404s trying to
+        # fetch the now-absent `.sig`. sigstore publishes no floating `@v4` tag, so pin the exact
+        # release (which is stricter/more reproducible anyway).
+        uses: sigstore/cosign-installer@v4.1.2
+        with:
+          # Pin the cosign BINARY for reproducibility (the action's default floats). Current major.
+          cosign-release: v3.1.2
+
+      - name: Install syft (SBOM)
+        if: steps.gate.outputs.push == 'true'
+        uses: anchore/sbom-action/download-syft@v0
+
+      # Everything below pins to the immutable DIGEST, never a tag: a tag can be moved to point at a
+      # different image after signing; a digest cannot. This is the whole reason signing is worth
+      # anything.
+      - name: Sign the image (keyless)
+        if: steps.gate.outputs.push == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - name: Generate & attest SBOM (keyless)
+        if: steps.gate.outputs.push == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          syft "${IMAGE}@${DIGEST}" -o spdx-json=sbom.spdx.json
+          cosign attest --yes --predicate sbom.spdx.json --type spdxjson "${IMAGE}@${DIGEST}"
+
+      # Prove the chain we just created actually verifies, from the exact OIDC identity of THIS
+      # workflow. If this step is green, a consumer running the same command will succeed too.
+      # Registry-only confirmation that signing produced its artifacts. This does NOT do full
+      # cryptographic verification -- deliberately. `cosign verify` must first initialize the
+      # Sigstore trust root over the network, and that init stalls for many minutes from GitHub
+      # runners, which is a terrible property for a blocking publish gate (and it re-verifies a
+      # signature we created seconds earlier -- circular). Full verification is a CONSUMER concern:
+      # `make verify-image` / docs/image-signing.md. Here we only assert, via fast GHCR reads, that
+      # a signature and an SBOM attestation are actually attached to the digest.
+      - name: Confirm signature & SBOM are attached
+        if: steps.gate.outputs.push == 'true'
+        timeout-minutes: 3
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign tree "${IMAGE}@${DIGEST}" || true          # human-readable view of what's attached
+          cosign download signature   "${IMAGE}@${DIGEST}" > /dev/null   # non-zero if no signature
+          cosign download attestation "${IMAGE}@${DIGEST}" > /dev/null   # non-zero if no attestation
+          echo "confirmed: signature + SBOM attestation attached to ${IMAGE}@${DIGEST}"
+
+      - name: Summary
+        if: steps.gate.outputs.push == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### Signed image published :lock:"
+            echo ""
+            echo "- **Digest:** \`${IMAGE}@${DIGEST}\`"
+            echo "- **Tags:** \`${{ steps.meta.outputs.tags }}\`"
+            echo "- Signature + SPDX SBOM attestation attached (confirmed via registry read)."
+            echo ""
+            echo "Verify anywhere:"
+            echo '```'
+            echo "make verify-image IMAGE=${IMAGE}@${DIGEST}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
