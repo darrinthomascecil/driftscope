@@ -147,10 +147,16 @@ def run_fuzz(iterations: int = 2000, seed: int = 1234, budget: float = 2.0,
 
 
 if __name__ == "__main__":
+    # Usage: python -m tests.fuzz_scanners [iterations] [budget_seconds]
+    # Exits non-zero if any scan_file exceeded the budget or hit MemoryError -- so a caller can
+    # run it in a subprocess with a hard timeout (the CI regression test does) and treat both a
+    # slow input (non-zero exit) and a true hang (subprocess timeout) as a clean failure.
     import sys
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 20000
-    print(f"fuzzing scanners: {n} mutation iterations + adversarial corpus ...")
-    res = run_fuzz(iterations=n)
-    print(res.summary())
+    budget = float(sys.argv[2]) if len(sys.argv) > 2 else 2.0
+    print(f"fuzzing scanners: {n} iterations + adversarial corpus, budget {budget}s ...", flush=True)
+    res = run_fuzz(iterations=n, budget=budget)
+    print(res.summary(), flush=True)
     for dt, sc, where in sorted(res.slow, reverse=True)[:20]:
-        print(f"  SLOW {dt*1000:.0f}ms  {sc}  {where}")
+        print(f"  SLOW {dt * 1000:.0f}ms  {sc}  {where}", flush=True)
+    sys.exit(1 if (res.slow or "MemoryError" in res.crashes) else 0)

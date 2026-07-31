@@ -21,15 +21,15 @@ from . import read_text, rel
 
 # name[extra]==1.2.3 ; python_version < "3.12"
 _REQ_LINE = re.compile(
-    r"^\s*(?P<name>[A-Za-z0-9][\w.\-]*)\s*(?P<extras>\[[^\]]*\])?\s*"
+    r"^[^\S\n]*(?P<name>[A-Za-z0-9][\w.\-]*)\s*(?P<extras>\[[^\]]*\])?\s*"
     r"(?P<spec>(?:[=<>!~^]=?|===)\s*[^;#\s]+(?:\s*,\s*[=<>!~^]=?\s*[^;#\s]+)*)?"
 )
 _GOMOD_REQUIRE_BLOCK = re.compile(r"require\s*\((?P<body>.*?)\n\)", re.S)
 _GOMOD_SINGLE = re.compile(
-    r"^\s*require\s+(?P<mod>[^\s]+)\s+(?P<ver>v[^\s]+)(?P<rest>.*)$", re.M
+    r"^[^\S\n]*require\s+(?P<mod>[^\s]+)\s+(?P<ver>v[^\s]+)(?P<rest>.*)$", re.M
 )
-_GOMOD_ENTRY = re.compile(r"^\s*(?P<mod>[^\s/][^\s]*)\s+(?P<ver>v[^\s]+)(?P<rest>.*)$", re.M)
-_GO_DIRECTIVE = re.compile(r"^\s*go\s+(?P<ver>\d+\.\d+(?:\.\d+)?)\s*$", re.M)
+_GOMOD_ENTRY = re.compile(r"^[^\S\n]*(?P<mod>[^\s/][^\s]*)\s+(?P<ver>v[^\s]+)(?P<rest>.*)$", re.M)
+_GO_DIRECTIVE = re.compile(r"^[^\S\n]*go\s+(?P<ver>\d+\.\d+(?:\.\d+)?)\s*$", re.M)
 
 
 def scan_file(path: Path, root: Path) -> list[Component]:
@@ -78,9 +78,17 @@ def _scan_requirements(path: Path, root: Path) -> list[Component]:
     return out
 
 
+# tomllib is O(n^2) in nesting depth: a hostile pyproject.toml (e.g. a 100k-segment dotted key
+# `a.a.a...= 1`) drives it into minutes (measured: 8k segments ~= 400ms, so 100k ~= 60s+). A real
+# pyproject.toml is a small config file; cap the input so the parse stays sub-second. A file over
+# the cap is skipped (its deps go unscanned) rather than hanging the worker -- a rare, bounded
+# degradation. See docs/hostile-repo-hardening.md.
+_MAX_TOML = 32768
+
+
 def _scan_pyproject(path: Path, root: Path) -> list[Component]:
     text = read_text(path)
-    if not text:
+    if not text or len(text) > _MAX_TOML:
         return []
     try:
         doc = tomllib.loads(text)

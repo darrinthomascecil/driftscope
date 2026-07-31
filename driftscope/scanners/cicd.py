@@ -17,10 +17,14 @@ from . import read_text, rel
 GH_ACTION = "github-action"
 
 # uses: actions/checkout@v4  |  uses: docker://image:tag  |  uses: ./local
+# `[^\S\n]` (horizontal whitespace only): a leading `\s*` under re.M matches newlines, so each
+# line-start's match scans forward across the file hunting for the keyword -- O(n^2), a multi-
+# second hang on a hostile workflow (worse on Python 3.11's engine). Directives are within one
+# line, so keep the whitespace non-newline and the scan stays linear.
 _USES = re.compile(
-    r"""^\s*-?\s*uses:\s*['"]?(?P<ref>[^\s'"#]+)""", re.M
+    r"""^[^\S\n]*-?[^\S\n]*uses:[^\S\n]*['"]?(?P<ref>[^\s'"#]+)""", re.M
 )
-_RUNS_ON = re.compile(r"""^\s*runs-on:\s*['"]?(?P<img>[\w.-]+)""", re.M)
+_RUNS_ON = re.compile(r"""^[^\S\n]*runs-on:[^\S\n]*['"]?(?P<img>[\w.-]+)""", re.M)
 
 # Runner labels that are deprecated or heading that way, with successor.
 RUNNER_SUCCESSORS = {

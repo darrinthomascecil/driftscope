@@ -28,18 +28,18 @@ from . import read_text, rel
 
 # gem "name", "~> 1.2", ">= 1.2.3", require: false
 _GEM_RE = re.compile(
-    r"""^\s*gem\s+["'](?P<name>[\w.\-]+)["']\s*(?P<rest>.*)$""", re.M
+    r"""^[^\S\n]*gem\s+["'](?P<name>[\w.\-]+)["']\s*(?P<rest>.*)$""", re.M
 )
 # add_dependency / add_runtime_dependency / add_development_dependency
 _GEMSPEC_DEP_RE = re.compile(
-    r"""^\s*\w+\.add(?:_runtime|_development)?_dependency\s*\(?\s*"""
+    r"""^[^\S\n]*\w+\.add(?:_runtime|_development)?_dependency\s*\(?\s*"""
     r"""["'](?P<name>[\w.\-]+)["']\s*(?P<rest>.*)$""",
     re.M,
 )
 # The first quoted version-looking token in the remainder of a gem line.
 _VERSION_TOKEN = re.compile(r"""["'](?P<spec>[~><=!\s]*\d[\w.\-]*)["']""")
 # ruby "3.1.2" in a Gemfile, or required_ruby_version in a gemspec
-_RUBY_DIRECTIVE = re.compile(r"""^\s*ruby\s+["'](?P<v>[\d][\w.\-]*)["']""", re.M)
+_RUBY_DIRECTIVE = re.compile(r"""^[^\S\n]*ruby\s+["'](?P<v>[\d][\w.\-]*)["']""", re.M)
 _REQUIRED_RUBY = re.compile(
     r"""required_ruby_version\s*=\s*["'](?P<v>[^"']+)["']"""
 )
@@ -51,7 +51,7 @@ _LOCK_SPEC_RE = re.compile(r"^ {4}(?P<name>[\w.\-]+) \((?P<version>[^)]+)\)$", r
 _LOCK_RUBY_RE = re.compile(r"^RUBY VERSION\s*\n\s*ruby (?P<v>[\d][\w.\-]*)", re.M)
 _LOCK_BUNDLED_RE = re.compile(r"^BUNDLED WITH\s*\n\s*(?P<v>[\d][\w.\-]*)", re.M)
 
-_GROUP_RE = re.compile(r"^\s*group\s+(?P<groups>[^\n]*?)\s*do\s*$", re.M)
+_GROUP_RE = re.compile(r"^[^\S\n]*group\s+(?P<groups>[^\n]*?)\s*do\s*$", re.M)
 
 
 def _line_of(text: str, idx: int) -> int:
