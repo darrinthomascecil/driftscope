@@ -29,9 +29,9 @@ resource "azurerm_user_assigned_identity" "eso" {
 resource "azurerm_federated_identity_credential" "eso" {
   name      = "eso"
   parent_id = azurerm_user_assigned_identity.eso.id
-  audience            = ["api://AzureADTokenExchange"]
-  issuer              = azurerm_kubernetes_cluster.this.oidc_issuer_url
-  subject             = "system:serviceaccount:driftscope:driftscope-eso"
+  audience  = ["api://AzureADTokenExchange"]
+  issuer    = azurerm_kubernetes_cluster.this.oidc_issuer_url
+  subject   = "system:serviceaccount:driftscope:driftscope-eso"
 }
 
 resource "azurerm_role_assignment" "eso_kv_secrets_user" {

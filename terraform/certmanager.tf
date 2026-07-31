@@ -22,9 +22,9 @@ resource "azurerm_federated_identity_credential" "certmanager" {
   count     = local.use_custom_domain ? 1 : 0
   name      = "certmanager"
   parent_id = azurerm_user_assigned_identity.certmanager[0].id
-  audience            = ["api://AzureADTokenExchange"]
-  issuer              = azurerm_kubernetes_cluster.this.oidc_issuer_url
-  subject             = "system:serviceaccount:cert-manager:cert-manager"
+  audience  = ["api://AzureADTokenExchange"]
+  issuer    = azurerm_kubernetes_cluster.this.oidc_issuer_url
+  subject   = "system:serviceaccount:cert-manager:cert-manager"
 }
 
 # Least privilege: write TXT records in THIS zone, nothing else.

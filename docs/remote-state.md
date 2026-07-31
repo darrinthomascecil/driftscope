@@ -8,6 +8,10 @@ no lock, no history, and no shared source of truth to reconcile against. Remote 
 Opt out for a throwaway demo with `LOCAL_STATE=1 make up` (local `terraform/terraform.tfstate`,
 git-ignored). A bare `terraform` invocation with no generated `backend.tf` also stays local.
 
+Pair this with **drift detection** (`docs/drift-detection.md`): a scheduled `terraform plan` in CI
+that alerts when state and Azure diverge — the automated backstop for the exact failure mode remote
+state guards against.
+
 ## Why bother
 
 - **It holds secrets.** State stores the Entra **client secret value** (and more). One laptop is

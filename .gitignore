@@ -5,11 +5,12 @@ __pycache__/
 venv/
 tutorials/
 
-# Generated scan reports. Regenerate with `driftscope scan`; the goldens under
-# tests/golden/ are the committed, asserted-against copies.
-drift-*.html
-drift-*.md
-drift-*.json
+# Generated scan reports (written to the repo root by `driftscope scan`). Root-anchored so the
+# pattern can't swallow legitimate files elsewhere (e.g. docs/drift-detection.md). The goldens
+# under tests/golden/ are the committed, asserted-against copies.
+/drift-*.html
+/drift-*.md
+/drift-*.json
 .playwright-mcp/
 
 # Terraform. State is SENSITIVE (it stores the Entra client secret value + other secrets)

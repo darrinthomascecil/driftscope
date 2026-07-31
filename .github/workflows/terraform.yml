@@ -1,0 +1,134 @@
+name: Terraform
+
+# Two guardrails for the infrastructure code:
+#   validate -- fmt + validate on every PR/push that touches terraform/ (no cloud creds).
+#   drift    -- a scheduled `terraform plan` against the REAL remote state, so an interrupted
+#               apply/destroy or an out-of-band `az` change can't silently diverge unnoticed
+#               (which is exactly how a phantom Front Door once lingered in state). Opt-in and
+#               self-skipping: inert until a deployer wires up the vars/secrets below.
+on:
+  pull_request:
+    paths: ['terraform/**', '.github/workflows/terraform.yml']
+  push:
+    branches: [main]
+    paths: ['terraform/**', '.github/workflows/terraform.yml']
+  schedule:
+    - cron: '17 6 * * *' # daily 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Match the state writer (required_version >= 1.5); reading 1.5 state with the same version
+  # avoids any state-format upgrade on a read-only plan.
+  TF_VERSION: "1.5.7"
+
+jobs:
+  # Cheap, always-on, no cloud credentials: catches formatting + config errors before merge.
+  validate:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - name: fmt
+        run: terraform -chdir=terraform fmt -check -recursive
+      - name: init (no backend)
+        run: terraform -chdir=terraform init -backend=false -input=false
+      - name: validate
+        run: terraform -chdir=terraform validate
+
+  # Scheduled drift detection against the live remote state. OPT-IN: set repo variable
+  # TF_DRIFT_ENABLED=true plus the vars/secrets in docs/drift-detection.md. Skipped otherwise.
+  drift:
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      && vars.TF_DRIFT_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Azure OIDC (keyless): Terraform authenticates with a federated token
+      issues: write   # file/update a drift issue
+    env:
+      # Native Terraform OIDC -- no stored client secret, no azure/login. The federated
+      # credential on the Azure identity must trust this repo's Actions OIDC subject.
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Materialize backend + vars (from repo config, never committed)
+        env:
+          TFSTATE_RG: ${{ vars.TFSTATE_RG }}
+          TFSTATE_SA: ${{ vars.TFSTATE_SA }}
+          TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
+          SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          TFVARS: ${{ secrets.TFVARS }}
+        run: |
+          cat > terraform/backend.hcl <<EOF
+          resource_group_name  = "${TFSTATE_RG}"
+          storage_account_name = "${TFSTATE_SA}"
+          container_name       = "${TFSTATE_CONTAINER}"
+          key                  = "driftscope.tfstate"
+          use_azuread_auth     = true
+          subscription_id      = "${SUBSCRIPTION_ID}"
+          EOF
+          cp terraform/backend.tf.example terraform/backend.tf   # activate azurerm backend (git-ignored)
+          printf '%s' "$TFVARS" > terraform/terraform.tfvars     # the deployment's variables
+
+      - name: Init (remote backend)
+        run: terraform -chdir=terraform init -input=false -backend-config=backend.hcl
+
+      - name: Plan (detect drift)
+        id: plan
+        run: |
+          set +e
+          # -lock=false: read-only, must never block a real apply. -detailed-exitcode: 0=no drift,
+          # 1=error, 2=drift.
+          terraform -chdir=terraform plan -input=false -lock=false -detailed-exitcode -no-color > plan.txt 2>&1
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          tail -c 80000 plan.txt
+          exit 0
+
+      - name: Report (summary + issue on drift)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CODE: ${{ steps.plan.outputs.exit_code }}
+        run: |
+          {
+            echo "## Terraform drift check"
+            case "$CODE" in
+              0) echo "✅ No drift — state matches Azure." ;;
+              2) echo "⚠️ **Drift detected** — \`terraform plan\` shows changes." ;;
+              *) echo "❌ plan errored (exit $CODE)." ;;
+            esac
+            echo; echo '```'; tail -c 80000 plan.txt; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          [ "$CODE" = "0" ] && exit 0
+
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          body="$(printf 'Scheduled Terraform drift check reported exit %s. Run: %s\n\n```\n%s\n```' \
+            "$CODE" "$run_url" "$(tail -c 40000 plan.txt)")"
+          gh label create terraform-drift --color B60205 --description "terraform state != Azure" --force >/dev/null 2>&1 || true
+          existing="$(gh issue list --label terraform-drift --state open --json number --jq '.[0].number' 2>/dev/null)"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body" || true
+          else
+            gh issue create --title "Terraform drift detected" --label terraform-drift --body "$body" || true
+          fi
+          exit 1   # fail the run so the scheduled-workflow failure notifies
