@@ -32,8 +32,12 @@ entirely and is verifiable in CI with no cloud credentials. See the PR discussio
   **attestation** (`cosign attest --type spdxjson`), so a consumer can see (and trust) exactly
   what is in the image.
 
-The workflow then **verifies both in-CI** — a signature nobody checks is theatre. If the release
-run is green, the same verification will succeed for anyone else.
+The workflow then does a **fast, registry-only confirmation** that a signature and an SBOM
+attestation are actually attached to the digest. It does **not** do full cryptographic verification
+in CI, on purpose: `cosign verify` must first initialize the Sigstore **trust root over the
+network**, which stalls for many minutes from CI runners — a poor property for a blocking publish
+gate, and circular (re-verifying a signature we made seconds earlier). **Verification is a consumer
+operation** (below), where the latency is fine.
 
 ## Verify an image yourself
 
