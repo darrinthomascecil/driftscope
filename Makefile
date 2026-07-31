@@ -11,25 +11,36 @@
 TF   := terraform -chdir=terraform
 B    := scripts/bootstrap
 AUTO ?=
-# Remote state is opt-in: if terraform/backend.hcl exists, init points at it (else local state).
-BACKEND := $(wildcard terraform/backend.hcl)
-BACKEND_ARG := $(if $(BACKEND),-backend-config=backend.hcl,)
+# Remote state is the DEFAULT: `make up` provisions an Azure Storage backend (make state) and writes
+# terraform/backend.hcl, so `infra` inits against locked, versioned, shared state. Opt out with
+# LOCAL_STATE=1 (local state -- fine for a throwaway demo, but a lone unlocked state file is how
+# deployments silently drift; see docs/remote-state.md). `infra` detects backend.hcl at RUN time
+# (not parse time), because within one `make up` the `state` step creates it just before `infra`.
+LOCAL_STATE ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up down preflight infra image cluster secret deploy url state-backend state-migrate
+.PHONY: help up down preflight state infra image cluster secret deploy url state-backend state-migrate
 
 help: ## Show this help
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
 	  | sort | awk 'BEGIN{FS=":.*## "}{printf "  \033[1;36m%-10s\033[0m %s\n", $$1, $$2}'
 
-up: preflight infra image cluster deploy ## Full bootstrap: infra -> image -> cluster -> app (ESO syncs secrets; prints URL)
+up: preflight state infra image cluster deploy ## Full bootstrap: remote state -> infra -> image -> cluster -> app (prints URL)
 
 preflight: ## Check tools, Azure login, and terraform.tfvars
 	@$(B)/preflight.sh
 
+state: ## Provision the remote Terraform state backend (default). Skip with LOCAL_STATE=1.
+	@if [ -n "$(LOCAL_STATE)" ]; then \
+	  echo "LOCAL_STATE set -> using LOCAL Terraform state (not recommended: unlocked, unshared, drift-prone)"; \
+	else \
+	  $(B)/state-backend.sh; \
+	fi
+
 infra: ## terraform init + apply (AKS, ACR, KV, Entra, DNS, Front Door; generates params + edge/)
-	@$(TF) init -input=false $(BACKEND_ARG)
+	@if [ -f terraform/backend.hcl ]; then BA="-backend-config=backend.hcl"; else BA=""; fi; \
+	 $(TF) init -input=false $$BA
 	@$(TF) apply -input=false $(AUTO)
 
 image: ## Build the app image in ACR and point the overlay at it
@@ -50,10 +61,10 @@ url: ## Print the app URL
 kustomize: ## Install the standalone kustomize binary for this platform (Linux/macOS; not brew)
 	@$(B)/install-kustomize.sh
 
-state-backend: ## (opt-in) Create the Azure Storage remote-state backend; writes terraform/backend.hcl
+state-backend: ## Create the Azure Storage remote-state backend directly (also run by `make state`)
 	@$(B)/state-backend.sh
 
-state-migrate: ## (opt-in) One-time: migrate existing local state into the remote backend
+state-migrate: ## One-time: migrate an existing LOCAL state into the remote backend
 	@$(TF) init -input=false -migrate-state -backend-config=backend.hcl
 
 down: ## Tear down ALL Azure resources (terraform destroy)

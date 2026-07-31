@@ -22,6 +22,8 @@ terraform {
       version = "~> 3.6" # generate the oauth2-proxy cookie secret (stored in Key Vault, read by ESO)
     }
   }
-  # State is local by default. To move it to a remote azurerm backend (shared, locked, versioned),
-  # opt in with `make state-backend` -> `backend.tf.example`; see docs/remote-state.md.
+  # Remote azurerm state (shared, locked, versioned) is the DEFAULT: `make up` runs `make state`,
+  # which provisions the backend and generates backend.tf + backend.hcl. Opt out with LOCAL_STATE=1
+  # (local state). A bare `terraform` run with no generated backend.tf still defaults to local.
+  # See docs/remote-state.md.
 }
