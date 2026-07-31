@@ -105,3 +105,8 @@ output "eso_client_id" {
   value       = azurerm_user_assigned_identity.eso.client_id
   description = "Managed-identity client id for External Secrets (Workload Identity). Flows into external-secrets.yaml."
 }
+
+output "app_client_id" {
+  value       = azurerm_user_assigned_identity.app.client_id
+  description = "Managed-identity client id for the driftscope app pod (Workload Identity). Annotate the driftscope ServiceAccount with it (azure.workload.identity/client-id) -- powers secretless ADO scanning and forge-auth Key Vault signing/secret reads."
+}

@@ -97,13 +97,16 @@ class AdoForge(Forge):
     kind = AZURE_DEVOPS
 
     def __init__(self, cache: Cache, *, offline: bool = False, enabled: bool = True,
-                 timeout: float = 30.0, retries: int = 2):
+                 timeout: float = 30.0, retries: int = 2, identity=None):
         self.cache = cache
         self.offline = offline
         self.enabled = enabled
         self.queries = 0
         self.timeout = timeout
         self.retries = retries
+        # A resolved bring-your-own identity, so ADO API calls use the SAME Entra app
+        # that authenticated the clone (None -> the process-default credential).
+        self.identity = identity
         # Work-item type -> {state name: category}. One call per type, per run.
         self._state_cache: dict[str, dict[str, str]] = {}
 
@@ -129,7 +132,7 @@ class AdoForge(Forge):
         if self.offline or not self.enabled:
             return self.cache.get(key, ignore_ttl=True)
 
-        cred = ado_credential()
+        cred = ado_credential(self.identity)
         if not cred:
             return None
 

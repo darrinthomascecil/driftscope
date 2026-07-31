@@ -37,15 +37,16 @@ configMapGenerator:
   - name: driftscope-config
     envs:
       - config.env
+# The app pod runs UNDER Workload Identity here (driftscope-app UAMI, terraform/app-identity.tf):
+# secretless ADO scanning + forge-auth Key Vault signing/secret reads (docs/forge-auth.md).
+#
+# This overlay once STRIPPED workload identity -- back when it was a public-repo-only, open
+# endpoint (commit 3e51039), so an Azure identity would have been a confused-deputy risk. That
+# rationale lapsed: the endpoint is now behind oauth2-proxy SSO (Entra group gate) + the Front
+# Door origin lock, and forge-auth needs the pod's identity to reach Key Vault. Do NOT re-add a
+# patch that removes azure.workload.identity/* -- tests/test_deploy_wi.py guards against it.
 patches:
-  - target: {kind: ServiceAccount, name: driftscope}
-    patch: |-
-      - op: remove
-        path: /metadata/annotations/azure.workload.identity~1client-id
-  - target: {kind: Deployment, name: driftscope}
-    patch: |-
-      - op: remove
-        path: /spec/template/metadata/labels/azure.workload.identity~1use
+  - path: patch-sa.yaml   # set the SA's azure.workload.identity/client-id (Terraform-generated)
   - target: {kind: Service, name: driftscope}
     patch: |-
       # ClusterIP only -- reached in-cluster via the Istio gateway (Front Door is the sole

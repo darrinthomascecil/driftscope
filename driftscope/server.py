@@ -72,11 +72,17 @@ def _severity_counts(report) -> dict:
     return counts
 
 
-def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
+def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry=None):
     """Validate, clone, and scan one repo. Returns (status, Report|None, error|None).
 
     The report-producing core, split out of scan_request so the multi-repo endpoint
     reuses the exact same clone -> run_scan path and gets Report objects to compare.
+
+    When a `registry` is supplied (a bring-your-own forge-auth registry), the request's
+    optional ``"identity"`` selects which app authenticates the clone and forge API calls;
+    the SSRF `allow_hosts` gate always runs first. An unknown identity name is a 400 and one
+    whose match rules exclude the target is a 403 -- resolved per repo, so a `/scan-multi`
+    call scans each tenant's repo under that tenant's own app.
     """
     _p = on_progress or (lambda _e: None)
     repo = req.get("repo") or req.get("url")
@@ -90,17 +96,32 @@ def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
     if ecosystems is not None and not isinstance(ecosystems, list):
         return 400, None, "'ecosystems' must be a list of ecosystem names"
 
+    identity = None
+    if registry is not None:
+        from .forge.identity import IdentityForbidden, UnknownIdentity, target_selector
+        from .source import normalize_remote
+
+        host, owner, forge = target_selector(normalize_remote(repo, ado_org=req.get("ado_org")))
+        try:
+            identity = registry.resolve(host, owner, name=req.get("identity"), forge=forge)
+        except UnknownIdentity as e:
+            return 400, None, f"unknown identity {e}"
+        except IdentityForbidden as e:
+            return 403, None, str(e)
+
     from .engine import build_context, run_scan
 
     _p({"phase": "cloning", "repo": repo})
     try:
-        with open_source(repo, ref=req.get("ref"), ado_org=req.get("ado_org")) as src:
+        with open_source(repo, ref=req.get("ref"), ado_org=req.get("ado_org"),
+                         identity=identity) as src:
             _p({"phase": "cloned", "commit": (src.commit or "")[:12] if src.cloned else None})
             ctx = build_context(
                 offline=bool(req.get("offline")),
                 no_github=bool(req.get("no_github")),
                 no_az=bool(req.get("no_az")),
                 cache_dir=Path(cache_dir) if cache_dir else None,
+                identity=identity,
             )
             report = run_scan(
                 src.path, ctx=ctx,
@@ -142,7 +163,7 @@ MAX_REPOS = 12  # a fleet compare clones every repo; cap so one call can't run a
 SSE_HEARTBEAT_SECS = 15
 
 
-def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
+def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry=None):
     """Scan several repos and compare them. Returns (repo_results, FleetComparison).
 
     Sequential on purpose: the disk cache makes later repos cheap (a shared dep is
@@ -162,7 +183,7 @@ def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None):
         # repo_index/repo_total are added under distinct keys so they don't clobber a
         # resolution event's own `total` (its component count).
         _status, report, error = produce_report(
-            sub, cache_dir=cache_dir, allow_hosts=allow_hosts,
+            sub, cache_dir=cache_dir, allow_hosts=allow_hosts, registry=registry,
             on_progress=lambda ev: _p({**ev, "repo_index": i + 1, "repo_total": len(repos)}),
         )
         if report is not None:
@@ -203,6 +224,7 @@ def scan_request(
     cache_dir: str | None = None,
     allow_hosts: tuple[str, ...] = (),
     on_progress=None,
+    registry=None,
 ) -> tuple[int, str, bytes, dict]:
     """Clone, scan, and render one request. Returns (status, content_type, body, headers).
 
@@ -224,7 +246,8 @@ def scan_request(
         return err(400, f"unknown format {fmt!r}; use json, markdown, html, or text")
 
     status, report, error = produce_report(
-        req, cache_dir=cache_dir, allow_hosts=allow_hosts, on_progress=on_progress
+        req, cache_dir=cache_dir, allow_hosts=allow_hosts, on_progress=on_progress,
+        registry=registry,
     )
     if report is None:
         return err(status, error)
@@ -251,6 +274,8 @@ _USAGE = {
         "offline": "bool", "no_github": "bool", "no_az": "bool",
         "include_vulns": "bool (default true)", "velocity": "bool (default false)",
         "ado_org": "Azure DevOps org for owner/repo shorthand (optional)",
+        "identity": "bring-your-own forge-auth identity name (optional; default auto-match "
+                    "by host/owner). Unknown name -> 400; not permitted for the target -> 403",
     },
 }
 
@@ -337,6 +362,7 @@ class _Handler(BaseHTTPRequestHandler):
                     req,
                     cache_dir=self.server.ds_cache_dir,  # type: ignore[attr-defined]
                     allow_hosts=self.server.ds_allow_hosts,  # type: ignore[attr-defined]
+                    registry=self.server.ds_registry,  # type: ignore[attr-defined]
                 )
                 self._send(code, content_type, body, headers)
         finally:
@@ -353,7 +379,8 @@ class _Handler(BaseHTTPRequestHandler):
         cache_dir = self.server.ds_cache_dir       # type: ignore[attr-defined]
         allow = self.server.ds_allow_hosts         # type: ignore[attr-defined]
         if not stream:
-            results, fc = run_multi(req, cache_dir=cache_dir, allow_hosts=allow)
+            results, fc = run_multi(req, cache_dir=cache_dir, allow_hosts=allow,
+                                    registry=self.server.ds_registry)  # type: ignore[attr-defined]
             self._json(200, multi_json(results, fc))
             return
 
@@ -365,6 +392,7 @@ class _Handler(BaseHTTPRequestHandler):
         def worker():
             try:
                 results, fc = run_multi(req, cache_dir=cache_dir, allow_hosts=allow,
+                                        registry=self.server.ds_registry,  # type: ignore[attr-defined]
                                         on_progress=lambda ev: q.put(("progress", ev)))
                 repos_out = []
                 for r in results:
@@ -437,6 +465,7 @@ class _Handler(BaseHTTPRequestHandler):
                     req,
                     cache_dir=self.server.ds_cache_dir,  # type: ignore[attr-defined]
                     allow_hosts=self.server.ds_allow_hosts,  # type: ignore[attr-defined]
+                    registry=self.server.ds_registry,  # type: ignore[attr-defined]
                     on_progress=lambda ev: q.put(("progress", ev)),
                 )
             except Exception as e:  # a scan bug must not wedge the stream
@@ -475,6 +504,7 @@ def run_server(
     max_concurrent: int = 4,
     allow_hosts: tuple[str, ...] = (),
     cache_dir: str | None = None,
+    forge_auth: str | None = None,
 ) -> None:
     """Serve until interrupted. Threaded so a slow scan does not block liveness.
 
@@ -487,16 +517,23 @@ def run_server(
     import signal
     import sys
 
+    from .forge.identity import IdentityRegistry
     from .source import sweep_stale_clones
 
     swept = sweep_stale_clones(0)  # nothing can be a live scan before we accept a request
     if swept:
         print(f"driftscope: swept {swept} orphaned clone dir(s) at startup", file=sys.stderr)
 
+    # Load the bring-your-own forge-auth registry once at startup (fails fast on a bad
+    # file); every scan resolves its identity against it. Always present -- with no file
+    # it holds just the env-default, so unconfigured scans behave exactly as before.
+    registry = IdentityRegistry.load(forge_auth)
+
     httpd = ThreadingHTTPServer((host, port), _Handler)
     httpd.ds_sem = threading.Semaphore(max(1, max_concurrent))  # type: ignore[attr-defined]
     httpd.ds_allow_hosts = tuple(allow_hosts)  # type: ignore[attr-defined]
     httpd.ds_cache_dir = cache_dir or os.environ.get("DRIFTSCOPE_CACHE")  # type: ignore[attr-defined]
+    httpd.ds_registry = registry  # type: ignore[attr-defined]
 
     def _graceful(signum, _frame):
         # shutdown() blocks until serve_forever() returns, so it must not run on the

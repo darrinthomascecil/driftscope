@@ -18,7 +18,10 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .forge.identity import ForgeIdentity
 
 USER_AGENT = "driftscope/0.1 (+https://github.com/)"
 DEFAULT_TTL = 6 * 3600  # registry version lists move slowly
@@ -217,8 +220,16 @@ def gh_token() -> str | None:
     return _GH_TOKEN  # type: ignore[return-value]
 
 
-def github_token() -> str | None:
-    """The token to authenticate GitHub API calls and clones with, by precedence:
+def github_token(identity: "ForgeIdentity | None" = None) -> str | None:
+    """The token to authenticate GitHub API calls and clones with.
+
+    With a bring-your-own `identity` that carries a GitHub App, mint *only* against that
+    app -- **no** `GITHUB_TOKEN`/`gh` fallback, so an operator's process-wide credential can
+    never leak into a tenant's scan. Returns None if that app's mint fails (caller then
+    clones with no auth rather than the wrong identity).
+
+    Without an identity (or an identity that is not a GitHub app), resolve the process
+    default by precedence, exactly as before:
 
     1. ``GITHUB_TOKEN`` in the environment -- an explicit override (a PAT, or a token a
        CI system already exported).
@@ -229,11 +240,14 @@ def github_token() -> str | None:
     Returns None when nothing supplies one, in which case GitHub is queried
     unauthenticated (anonymous rate limits) or the `gh` CLI fallback is used.
     """
+    from .github_app import installation_token
+
+    if identity is not None and getattr(identity, "github", None) is not None:
+        return installation_token(identity.github)
+
     env = (os.environ.get("GITHUB_TOKEN") or "").strip()
     if env:
         return env
-    from .github_app import installation_token
-
     app = installation_token()
     if app:
         return app
@@ -276,6 +290,8 @@ class GitHub:
     queries: int = 0
     enabled: bool = True
     throttled_waits: int = 0
+    # A resolved bring-your-own identity, so API calls use the SAME app as the clone.
+    identity: "ForgeIdentity | None" = None
     _search_times: list[float] = field(default_factory=list)
     # The delta phase calls this from a thread pool, so the window bookkeeping
     # needs a lock; without it two threads can both see a free slot.
@@ -319,7 +335,7 @@ class GitHub:
         if self.offline or not self.enabled:
             return self.cache.get(key, ignore_ttl=True)
 
-        token = github_token()
+        token = github_token(self.identity)
         if token is None:
             return self._api_via_cli(path, paginate=paginate, key=key)
 

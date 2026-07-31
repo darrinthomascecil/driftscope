@@ -470,7 +470,7 @@ def capture_request(monkeypatch):
 
 def _call_once(tmp_path, cred, monkeypatch, captured):
     forge = AdoForge(Cache(root=tmp_path / "cache"), enabled=True)
-    monkeypatch.setattr("driftscope.forge.ado.ado_credential", lambda: cred)
+    monkeypatch.setattr("driftscope.forge.ado.ado_credential", lambda identity=None: cred)
     forge._call("https://dev.azure.com/org/proj/_apis/git/repositories/r/refs")
     assert captured, "the request was never issued"
     return captured[0]
@@ -498,6 +498,6 @@ def test_no_credential_means_no_request_at_all(tmp_path, monkeypatch, capture_re
     """Better to make no call than an unauthenticated one: ADO answers those with
     a sign-in redirect that parses as neither an error nor data."""
     forge = AdoForge(Cache(root=tmp_path / "cache"), enabled=True)
-    monkeypatch.setattr("driftscope.forge.ado.ado_credential", lambda: None)
+    monkeypatch.setattr("driftscope.forge.ado.ado_credential", lambda identity=None: None)
     assert forge._call("https://dev.azure.com/org/proj/_apis/git/repositories/r/refs") is None
     assert capture_request == []

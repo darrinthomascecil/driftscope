@@ -47,7 +47,7 @@ def test_local_sign_mints_a_token_and_caches_it(monkeypatch):
     monkeypatch.setenv("GITHUB_APP_ID", "12345")
     monkeypatch.setenv("GITHUB_APP_INSTALLATION_ID", "999")
     monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "-----BEGIN KEY-----x-----END KEY-----")
-    monkeypatch.setattr(ga, "_sign", lambda si: "c2ln")  # don't actually run openssl
+    monkeypatch.setattr(ga, "_sign", lambda si, auth=None: "c2ln")  # don't actually run openssl
 
     calls = {"n": 0}
 
@@ -100,7 +100,7 @@ def test_key_vault_sign_flow_uses_workload_identity_and_signs_remotely(monkeypat
 def test_app_jwt_claims_are_short_lived(monkeypatch):
     monkeypatch.setenv("GITHUB_APP_ID", "777")
     monkeypatch.setenv("GITHUB_APP_INSTALLATION_ID", "1")
-    monkeypatch.setattr(ga, "_sign", lambda si: "sig")
+    monkeypatch.setattr(ga, "_sign", lambda si, auth=None: "sig")
 
     jwt = ga._app_jwt()
     seg = jwt.split(".")[1]

@@ -11,14 +11,23 @@ disabled explicitly so a hostile repo cannot run anything during clone.
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .forge.identity import AdoEntraAuth, ForgeIdentity
 
 # https://host/owner/repo(.git), git@host:owner/repo(.git), ssh://, git://
 _URL_RE = re.compile(
@@ -210,7 +219,12 @@ _ADO_ENV_VARS: tuple[tuple[str, str | None], ...] = (
     ("AZURE_DEVOPS_TOKEN", None),
 )
 
-_ADO_CRED: AdoCredential | None | bool = False  # False = not yet looked up
+_ADO_CRED: AdoCredential | None | bool = False  # legacy single slot; False = not looked up
+# Per-identity ADO credentials for bring-your-own Entra apps, keyed by identity.cache_key()
+# so tenant A never receives tenant B's token. Carries an expiry (from the Entra grant) so a
+# token is reused within a scan's many API calls but never across its ~1h lifetime.
+_ADO_CRED_CACHE: dict[str, tuple["AdoCredential | None", float]] = {}
+_ADO_REFRESH_SKEW = 300
 
 
 def _scheme_for(token: str) -> str:
@@ -238,14 +252,86 @@ def _federated_ado_token() -> str | None:
     return federated_token_for(f"{ADO_RESOURCE}/.default")
 
 
-def ado_credential() -> AdoCredential | None:
-    """The Azure DevOps credential for this process, resolved once.
+def _mint_entra_ado(entra: "AdoEntraAuth") -> tuple[AdoCredential, float] | None:
+    """Mint an ADO-scoped AAD token for a tenant's Entra app; (credential, expiry_epoch).
 
-    Mirrors `http.gh_token()`: prefer a credential that already exists on the
-    machine so there is nothing to configure. Returns None when nothing supplies
-    one, in which case the caller falls back to whatever git credentials the user
-    has configured -- never a header built from an empty token.
+    Two credential kinds:
+      * federated -- exchange the pod's projected federated token for a token on the
+        *tenant's* app via its client_id/tenant (no stored secret). Reuses `wi`.
+      * client_secret -- read the app's client secret from Key Vault with the server's
+        identity, then a plain client-credentials grant.
+    Returns None on any failure, so the caller falls back rather than erroring. Neither
+    the client secret nor the minted token is ever logged.
     """
+    from .wi import federated_token_for, get_key_vault_secret
+
+    now = time.time()
+    if entra.federated:
+        tok = federated_token_for(
+            f"{entra.resource}/.default", client_id=entra.client_id, tenant=entra.tenant_id
+        )
+        if not tok:
+            return None
+        # federated_token_for does not surface expires_in; the per-scan reset bounds
+        # staleness, so a conservative lifetime is enough to reuse within one scan.
+        return AdoCredential(tok, "Bearer", "entra-federated"), now + 3000.0
+
+    if entra.secret is None:
+        return None
+    secret = get_key_vault_secret(
+        entra.secret.vault_uri, entra.secret.secret_name, entra.secret.secret_version
+    )
+    if not secret:
+        return None
+    authority = (os.environ.get("AZURE_AUTHORITY_HOST")
+                 or "https://login.microsoftonline.com").rstrip("/")
+    body = urllib.parse.urlencode({
+        "grant_type": "client_credentials",
+        "client_id": entra.client_id,
+        "client_secret": secret,
+        "scope": f"{entra.resource}/.default",
+    }).encode()
+    req = urllib.request.Request(f"{authority}/{entra.tenant_id}/oauth2/v2.0/token", data=body)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.load(resp)
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+    tok = data.get("access_token")
+    if not tok:
+        return None
+    expires_in = float(data.get("expires_in") or 3600)
+    return AdoCredential(tok, "Bearer", "entra-client-secret"), now + expires_in
+
+
+def _entra_ado_credential(identity: "ForgeIdentity") -> AdoCredential | None:
+    """The ADO credential for a bring-your-own identity, cached per identity with expiry."""
+    key = identity.cache_key()
+    now = time.time()
+    hit = _ADO_CRED_CACHE.get(key)
+    if hit is not None:
+        cred, exp = hit
+        if cred is not None and now < exp - _ADO_REFRESH_SKEW:
+            return cred
+    minted = _mint_entra_ado(identity.ado)  # type: ignore[arg-type]
+    cred = minted[0] if minted else None
+    exp = minted[1] if minted else now  # cache a miss briefly so we retry next scan
+    _ADO_CRED_CACHE[key] = (cred, exp)
+    return cred
+
+
+def ado_credential(identity: "ForgeIdentity | None" = None) -> AdoCredential | None:
+    """The Azure DevOps credential for a scan, resolved once.
+
+    With an `identity` that carries an Entra app (bring-your-own), mint against that app.
+    Otherwise mirror `http.gh_token()`: prefer a credential already on the machine so there
+    is nothing to configure. Returns None when nothing supplies one, in which case the
+    caller falls back to whatever git credentials the user has configured -- never a header
+    built from an empty token.
+    """
+    if identity is not None and getattr(identity, "ado", None) is not None:
+        return _entra_ado_credential(identity)
+
     global _ADO_CRED
     if _ADO_CRED is not False:
         return _ADO_CRED  # type: ignore[return-value]
@@ -287,20 +373,28 @@ def ado_token() -> str | None:
     return cred.token if cred else None
 
 
-def reset_credential_cache() -> None:
-    """Forget the resolved-once Azure DevOps credential so the next lookup re-resolves.
+def reset_credential_cache(identity: "ForgeIdentity | None" = None) -> None:
+    """Forget the resolved Azure DevOps credential so the next lookup re-resolves.
 
     A workload-identity or `az` token is only valid ~1h. Resolving it once for the
     whole process would let a long-running server reuse a stale one until it restarted.
     Called at the start of each scan (see `open_source`) so a minted token is never
     reused beyond a single repo -- fresh per scan, without paying the exchange cost on
     every ADO API call within one. Static env tokens (a PAT) simply re-read for free.
+
+    With an `identity`, evict only *that* identity's per-tenant entry -- so a concurrent
+    scan for another tenant in the threading server keeps its freshly minted token. GitHub
+    App tokens are not reset here; they are expiry-cached in `github_app._CACHE` for both
+    the default and tenants, matching the original single-app behaviour.
     """
     global _ADO_CRED
-    _ADO_CRED = False
+    if identity is not None and getattr(identity, "ado", None) is not None:
+        _ADO_CRED_CACHE.pop(identity.cache_key(), None)
+    else:
+        _ADO_CRED = False
 
 
-def _auth_env_for(remote: str) -> dict[str, str]:
+def _auth_env_for(remote: str, identity: "ForgeIdentity | None" = None) -> dict[str, str]:
     """Git config, as environment, that authenticates a clone of `remote`.
 
     Azure DevOps gets its AAD/PAT credential; github.com gets a GitHub token when one
@@ -309,18 +403,21 @@ def _auth_env_for(remote: str) -> dict[str, str]:
     clones in a pod with no credential helper. Anything else, or no token, gets `{}`
     and falls back to whatever git is already configured with.
 
+    A resolved `identity` (bring-your-own app) selects the credential for both branches;
+    without one, the process-wide default resolves as before.
+
     The token travels in `GIT_CONFIG_VALUE_0` rather than a `-c` argument on purpose --
     argv is world-readable via `ps`, environment is not.
     """
     header = None
     if parse_ado_url(remote):
-        cred = ado_credential()
+        cred = ado_credential(identity)
         if cred:
             header = cred.header
     elif "github.com" in remote:
         from .http import github_token
 
-        tok = github_token()
+        tok = github_token(identity)
         if tok:
             # GitHub's git-over-HTTPS convention: any username, token as password.
             # x-access-token is what a GitHub App installation token expects.
@@ -393,11 +490,16 @@ def open_source(
     ref: str | None = None,
     keep: bool = False,
     ado_org: str | None = None,
+    identity: "ForgeIdentity | None" = None,
 ):
-    """Yield a Source for `target`, cloning it first if it is remote."""
+    """Yield a Source for `target`, cloning it first if it is remote.
+
+    `identity` (a resolved bring-your-own app) authenticates the clone; when None, the
+    process default resolves as before.
+    """
     # Re-resolve credentials for each scan rather than reusing a process-lifetime
     # token that a long-running server would let go stale (~1h validity).
-    reset_credential_cache()
+    reset_credential_cache(identity)
     if not looks_remote(target):
         p = Path(target).expanduser().resolve()
         if not p.exists():
@@ -409,7 +511,7 @@ def open_source(
         raise CloneError("git is not installed, cannot scan a remote repository")
 
     remote = normalize_remote(target, ado_org=ado_org)
-    auth_env = _auth_env_for(remote)
+    auth_env = _auth_env_for(remote, identity)
     # Create the temp dir last, and wrap everything after it in try/finally, so no
     # code path between its creation and the cleanup guard can leak it.
     tmp = Path(tempfile.mkdtemp(prefix=CLONE_PREFIX))
