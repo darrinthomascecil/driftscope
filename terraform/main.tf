@@ -1,23 +1,19 @@
 locals {
   tenant_id         = coalesce(var.tenant_id, data.azurerm_client_config.current.tenant_id)
   use_custom_domain = var.base_domain != null && var.base_domain != ""
-  # Where the domain's DNS lives. In "azure" mode Terraform owns the zone + records; in
-  # "cloudflare" mode DNS is external (records added by hand) and only a small delegated
-  # `acme.<domain>` zone is created in Azure so cert-manager's DNS-01 challenge can be answered.
-  dns_in_azure      = local.use_custom_domain && var.dns_provider == "azure"
-  dns_in_cloudflare = local.use_custom_domain && var.dns_provider == "cloudflare"
-  # The zone cert-manager writes _acme-challenge TXT records into: the apex in azure mode, the
-  # delegated sub-zone in cloudflare mode (reached via a static CNAME + NS delegation in Cloudflare).
-  acme_zone    = local.dns_in_cloudflare ? "acme.${var.base_domain}" : var.base_domain
-  cname_follow = local.dns_in_cloudflare
-  subdomain    = "driftscope"
-  # With a custom domain: driftscope.<domain>. Without: Front Door's default *.azurefd.net host.
+  subdomain         = "driftscope"
+  # The DNS zone Terraform creates + is authoritative for. Default: the whole base_domain (app is a
+  # CNAME `driftscope` inside it). delegate_subdomain: just driftscope.<base_domain>, so only that
+  # subdomain is delegated to Azure (one NS record in the parent) -- the app then sits at this
+  # zone's APEX, served by an alias record (CNAMEs aren't allowed at a zone apex).
+  zone_name = local.use_custom_domain ? (var.delegate_subdomain ? "${local.subdomain}.${var.base_domain}" : var.base_domain) : ""
+  # With a custom domain the app host is driftscope.<domain> either way. Without: the *.azurefd.net host.
   host = local.use_custom_domain ? "${local.subdomain}.${var.base_domain}" : azurerm_cdn_frontdoor_endpoint.this.host_name
 
   # The name Front Door DIALS to reach the origin (SNI + DNS target), distinct from the public
-  # `host` above. Custom domain: origin.<domain> (A -> gateway IP) with a cert-manager DNS-01
+  # `host`. Always a child of the zone: origin.<zone> (A -> gateway IP) with a cert-manager DNS-01
   # cert. No domain: the gateway's cloudapp FQDN, reached over HTTP (no cert issuable there).
-  origin_host      = local.use_custom_domain ? "origin.${var.base_domain}" : azurerm_public_ip.gateway.fqdn
+  origin_host      = local.use_custom_domain ? "origin.${local.zone_name}" : azurerm_public_ip.gateway.fqdn
   use_https_origin = local.use_custom_domain # Front Door -> origin is HTTPS only when we can issue a real cert
 }
 

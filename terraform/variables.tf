@@ -26,21 +26,18 @@ variable "base_domain" {
   description = "Custom domain (optional). Unset => Front Door default *.azurefd.net hostname."
 }
 
-variable "dns_provider" {
-  type    = string
-  default = "azure"
-  # "azure" (default): Terraform creates the Azure DNS zone + all records; you delegate the
-  #   domain's name servers to Azure at your registrar. Fully automated, one source of truth.
-  # "cloudflare": DNS stays in Cloudflare (or any external provider). Terraform creates NO public
-  #   records -- you add the handful printed by `terraform output cloudflare_records` BY HAND
-  #   (all DNS-only / grey-cloud), and cert-manager's DNS-01 origin-cert challenge is delegated to
-  #   a small Azure `acme.<base_domain>` zone (one static NS record in Cloudflare). Nothing in
-  #   Cloudflare is Terraform-managed. Only relevant when base_domain is set. See docs/edge-frontdoor-cloudflare-dns.md.
-  description = "DNS host for base_domain: \"azure\" (Terraform-managed Azure DNS) or \"cloudflare\" (external DNS, records added by hand)."
-  validation {
-    condition     = contains(["azure", "cloudflare"], var.dns_provider)
-    error_message = "dns_provider must be \"azure\" or \"cloudflare\"."
-  }
+variable "delegate_subdomain" {
+  type    = bool
+  default = false
+  # false (default): Terraform creates an Azure DNS zone for the WHOLE base_domain and you delegate
+  #   the domain's name servers to Azure at your registrar. The app is a CNAME `driftscope` in it.
+  # true: Terraform creates the zone for just `driftscope.<base_domain>` (the app FQDN) and you add
+  #   ONE NS record in your PARENT DNS -- `driftscope NS -> <dns_name_servers>` -- to delegate that
+  #   subdomain to Azure. Use this when the parent domain must stay at another provider (e.g. the
+  #   registrar/DNS is Cloudflare and you can't move the apex NS). Everything else is still Azure/
+  #   Terraform-managed; the app sits at the delegated zone's apex (served via an alias record).
+  #   See docs/edge-frontdoor-delegated-subdomain.md. Only relevant when base_domain is set.
+  description = "Delegate only driftscope.<base_domain> to Azure DNS (one NS record in the parent) instead of the whole domain."
 }
 
 variable "acme_email" {

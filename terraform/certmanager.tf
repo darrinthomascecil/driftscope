@@ -27,11 +27,10 @@ resource "azurerm_federated_identity_credential" "certmanager" {
   subject   = "system:serviceaccount:cert-manager:cert-manager"
 }
 
-# Least privilege: write TXT records in the challenge zone only -- the apex zone in azure mode,
-# the delegated acme.<domain> sub-zone in cloudflare mode. Nothing else.
+# Least privilege: write TXT records in THIS zone, nothing else.
 resource "azurerm_role_assignment" "certmanager_dns" {
   count                = local.use_custom_domain ? 1 : 0
-  scope                = local.dns_in_azure ? one(azurerm_dns_zone.this[*].id) : one(azurerm_dns_zone.acme[*].id)
+  scope                = azurerm_dns_zone.this[0].id
   role_definition_name = "DNS Zone Contributor"
   principal_id         = azurerm_user_assigned_identity.certmanager[0].principal_id
 }
