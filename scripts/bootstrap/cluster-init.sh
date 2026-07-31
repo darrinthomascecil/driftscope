@@ -40,7 +40,7 @@ if custom_domain; then
     --version v1.16.2 \
     --set crds.enabled=true \
     --set "serviceAccount.annotations.azure\.workload\.identity/client-id=$CID" \
-    --set "podLabels.azure\.workload\.identity/use=true" \
+    --set-string "podLabels.azure\.workload\.identity/use=true" \
     --wait
 else
   log "no custom domain -> skipping cert-manager (origin leg is HTTP)"
