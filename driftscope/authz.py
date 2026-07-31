@@ -36,6 +36,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 
 class TokenError(Exception):
@@ -88,6 +89,12 @@ _JWKS_TTL = 3600.0
 
 
 def _fetch_jwks(jwks_uri: str) -> list:
+    # The JWKS is the root of trust for every token decision, so it is fetched over https ONLY.
+    # `urllib.request.urlopen` would otherwise happily open file://, http://, ftp://, ... -- a
+    # misconfiguration or a future change feeding it less-trusted input could then turn this into
+    # a local-file read or a plaintext/SSRF hop. https-only closes that off.
+    if urlsplit(jwks_uri).scheme != "https":
+        raise TokenError(f"JWKS URI must be https, got {jwks_uri!r}")
     hit = _JWKS_CACHE.get(jwks_uri)
     if hit and time.time() < hit[1]:
         return hit[0]

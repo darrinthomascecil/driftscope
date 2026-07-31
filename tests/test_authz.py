@@ -133,6 +133,15 @@ def test_authenticate_bad_token(monkeypatch, rsa_key):
     assert caller.ok is False and caller.reason
 
 
+@pytest.mark.parametrize("uri", [
+    "file:///etc/passwd", "http://login.microsoftonline.com/keys", "ftp://host/keys", "/local/path",
+])
+def test_jwks_uri_must_be_https(uri):
+    # The root-of-trust fetch must reject any non-https scheme before ever opening it.
+    with pytest.raises(authz.TokenError, match="https"):
+        authz._fetch_jwks(uri)
+
+
 def test_config_from_env(monkeypatch):
     monkeypatch.delenv("DRIFTSCOPE_OIDC_AUDIENCE", raising=False)
     assert authz.AuthzConfig.from_env() is None
