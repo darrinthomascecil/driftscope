@@ -25,9 +25,15 @@ kubectl -n aks-istio-system rollout status  "deployment/istiod-$REV" --timeout=1
 # be reconciled by the add-on -- if the IP doesn't take, see edge/README.md.
 PIP="$(tf_out gateway_pip_name)"
 log "annotating external gateway service -> public IP $PIP"
+# Network-layer origin lock (defense-in-depth alongside the app-layer X-Azure-FDID check):
+# restrict the LoadBalancer's NSG rule to the AzureFrontDoor.Backend service tag, so ONLY Front
+# Door's backends can reach the gateway's public IP -- the internet is dropped at the network layer
+# before it ever hits Envoy. (On AKS the LB NSG rules are add-on-managed; this annotation is the
+# supported way to scope them -- a hand-authored azurerm NSG rule would be reconciled away.)
 kubectl annotate svc aks-istio-ingressgateway-external -n aks-istio-ingress --overwrite \
   "service.beta.kubernetes.io/azure-pip-name=$PIP" \
-  "service.beta.kubernetes.io/azure-load-balancer-resource-group=$RG"
+  "service.beta.kubernetes.io/azure-load-balancer-resource-group=$RG" \
+  "service.beta.kubernetes.io/azure-allowed-service-tags=AzureFrontDoor.Backend"
 
 # cert-manager with Workload Identity, only when there's a custom domain (=> an origin cert).
 if custom_domain; then
