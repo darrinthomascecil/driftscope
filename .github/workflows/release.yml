@@ -105,12 +105,12 @@ jobs:
 
       - name: Install cosign
         if: steps.gate.outputs.push == 'true'
-        uses: sigstore/cosign-installer@v3
+        # installer @v4 is REQUIRED to install cosign 3.x: v3 switched release signing from a
+        # detached `.sig` to a `.sigstore.json` bundle, and the older @v3 installer 404s trying to
+        # fetch the now-absent `.sig`. @v4 verifies the new bundle format.
+        uses: sigstore/cosign-installer@v4
         with:
-          # Pin the cosign BINARY (not just the action) for reproducibility -- `@v3` alone installs
-          # whatever is newest, which is a supply-chain smell in a signing pipeline. Pinned to the
-          # CURRENT release: we don't run online `cosign verify` in CI, so the v3 trust-root init
-          # that hung verification is irrelevant here -- sign / attest / download are unaffected.
+          # Pin the cosign BINARY for reproducibility (the action's default floats). Current major.
           cosign-release: v3.1.2
 
       - name: Install syft (SBOM)
