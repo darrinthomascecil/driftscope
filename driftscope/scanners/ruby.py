@@ -58,26 +58,42 @@ def _line_of(text: str, idx: int) -> int:
     return text.count("\n", 0, idx) + 1
 
 
-def _group_at(text: str, idx: int) -> str | None:
-    """The innermost `group :x do` enclosing `idx`, by nesting depth.
+def _group_index(text: str) -> tuple[list[int], list[str | None]]:
+    """(sorted starts, labels) for every `group :x do`, built ONCE per file.
 
-    Approximate on purpose: tracking `do`/`end` pairs exactly would mean parsing
-    Ruby. Getting the group slightly wrong mislabels a dependency; it never
-    invents one, so the failure mode is cosmetic.
+    `_group_at` used to re-scan the whole text per gem (O(gems x text) -- quadratic, ~340ms
+    on a hostile 85 KB Gemfile of repeated gem lines, minutes at the read cap). Indexing once
+    turns per-gem labeling into a binary search.
     """
-    best = None
+    starts: list[int] = []
+    labels: list[str | None] = []
     for m in _GROUP_RE.finditer(text):
-        if m.start() > idx:
-            break
-        best = m
-    if best is None:
-        return None
-    names = re.findall(r":(\w+)", best.group("groups"))
-    return ",".join(names) or None
+        starts.append(m.start())
+        names = re.findall(r":(\w+)", m.group("groups"))
+        labels.append(",".join(names) or None)
+    return starts, labels
+
+
+def _group_at(index: tuple[list[int], list[str | None]], idx: int) -> str | None:
+    """The innermost `group :x do` enclosing `idx` (the last group starting at or before it).
+
+    Approximate on purpose: tracking `do`/`end` pairs exactly would mean parsing Ruby.
+    Getting the group slightly wrong mislabels a dependency; it never invents one, so the
+    failure mode is cosmetic.
+    """
+    import bisect
+
+    starts, labels = index
+    i = bisect.bisect_right(starts, idx) - 1
+    return labels[i] if i >= 0 else None
 
 
 def _spec_from(rest: str) -> tuple[str | None, str | None]:
     """(constraint, unresolved-reason) from the tail of a gem line."""
+    # A gem declaration's version + options are short; cap the tail so a pathologically long
+    # line in a hostile Gemfile can't drive the version regexes into superlinear backtracking
+    # (a 45 KB line was measured at ~5.5s). A real spec is nowhere near this long.
+    rest = rest[:4096]
     # Strip trailing options (require:, path:, git:) before looking for a version.
     head = re.split(r",\s*\w+:", rest, maxsplit=1)[0]
     m = _VERSION_TOKEN.search(head)
@@ -121,9 +137,10 @@ def _scan_gemfile(path: Path, root: Path) -> list[Component]:
             meta={"runtime": True, "declared_in": "Gemfile"},
         ))
 
+    group_index = _group_index(text)
     for m in _GEM_RE.finditer(text):
         spec, unresolved = _spec_from(m.group("rest"))
-        meta: dict = {"group": _group_at(text, m.start())}
+        meta: dict = {"group": _group_at(group_index, m.start())}
         if unresolved:
             # A computed version is not a version. Record the expression so the
             # report can say why it could not be assessed.
