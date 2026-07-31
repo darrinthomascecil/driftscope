@@ -29,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+from . import authz
 from .report import render
 from .source import CloneError, looks_remote, open_source
 
@@ -72,7 +73,8 @@ def _severity_counts(report) -> dict:
     return counts
 
 
-def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry=None):
+def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry=None,
+                   caller=None):
     """Validate, clone, and scan one repo. Returns (status, Report|None, error|None).
 
     The report-producing core, split out of scan_request so the multi-repo endpoint
@@ -98,14 +100,19 @@ def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None, reg
 
     identity = None
     if registry is not None:
-        from .forge.identity import IdentityForbidden, UnknownIdentity, target_selector
+        from .forge.identity import (
+            IdentityForbidden, Unauthenticated, UnknownIdentity, target_selector,
+        )
         from .source import normalize_remote
 
         host, owner, forge = target_selector(normalize_remote(repo, ado_org=req.get("ado_org")))
         try:
-            identity = registry.resolve(host, owner, name=req.get("identity"), forge=forge)
+            identity = registry.resolve(host, owner, name=req.get("identity"), forge=forge,
+                                        caller=caller)
         except UnknownIdentity as e:
             return 400, None, f"unknown identity {e}"
+        except Unauthenticated as e:
+            return 401, None, f"authentication required: {e}"
         except IdentityForbidden as e:
             return 403, None, str(e)
 
@@ -163,7 +170,7 @@ MAX_REPOS = 12  # a fleet compare clones every repo; cap so one call can't run a
 SSE_HEARTBEAT_SECS = 15
 
 
-def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry=None):
+def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry=None, caller=None):
     """Scan several repos and compare them. Returns (repo_results, FleetComparison).
 
     Sequential on purpose: the disk cache makes later repos cheap (a shared dep is
@@ -183,7 +190,7 @@ def run_multi(req, *, cache_dir=None, allow_hosts=(), on_progress=None, registry
         # repo_index/repo_total are added under distinct keys so they don't clobber a
         # resolution event's own `total` (its component count).
         _status, report, error = produce_report(
-            sub, cache_dir=cache_dir, allow_hosts=allow_hosts, registry=registry,
+            sub, cache_dir=cache_dir, allow_hosts=allow_hosts, registry=registry, caller=caller,
             on_progress=lambda ev: _p({**ev, "repo_index": i + 1, "repo_total": len(repos)}),
         )
         if report is not None:
@@ -225,6 +232,7 @@ def scan_request(
     allow_hosts: tuple[str, ...] = (),
     on_progress=None,
     registry=None,
+    caller=None,
 ) -> tuple[int, str, bytes, dict]:
     """Clone, scan, and render one request. Returns (status, content_type, body, headers).
 
@@ -247,7 +255,7 @@ def scan_request(
 
     status, report, error = produce_report(
         req, cache_dir=cache_dir, allow_hosts=allow_hosts, on_progress=on_progress,
-        registry=registry,
+        registry=registry, caller=caller,
     )
     if report is None:
         return err(status, error)
@@ -351,24 +359,28 @@ class _Handler(BaseHTTPRequestHandler):
         if not sem.acquire(blocking=False):
             self._json(503, {"error": "server busy: too many concurrent scans"})
             return
+        # Authenticate the caller once (None when authz is disabled). Its verified app
+        # roles gate which forge identity the scan may use -- see forge/identity.resolve.
+        caller = authz.authenticate(self.headers)
         try:
             stream = "stream=1" in query
             if path == "/scan-multi":
-                self._scan_multi(req, stream)
+                self._scan_multi(req, stream, caller)
             elif stream:
-                self._scan_streaming(req)
+                self._scan_streaming(req, caller)
             else:
                 code, content_type, body, headers = scan_request(
                     req,
                     cache_dir=self.server.ds_cache_dir,  # type: ignore[attr-defined]
                     allow_hosts=self.server.ds_allow_hosts,  # type: ignore[attr-defined]
                     registry=self.server.ds_registry,  # type: ignore[attr-defined]
+                    caller=caller,
                 )
                 self._send(code, content_type, body, headers)
         finally:
             sem.release()
 
-    def _scan_multi(self, req, stream):
+    def _scan_multi(self, req, stream, caller=None):
         repos = req.get("repos")
         if not isinstance(repos, list) or not repos:
             self._json(400, {"error": "body must include a non-empty 'repos' list of git URLs"})
@@ -380,7 +392,7 @@ class _Handler(BaseHTTPRequestHandler):
         allow = self.server.ds_allow_hosts         # type: ignore[attr-defined]
         if not stream:
             results, fc = run_multi(req, cache_dir=cache_dir, allow_hosts=allow,
-                                    registry=self.server.ds_registry)  # type: ignore[attr-defined]
+                                    registry=self.server.ds_registry, caller=caller)  # type: ignore[attr-defined]
             self._json(200, multi_json(results, fc))
             return
 
@@ -393,6 +405,7 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 results, fc = run_multi(req, cache_dir=cache_dir, allow_hosts=allow,
                                         registry=self.server.ds_registry,  # type: ignore[attr-defined]
+                                        caller=caller,
                                         on_progress=lambda ev: q.put(("progress", ev)))
                 repos_out = []
                 for r in results:
@@ -448,7 +461,7 @@ class _Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass  # client disconnected; let the worker finish and be GC'd
 
-    def _scan_streaming(self, req):
+    def _scan_streaming(self, req, caller=None):
         """Run the scan in a worker thread, streaming phase events as SSE.
 
         Progress events (`cloning`, `resolving` per ecosystem, `deltas`, `vulns`,
@@ -466,6 +479,7 @@ class _Handler(BaseHTTPRequestHandler):
                     cache_dir=self.server.ds_cache_dir,  # type: ignore[attr-defined]
                     allow_hosts=self.server.ds_allow_hosts,  # type: ignore[attr-defined]
                     registry=self.server.ds_registry,  # type: ignore[attr-defined]
+                    caller=caller,
                     on_progress=lambda ev: q.put(("progress", ev)),
                 )
             except Exception as e:  # a scan bug must not wedge the stream
@@ -528,6 +542,15 @@ def run_server(
     # file); every scan resolves its identity against it. Always present -- with no file
     # it holds just the env-default, so unconfigured scans behave exactly as before.
     registry = IdentityRegistry.load(forge_auth)
+
+    # Fail safe, not open: a registry that demands per-caller authorization is meaningless
+    # unless the server can actually validate caller tokens. Refuse to start rather than run
+    # strict-mode with authorization silently disabled.
+    if registry.require_authorization and authz.AuthzConfig.from_env() is None:
+        raise SystemExit(
+            "forge-auth require_authorization is set but caller token validation is not "
+            "configured -- set DRIFTSCOPE_OIDC_AUDIENCE (+ tenant). See docs/caller-authz.md."
+        )
 
     httpd = ThreadingHTTPServer((host, port), _Handler)
     httpd.ds_sem = threading.Semaphore(max(1, max_concurrent))  # type: ignore[attr-defined]
