@@ -106,6 +106,11 @@ jobs:
       - name: Install cosign
         if: steps.gate.outputs.push == 'true'
         uses: sigstore/cosign-installer@v3
+        with:
+          # Pin the cosign BINARY (not just the action): `@v3` installs whatever is latest, and
+          # cosign 3.x rewrote keyless verification around a new trusted-root/bundle flow whose
+          # TUF/Rekor interaction hung our verify step. A pinned, mature version is deterministic.
+          cosign-release: v2.6.4
 
       - name: Install syft (SBOM)
         if: steps.gate.outputs.push == 'true'
@@ -151,11 +156,14 @@ jobs:
             echo "::error::cosign verification did not complete (Sigstore backend unreachable?)"
             return 1
           }
-          retry cosign verify \
+          # --offline: verify Rekor log inclusion from the bundle cosign attached at sign time
+          # (a GHCR read + local crypto), NOT a live call to Rekor's read API. This decouples the
+          # gate from Rekor availability -- the actual cause of the multi-minute stall.
+          retry cosign verify --offline \
             --certificate-identity-regexp "${IDENTITY}" \
             --certificate-oidc-issuer "${ISSUER}" \
             "${IMAGE}@${DIGEST}"
-          retry cosign verify-attestation --type spdxjson \
+          retry cosign verify-attestation --offline --type spdxjson \
             --certificate-identity-regexp "${IDENTITY}" \
             --certificate-oidc-issuer "${ISSUER}" \
             "${IMAGE}@${DIGEST}"
