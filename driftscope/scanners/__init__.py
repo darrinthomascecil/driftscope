@@ -116,10 +116,24 @@ def read_text(p: Path, limit: int = 2_000_000) -> str | None:
     return raw.decode("utf-8", errors="replace")
 
 
+class ScanTimeout(Exception):
+    """The per-scan wall-clock budget was exceeded (a hostile/huge repo). Defense in depth
+    on top of the per-file caps and the parser hardening -- bounds the aggregate CPU one
+    scan can spend so a single tree can't monopolise a worker."""
+
+
 def scan_tree(
-    root: Path, ecosystems: set[str] | None = None
+    root: Path, ecosystems: set[str] | None = None, deadline: float | None = None
 ) -> tuple[list[Component], int]:
-    """Run every scanner over the tree. Returns (components, files_scanned)."""
+    """Run every scanner over the tree. Returns (components, files_scanned).
+
+    `deadline` is an absolute `time.monotonic()` value; when set, the walk aborts with
+    ScanTimeout once it is passed. The check is between files (parsing a single file is
+    bounded by read_text's 2 MB cap plus the parsers' own hardening), so this bounds the
+    total time a scan spends over a large/hostile tree.
+    """
+    import time
+
     from . import (azure_iac, cicd, containers, dotnet, jvm, langdeps, ruby,
                    terraform)
 
@@ -136,6 +150,8 @@ def scan_tree(
     out: list[Component] = []
     n = 0
     for path in walk_files(root):
+        if deadline is not None and time.monotonic() > deadline:
+            raise ScanTimeout(f"scan exceeded its time budget after {n} files")
         n += 1
         for fn in scanners:
             try:

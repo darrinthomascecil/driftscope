@@ -19,13 +19,17 @@ from pathlib import Path
 from ..models import DOCKER, HELM, K8S_API, Component
 from . import read_text, rel
 
+# `[^\S\n]` is horizontal whitespace only. Under re.M, a leading `\s*` (which includes `\n`)
+# makes each line-start's match scan FORWARD across newlines hunting for the keyword -- O(n^2)
+# over the file (a hostile Dockerfile was measured at ~5.3s). These directives are always
+# within one line, so restrict the whitespace to non-newline and the scan stays linear.
 _FROM = re.compile(
-    r"^\s*FROM\s+(?:--platform=\S+\s+)?(?P<ref>[^\s]+)(?:\s+AS\s+(?P<stage>\S+))?",
+    r"^[^\S\n]*FROM[^\S\n]+(?:--platform=\S+[^\S\n]+)?(?P<ref>\S+)(?:[^\S\n]+AS[^\S\n]+(?P<stage>\S+))?",
     re.I | re.M,
 )
-_IMAGE_LINE = re.compile(r"^\s*-?\s*image:\s*['\"]?(?P<ref>[^\s'\"#]+)", re.M)
-_APIVERSION_LINE = re.compile(r"^\s*apiVersion:\s*['\"]?(?P<v>[\w./-]+)", re.M)
-_KIND_LINE = re.compile(r"^\s*kind:\s*['\"]?(?P<k>[\w.-]+)", re.M)
+_IMAGE_LINE = re.compile(r"^[^\S\n]*-?[^\S\n]*image:[^\S\n]*['\"]?(?P<ref>[^\s'\"#]+)", re.M)
+_APIVERSION_LINE = re.compile(r"^[^\S\n]*apiVersion:[^\S\n]*['\"]?(?P<v>[\w./-]+)", re.M)
+_KIND_LINE = re.compile(r"^[^\S\n]*kind:[^\S\n]*['\"]?(?P<k>[\w.-]+)", re.M)
 
 _DOC_SEP = re.compile(r"^---[ \t]*$", re.M)
 

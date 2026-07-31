@@ -116,7 +116,16 @@ def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None, reg
         except IdentityForbidden as e:
             return 403, None, str(e)
 
+    import time
+
     from .engine import build_context, run_scan
+    from .scanners import ScanTimeout
+
+    # Bound the untrusted-file parse phase so one huge/hostile repo can't monopolise a worker.
+    # DRIFTSCOPE_SCAN_TIMEOUT seconds (default 120); 0 disables. Backstops the per-file caps
+    # and parser hardening -- see docs/hostile-repo-hardening.md.
+    budget = float(os.environ.get("DRIFTSCOPE_SCAN_TIMEOUT") or 120)
+    scan_deadline = (time.monotonic() + budget) if budget > 0 else None
 
     _p({"phase": "cloning", "repo": repo})
     try:
@@ -135,6 +144,7 @@ def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None, reg
                 ecosystems=set(ecosystems) if ecosystems else None,
                 include_vulns=bool(req.get("include_vulns", True)),
                 include_velocity=bool(req.get("velocity", False)),
+                scan_deadline=scan_deadline,
                 progress=on_progress,
             )
             report.root = src.display
@@ -142,6 +152,8 @@ def produce_report(req, *, cache_dir=None, allow_hosts=(), on_progress=None, reg
                 report.source = {"remote": src.remote, "ref": src.ref, "commit": src.commit}
     except CloneError as e:
         return 400, None, str(e)
+    except ScanTimeout as e:
+        return 422, None, f"scan aborted: {e}"
     except Exception as e:  # a scan bug must not take the server down
         return 500, None, f"scan failed: {type(e).__name__}: {e}"
     return 200, report, None

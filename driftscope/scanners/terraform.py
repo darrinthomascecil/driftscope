@@ -18,10 +18,16 @@ from . import read_text, rel
 
 # required_providers { azurerm = { source = "hashicorp/azurerm", version = "~> 3.0" } }
 _RP_BLOCK = re.compile(r"required_providers\s*\{", re.I)
+# Possessive quantifiers (Python 3.11+) stop `[\w-]*` / `\s*` from backtracking; combined with
+# the body cap in scan_file this keeps a hostile, unbalanced required_providers block from
+# driving this into O(n^2) (a 28 KB block was measured at ~4.4s, ~88ms after both fixes).
 _ENTRY = re.compile(
-    r"(?P<alias>[A-Za-z_][\w-]*)\s*=\s*\{(?P<body>[^{}]*)\}",
+    r"(?P<alias>[A-Za-z_][\w-]*+)\s*+=\s*+\{(?P<body>[^{}]*+)\}",
     re.S,
 )
+# A required_providers block is tiny in practice (~60 bytes/provider); cap the body a regex
+# scans so a malformed brace (which makes _balanced_block run to EOF) can't be a DoS.
+_MAX_BLOCK = 8192
 _SOURCE = re.compile(r"""source\s*=\s*["']([^"']+)["']""")
 _VERSION = re.compile(r"""version\s*=\s*["']([^"']+)["']""")
 _UNQUOTED_VERSION = re.compile(r"version\s*=\s*([A-Za-z_][\w.\[\]\"']*)")
@@ -79,7 +85,7 @@ def scan_file(path: Path, root: Path) -> list[Component]:
     for m in _RP_BLOCK.finditer(text):
         brace = text.index("{", m.start())
         body, _ = _balanced_block(text, brace)
-        for e in _ENTRY.finditer(body):
+        for e in _ENTRY.finditer(body[:_MAX_BLOCK]):
             alias = e.group("alias")
             inner = e.group("body")
             sm = _SOURCE.search(inner)

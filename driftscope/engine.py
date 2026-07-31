@@ -114,13 +114,15 @@ def run_scan(
     velocity_window_days: int = 90,
     velocity_max_pages: int = 20,
     max_velocity: int = 6,
+    scan_deadline: float | None = None,
     progress: Callable[[dict], None] | None = None,
 ) -> Report:
     started = time.monotonic()
     report = Report(root=str(root), stats=ScanStats())
     emit = progress or (lambda _event: None)
 
-    components, files = scan_tree(root, ecosystems)
+    # `scan_deadline` (an absolute time.monotonic()) bounds the untrusted-file parse phase.
+    components, files = scan_tree(root, ecosystems, deadline=scan_deadline)
     report.stats.files_scanned = files
 
     if include_live_azure:

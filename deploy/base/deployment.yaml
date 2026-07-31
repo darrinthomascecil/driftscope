@@ -91,6 +91,10 @@ spec:
             - { name: tmp, mountPath: /tmp }
             - { name: home, mountPath: /home/drift }
       volumes:
-        - { name: cache, emptyDir: {} }
-        - { name: tmp, emptyDir: {} }
-        - { name: home, emptyDir: {} }
+        # sizeLimit bounds ephemeral storage so a hostile repo can't fill the node's disk
+        # during `git clone`: writing past the limit fails with ENOSPC (the kubelet evicts
+        # the pod if exceeded), so the scan errors cleanly instead of taking the node down.
+        # /tmp holds the clone (a shallow --depth 1 tree); /cache is the shared HTTP cache.
+        - { name: cache, emptyDir: { sizeLimit: 1Gi } }
+        - { name: tmp, emptyDir: { sizeLimit: 2Gi } }
+        - { name: home, emptyDir: { sizeLimit: 64Mi } }
