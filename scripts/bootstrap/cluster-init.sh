@@ -46,4 +46,17 @@ else
   log "no custom domain -> skipping cert-manager (origin leg is HTTP)"
 fi
 
+# External Secrets Operator: syncs the oauth2-proxy creds from Key Vault (retires `make secret`).
+# The driftscope-eso ServiceAccount (created by the app overlay, Terraform-annotated with the
+# managed-identity client id) is what ESO federates as -- installed here so it's running before
+# the ExternalSecret is applied in the deploy step.
+log "installing External Secrets Operator"
+helm repo add external-secrets https://charts.external-secrets.io >/dev/null
+helm repo update external-secrets >/dev/null
+helm upgrade --install external-secrets external-secrets/external-secrets \
+  --namespace external-secrets --create-namespace \
+  --version 0.10.7 \
+  --set installCRDs=true \
+  --wait
+
 log "cluster-init: OK"

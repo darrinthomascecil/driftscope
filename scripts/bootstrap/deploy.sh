@@ -3,10 +3,20 @@
 # lock) in the right order, then print the URL. Assumes cluster-init + secret already ran.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# 1. App namespace: deployment, oauth2-proxy, routing, STRICT mTLS, gateway-only allows.
-#    (Namespace is already labeled for injection by cluster-init, so sidecars inject now.)
+# 1. App namespace: deployment, oauth2-proxy, routing, STRICT mTLS, gateway-only allows, and the
+#    ESO SecretStore + ExternalSecret. (Namespace is already labeled for injection by cluster-init.)
 log "applying app overlay (kustomize)"
 kubectl apply -k "$OVERLAY"
+
+# 1a. ESO syncs the oauth2-proxy Secret from Key Vault (replaces `make secret`). Wait for it so
+#     oauth2-proxy has its credentials before rollout. If it doesn't sync, check the SecretStore:
+#     kubectl describe externalsecret oauth2-proxy -n driftscope
+log "waiting for External Secrets to sync oauth2-proxy from Key Vault"
+kubectl wait --for=condition=Ready externalsecret/oauth2-proxy -n driftscope --timeout=120s \
+  && kubectl -n driftscope rollout restart deploy/oauth2-proxy >/dev/null 2>&1 \
+  || warn "ExternalSecret not Ready -- check ESO + the driftscope-eso identity (Key Vault Secrets User). Fallback: make secret"
+# ^ the restart is a nudge: oauth2-proxy pods scheduled before the Secret existed sit in
+#   CreateContainerConfigError and self-heal on the kubelet's retry; this just makes pickup prompt.
 
 # 2. Mesh-wide hardening. The app overlay's ALLOW policies exist now, so applying the
 #    default-deny here won't cut off the gateway/app/oauth2-proxy.

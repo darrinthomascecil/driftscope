@@ -6,6 +6,7 @@ resources:
   - params.yaml           # DEPLOYMENT PARAMETERS -- edit to deploy your own (host/tenant/group)
   - oauth2-proxy.yaml     # Entra OIDC relying party (Istio ext_authz provider) + group gate
   - oauth2-proxy-templates.yaml   # custom "no access" page for non-group members
+  - external-secrets.yaml # ESO: sync oauth2-proxy creds from Key Vault (Terraform-generated, 0.6b)
   - istio-routing.yaml    # Gateway + VirtualService + STRICT mTLS
   - networkpolicy.yaml    # egress lockdown (blocks IMDS + private ranges)
   # Gateway-namespace objects are applied directly, outside this kustomization:

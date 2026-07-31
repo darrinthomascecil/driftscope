@@ -3,7 +3,9 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 log "preflight: checking tools"
-for c in az terraform kubectl helm kustomize jq openssl git; do require_cmd "$c"; done
+for c in az terraform kubectl helm jq openssl git; do require_cmd "$c"; done
+# kustomize is the one tool a package manager often doesn't ship; point at the cross-platform installer.
+command -v kustomize >/dev/null 2>&1 || die "kustomize not found -- install it with: make kustomize"
 
 log "preflight: checking Azure login"
 az account show >/dev/null 2>&1 || die "not logged in to Azure -- run: az login"

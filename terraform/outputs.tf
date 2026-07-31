@@ -100,3 +100,8 @@ output "gateway_pip_name" {
   value       = azurerm_public_ip.gateway.name
   description = "Name of the BYO gateway public IP, for the external gateway service annotation."
 }
+
+output "eso_client_id" {
+  value       = azurerm_user_assigned_identity.eso.client_id
+  description = "Managed-identity client id for External Secrets (Workload Identity). Flows into external-secrets.yaml."
+}

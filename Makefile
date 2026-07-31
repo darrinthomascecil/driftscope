@@ -23,7 +23,7 @@ help: ## Show this help
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
 	  | sort | awk 'BEGIN{FS=":.*## "}{printf "  \033[1;36m%-10s\033[0m %s\n", $$1, $$2}'
 
-up: preflight infra image cluster secret deploy ## Full bootstrap: infra -> image -> cluster -> secret -> app (prints URL)
+up: preflight infra image cluster deploy ## Full bootstrap: infra -> image -> cluster -> app (ESO syncs secrets; prints URL)
 
 preflight: ## Check tools, Azure login, and terraform.tfvars
 	@$(B)/preflight.sh
@@ -38,7 +38,7 @@ image: ## Build the app image in ACR and point the overlay at it
 cluster: ## Kubeconfig, ext_authz provider, namespace, BYO gateway IP, cert-manager (custom domain)
 	@$(B)/cluster-init.sh
 
-secret: ## Create the oauth2-proxy Secret from Key Vault (values never printed)
+secret: ## FALLBACK only: create the oauth2-proxy Secret by hand (default flow uses ESO)
 	@$(B)/secret.sh
 
 deploy: ## Apply the app + mesh hardening + edge TLS/origin-lock, then print the URL
@@ -46,6 +46,9 @@ deploy: ## Apply the app + mesh hardening + edge TLS/origin-lock, then print the
 
 url: ## Print the app URL
 	@$(TF) output -raw app_url; echo
+
+kustomize: ## Install the standalone kustomize binary for this platform (Linux/macOS; not brew)
+	@$(B)/install-kustomize.sh
 
 state-backend: ## (opt-in) Create the Azure Storage remote-state backend; writes terraform/backend.hcl
 	@$(B)/state-backend.sh

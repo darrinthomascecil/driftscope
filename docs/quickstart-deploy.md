@@ -59,9 +59,12 @@ Each step is also a standalone, re-runnable target (`make <step>`):
 | 1 | `preflight` | tools + `az login` + tfvars present |
 | 2 | `infra` | `terraform apply`: AKS (managed Istio, external gateway, Cilium), ACR, Key Vault, Entra app+group, DNS + Front Door + WAF. Generates `params.yaml` and the `edge/` manifests. |
 | 3 | `image` | builds the app image **in ACR** (`az acr build`, no local Docker) and points the overlay at your registry |
-| 4 | `cluster` | kubeconfig; registers the ext_authz provider (+ istiod restart); labels the namespace for sidecar injection; attaches the BYO public IP; installs cert-manager (custom-domain only) |
-| 5 | `secret` | creates the `oauth2-proxy` Secret from Key Vault — values are never printed |
-| 6 | `deploy` | applies the app, mesh hardening (STRICT mTLS + default-deny), the SSO gate, and the edge (origin cert + `X-Azure-FDID` lock); prints the URL |
+| 4 | `cluster` | kubeconfig; registers the ext_authz provider (+ istiod restart); labels the namespace for sidecar injection; attaches the BYO public IP; installs cert-manager (custom-domain only) + **External Secrets Operator** |
+| 5 | `deploy` | applies the app + the ESO `SecretStore`/`ExternalSecret` (which syncs the `oauth2-proxy` Secret from Key Vault — no human touches it), mesh hardening (STRICT mTLS + default-deny), the SSO gate, and the edge (origin cert + `X-Azure-FDID` lock); prints the URL |
+
+The oauth2-proxy credentials (client id/secret + a Terraform-generated cookie secret) live in Key
+Vault and are pulled into the cluster by External Secrets via Workload Identity — there is **no**
+manual `create secret` step. (`make secret` remains only as a fallback for clusters without ESO.)
 
 Unattended infra: `make up AUTO=-auto-approve` (otherwise `terraform apply` prompts once).
 
@@ -111,7 +114,8 @@ make down            # terraform destroy -- removes AKS, ACR, KV, DNS, Front Doo
   it contains the Entra client secret value and must never be committed. So is `terraform.tfvars`.
   For teams/CD, move state into Azure Storage (shared, locked, versioned) — opt-in, see
   [`remote-state.md`](remote-state.md). (Secrets → External Secrets is the next 0.6 step.)
-- The `oauth2-proxy` Secret lives only in the cluster, created from Key Vault at deploy time.
-  It is never written to disk or git.
+- The `oauth2-proxy` Secret lives only in the cluster, synced from Key Vault by External Secrets
+  (Workload Identity, read-only). It is never written to disk or git, and no human handles the
+  values.
 - `make image` edits the overlay's `kustomization.yaml` to your registry; that's a local change,
   not something to commit (`git checkout deploy/overlays/cloud/kustomization.yaml` to reset).

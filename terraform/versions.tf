@@ -17,7 +17,11 @@ terraform {
       source  = "hashicorp/time"
       version = "~> 0.11" # rotate the app client secret on a schedule
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6" # generate the oauth2-proxy cookie secret (stored in Key Vault, read by ESO)
+    }
   }
-  # State is local for now. For a team/business, move to a remote azurerm backend:
-  #   backend "azurerm" { resource_group_name = "tfstate-rg" storage_account_name = "..." container_name = "tfstate" key = "driftscope.tfstate" }
+  # State is local by default. To move it to a remote azurerm backend (shared, locked, versioned),
+  # opt in with `make state-backend` -> `backend.tf.example`; see docs/remote-state.md.
 }

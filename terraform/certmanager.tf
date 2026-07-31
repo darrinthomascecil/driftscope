@@ -19,10 +19,9 @@ resource "azurerm_user_assigned_identity" "certmanager" {
 # subject MUST match the SA the cert-manager pods run as (cert-manager/cert-manager by default);
 # the helm install must set that SA + the workload-identity pod label (see edge/README.md).
 resource "azurerm_federated_identity_credential" "certmanager" {
-  count               = local.use_custom_domain ? 1 : 0
-  name                = "certmanager"
-  resource_group_name = azurerm_resource_group.this.name
-  parent_id           = azurerm_user_assigned_identity.certmanager[0].id
+  count     = local.use_custom_domain ? 1 : 0
+  name      = "certmanager"
+  parent_id = azurerm_user_assigned_identity.certmanager[0].id
   audience            = ["api://AzureADTokenExchange"]
   issuer              = azurerm_kubernetes_cluster.this.oidc_issuer_url
   subject             = "system:serviceaccount:cert-manager:cert-manager"
