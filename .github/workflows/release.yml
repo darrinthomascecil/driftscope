@@ -107,10 +107,11 @@ jobs:
         if: steps.gate.outputs.push == 'true'
         uses: sigstore/cosign-installer@v3
         with:
-          # Pin the cosign BINARY (not just the action): `@v3` installs whatever is latest, and
-          # cosign 3.x rewrote keyless verification around a new trusted-root/bundle flow whose
-          # TUF/Rekor interaction hung our verify step. A pinned, mature version is deterministic.
-          cosign-release: v2.6.4
+          # Pin the cosign BINARY (not just the action) for reproducibility -- `@v3` alone installs
+          # whatever is newest, which is a supply-chain smell in a signing pipeline. Pinned to the
+          # CURRENT release: we don't run online `cosign verify` in CI, so the v3 trust-root init
+          # that hung verification is irrelevant here -- sign / attest / download are unaffected.
+          cosign-release: v3.1.2
 
       - name: Install syft (SBOM)
         if: steps.gate.outputs.push == 'true'
