@@ -52,7 +52,7 @@ output "app_url" {
 
 output "dns_name_servers" {
   value       = local.use_custom_domain ? azurerm_dns_zone.this[0].name_servers : []
-  description = "Delegate these at your registrar (empty when running on the *.azurefd.net default host)."
+  description = "Delegate to Azure with these: the whole base_domain at your registrar (default), or ONE `driftscope` NS record in your parent DNS/Cloudflare (delegate_subdomain). Empty on the *.azurefd.net default host."
 }
 
 output "frontdoor_endpoint_host" {

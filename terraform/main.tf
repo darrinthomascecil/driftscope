@@ -2,13 +2,18 @@ locals {
   tenant_id         = coalesce(var.tenant_id, data.azurerm_client_config.current.tenant_id)
   use_custom_domain = var.base_domain != null && var.base_domain != ""
   subdomain         = "driftscope"
-  # With a custom domain: driftscope.<domain>. Without: Front Door's default *.azurefd.net host.
+  # The DNS zone Terraform creates + is authoritative for. Default: the whole base_domain (app is a
+  # CNAME `driftscope` inside it). delegate_subdomain: just driftscope.<base_domain>, so only that
+  # subdomain is delegated to Azure (one NS record in the parent) -- the app then sits at this
+  # zone's APEX, served by an alias record (CNAMEs aren't allowed at a zone apex).
+  zone_name = local.use_custom_domain ? (var.delegate_subdomain ? "${local.subdomain}.${var.base_domain}" : var.base_domain) : ""
+  # With a custom domain the app host is driftscope.<domain> either way. Without: the *.azurefd.net host.
   host = local.use_custom_domain ? "${local.subdomain}.${var.base_domain}" : azurerm_cdn_frontdoor_endpoint.this.host_name
 
   # The name Front Door DIALS to reach the origin (SNI + DNS target), distinct from the public
-  # `host` above. Custom domain: origin.<domain> (A -> gateway IP) with a cert-manager DNS-01
+  # `host`. Always a child of the zone: origin.<zone> (A -> gateway IP) with a cert-manager DNS-01
   # cert. No domain: the gateway's cloudapp FQDN, reached over HTTP (no cert issuable there).
-  origin_host      = local.use_custom_domain ? "origin.${var.base_domain}" : azurerm_public_ip.gateway.fqdn
+  origin_host      = local.use_custom_domain ? "origin.${local.zone_name}" : azurerm_public_ip.gateway.fqdn
   use_https_origin = local.use_custom_domain # Front Door -> origin is HTTPS only when we can issue a real cert
 }
 

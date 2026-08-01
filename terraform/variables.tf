@@ -26,6 +26,20 @@ variable "base_domain" {
   description = "Custom domain (optional). Unset => Front Door default *.azurefd.net hostname."
 }
 
+variable "delegate_subdomain" {
+  type    = bool
+  default = false
+  # false (default): Terraform creates an Azure DNS zone for the WHOLE base_domain and you delegate
+  #   the domain's name servers to Azure at your registrar. The app is a CNAME `driftscope` in it.
+  # true: Terraform creates the zone for just `driftscope.<base_domain>` (the app FQDN) and you add
+  #   ONE NS record in your PARENT DNS -- `driftscope NS -> <dns_name_servers>` -- to delegate that
+  #   subdomain to Azure. Use this when the parent domain must stay at another provider (e.g. the
+  #   registrar/DNS is Cloudflare and you can't move the apex NS). Everything else is still Azure/
+  #   Terraform-managed; the app sits at the delegated zone's apex (served via an alias record).
+  #   See docs/edge-frontdoor-delegated-subdomain.md. Only relevant when base_domain is set.
+  description = "Delegate only driftscope.<base_domain> to Azure DNS (one NS record in the parent) instead of the whole domain."
+}
+
 variable "acme_email" {
   type    = string
   default = ""

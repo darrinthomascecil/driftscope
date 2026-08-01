@@ -152,6 +152,9 @@ RUN pip install --no-cache-dir pytest
 COPY tests /src/tests
 COPY tools /src/tools
 COPY fixtures /src/fixtures
+# tests/test_deploy_wi.py reads the deploy overlays, so the suite needs them present. (Nothing
+# from this stage ships -- it exists only to run the suite against the image's interpreter.)
+COPY deploy /src/deploy
 COPY pyproject.toml /src/
 WORKDIR /src
 # Network-marked tests hit live registries; a build must not depend on the
