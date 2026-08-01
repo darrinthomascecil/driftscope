@@ -67,6 +67,18 @@ variable "admin_members" {
   description = "UPNs to add to the access group initially (e.g. [\"you@your-tenant.onmicrosoft.com\"]). Optional; membership can also be managed outside Terraform."
 }
 
+# ---- GitHub Actions deploy identity (OIDC federation, gh-deploy-identity.tf) ----
+variable "github_repo" {
+  type        = string
+  description = "GitHub OWNER/REPO the Actions pipelines run from (e.g. \"acme/driftscope\"). The deploy identity's federated credential trusts repo:<this>:environment:production."
+}
+
+variable "github_repo_ids" {
+  type        = string
+  default     = ""
+  description = "Optional immutable numeric-id form of github_repo (repo:OWNER@<id>/REPO@<id>). Registers a second federated credential that survives an owner/repo rename. Empty -> not created."
+}
+
 # ---- Resource names (must be globally unique for ACR + Key Vault) ----
 variable "acr_name" {
   type        = string

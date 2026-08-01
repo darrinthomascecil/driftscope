@@ -9,10 +9,6 @@ terraform {
       source  = "hashicorp/azuread"
       version = "~> 3.0" # Entra app registration + security group
     }
-    local = {
-      source  = "hashicorp/local"
-      version = ">= 2.4"
-    }
     time = {
       source  = "hashicorp/time"
       version = "~> 0.11" # rotate the app client secret on a schedule
