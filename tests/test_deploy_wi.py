@@ -50,3 +50,24 @@ def test_cloud_overlay_wires_the_sa_client_id():
     patch = (CLOUD / "patch-sa.yaml").read_text()
     assert "azure.workload.identity/client-id" in patch, \
         "patch-sa.yaml must set the SA's workload-identity client-id"
+
+
+def test_committed_overlay_is_a_placeholder_template():
+    """ADR 0001: the committed cloud overlay is a TEMPLATE -- real per-deployment identifiers
+    (host, tenant/client/group ids, vault) are injected at deploy time by the pipeline, never
+    committed. Guards against a regression that re-commits a live id -- which once silently
+    deployed REPLACE-* and broke Workload Identity + External Secrets.
+    """
+    import re
+
+    uuid = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+    for path in sorted(CLOUD.glob("**/*.yaml")):
+        for i, line in enumerate(path.read_text().splitlines(), 1):
+            code = line.split("#", 1)[0]  # comments may legitimately mention ids / "REPLACE-*"
+            assert not uuid.search(code), (
+                f"{path.relative_to(DEPLOY)}:{i} commits a live id -- must be a REPLACE-* "
+                f"placeholder, injected at deploy time (ADR 0001)"
+            )
+    for name in ("params.yaml", "patch-sa.yaml", "external-secrets.yaml"):
+        assert "REPLACE-" in (CLOUD / name).read_text(), \
+            f"{name} must hold REPLACE-* placeholders bound at deploy time"
