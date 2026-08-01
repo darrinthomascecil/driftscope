@@ -20,7 +20,7 @@ LOCAL_STATE ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up down preflight state infra image cluster secret deploy url state-backend state-migrate verify-image
+.PHONY: help up down preflight state infra repo-config image cluster secret deploy url state-backend state-migrate verify-image
 
 # Keyless cosign verification of a published image. No secrets, no key files: it checks the
 # signature chains to a Fulcio cert whose identity is THIS repo's release workflow, issued by
@@ -33,7 +33,7 @@ help: ## Show this help
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
 	  | sort | awk 'BEGIN{FS=":.*## "}{printf "  \033[1;36m%-10s\033[0m %s\n", $$1, $$2}'
 
-up: preflight state infra image cluster deploy ## Full bootstrap: remote state -> infra -> image -> cluster -> app (prints URL)
+up: preflight state infra repo-config image cluster deploy ## Full bootstrap: remote state -> infra -> CI wiring -> image -> cluster -> app (prints URL)
 
 preflight: ## Check tools, Azure login, and terraform.tfvars
 	@$(B)/preflight.sh
@@ -45,10 +45,13 @@ state: ## Provision the remote Terraform state backend (default). Skip with LOCA
 	  $(B)/state-backend.sh; \
 	fi
 
-infra: ## terraform init + apply (AKS, ACR, KV, Entra, DNS, Front Door; generates params + edge/)
+infra: ## terraform init + apply (AKS, ACR, KV, Entra, DNS, Front Door; emits outputs)
 	@if [ -f terraform/backend.hcl ]; then BA="-backend-config=backend.hcl"; else BA=""; fi; \
 	 $(TF) init -input=false $$BA
 	@$(TF) apply -input=false $(AUTO)
+
+repo-config: ## Wire the GitHub Actions pipelines (repo vars + TFVARS secret) from terraform outputs
+	@$(B)/repo-config.sh
 
 image: ## Build the app image in ACR and point the overlay at it
 	@$(B)/image.sh

@@ -10,15 +10,13 @@
 # Auth is Azure OIDC -- the same keyless, secretless pattern terraform.yml uses. No stored
 # credentials: a federated credential on the Azure identity trusts this repo's Actions subject.
 #
-# ── Prerequisites (one-time) ────────────────────────────────────────────────────────────────
-#   Repo *variables* (Settings → Secrets and variables → Actions → Variables):
-#     AZURE_CLIENT_ID  AZURE_TENANT_ID  AZURE_SUBSCRIPTION_ID   (the deploy identity)
-#     ACR_NAME                                                  (the registry to build into)
-#   The Azure identity needs, scoped to the deployment RG:
-#     • AcrPush on the ACR                         (build + push the image)
-#     • a federated credential trusting subject    repo:darrinthomascecil/driftscope:environment:production
-#   No AKS/kubectl access is needed anymore -- Argo CD applies. `contents: write` (below) lets the
-#   job push the tag-bump commit to main.
+# ── Prerequisites (all reproducible -- no manual GitHub-UI setup) ────────────────────────────
+#   Repo *variables* AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID / ACR_NAME are set
+#   by `make repo-config` (scripts/bootstrap/repo-config.sh) from Terraform outputs. The deploy
+#   identity itself -- the driftscope-gh-deploy UAMI, its AcrPush/Contributor grants, and the
+#   federated credential trusting repo:<owner>/<repo>:environment:production -- is Terraform
+#   (terraform/gh-deploy-identity.tf). No AKS/kubectl access is needed -- Argo CD applies;
+#   `contents: write` (below) lets the job push the tag-bump commit to main.
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 name: deploy
 
