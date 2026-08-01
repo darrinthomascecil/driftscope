@@ -29,3 +29,8 @@ terraform/backend.tf
 terraform/backend.hcl
 driftscope.egg-info/
 uv.lock
+
+# Personal working notes -- author's own docs, deliberately NOT committed (they were swept in
+# once by a `git add -A`; ignore them by name so it can't recur). Add new personal docs here.
+docs/code-critique.md
+docs/frontdoor-ssl-lessons.md
