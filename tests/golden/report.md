@@ -144,11 +144,17 @@ _Findings are matched by ecosystem and name, so a bumped version reads as the sa
 - 2.17.0: removed support for the legacy `JsonSerializable` interface
 - 2.18.0: minimum required Java version is now 17
 
-**Bug activity in the version window** (14 open of 61 filed) — a rough signal, not scoped to a specific version
+**Top bug activity in the window — ranked by impact** (14 open of 61 bug-labelled filed) — a rough signal, not scoped to a specific version
 
-- [#4100](https://github.com/FasterXML/jackson-databind/issues/4100) Deserialisation regression #0
-- [#4101](https://github.com/FasterXML/jackson-databind/issues/4101) Deserialisation regression #1
-- [#4102](https://github.com/FasterXML/jackson-databind/issues/4102) Deserialisation regression #2
+- **CRITICAL** [#4101](https://github.com/FasterXML/jackson-databind/issues/4101) NPE deserialising polymorphic types since 2.18
+  fixed &middot; affects 2.18 &middot; 58 reactions &middot; 24 comments
+  > Upgrading from 2.17 to 2.18 throws NullPointerException on any @JsonTypeInfo class with a null default impl.
+- **HIGH** [#4137](https://github.com/FasterXML/jackson-databind/issues/4137) Incorrect handling of BigDecimal float coercion
+  open &middot; 9 reactions &middot; 15 comments
+  > With USE_BIG_DECIMAL_FOR_FLOATS the value 0.1 round-trips as 0.1000000000000000055.
+- [#4155](https://github.com/FasterXML/jackson-databind/issues/4155) Please document the module SPI change
+  won't-fix &middot; 2 reactions &middot; 1 comment
+  > This is a docs request, not a defect.
 
 _issues are filed-in-window signals, not proven regressions; breaking-change notes are quoted from release bodies_
 

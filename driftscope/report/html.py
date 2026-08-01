@@ -714,17 +714,38 @@ def _finding_detail(report: Report, f) -> str:
             a("</ul>")
         # Show the count whenever the window had any bug-labelled issues, not only
         # when there are still-open ones to list -- a window with 9 filed and 0 open
-        # is a real signal that used to render as nothing.
-        if d.total_bug_count or d.bug_issues:
+        # is a real signal that used to render as nothing. When there are issues to
+        # list, each is rendered with its analysis (severity badge, fix status,
+        # reactions) in impact order rather than as a bare link.
+        if d.bug_issues:
+            a(f"<div class='note'>Top bug activity in the window, ranked by impact "
+              f"(a rough signal &mdash; not scoped to a specific version): "
+              f"{d.open_bug_count} open of {d.total_bug_count} bug-labelled issue(s) filed</div>")
+            a("<ul>")
+            for i in d.bug_issues[:8]:
+                badge = ("<span class='badge critical'>critical</span> "
+                         if i.severity == "critical"
+                         else "<span class='badge serious'>high</span> "
+                         if i.severity == "high" else "")
+                fix = {"fixed": "fixed", "dismissed": "won't-fix",
+                       "closed": "closed", "open": "open"}.get(i.fix_status, i.fix_status)
+                meta = [fix]
+                if i.affected_version:
+                    meta.append(f"affects {e(i.affected_version)}")
+                if i.reactions:
+                    meta.append(f"{i.reactions} reaction{'' if i.reactions == 1 else 's'}")
+                if i.comments:
+                    meta.append(f"{i.comments} comment{'' if i.comments == 1 else 's'}")
+                excerpt = (f"<div class='note'>{e(i.body_excerpt)}</div>"
+                           if i.body_excerpt else "")
+                a(f"<li>{badge}<a href='{e(i.url)}' target='_blank' rel='noopener'>"
+                  f"#{i.number}</a> {e(i.title)}"
+                  f"<div class='note'>{' &middot; '.join(meta)}</div>{excerpt}</li>")
+            a("</ul>")
+        elif d.total_bug_count:
             a(f"<div class='note'>Bug activity in the version window "
               f"(a rough signal &mdash; not scoped to a specific version): "
               f"{d.open_bug_count} open of {d.total_bug_count} bug-labelled issue(s) filed</div>")
-            if d.bug_issues:
-                a("<ul>")
-                for i in d.bug_issues[:6]:
-                    a(f"<li><a href='{e(i.url)}' target='_blank' rel='noopener'>"
-                      f"#{i.number}</a> {e(i.title)}</li>")
-                a("</ul>")
         if d.note:
             a(f"<div class='note'>{e(d.note)}</div>")
     if f.vulns is not None and f.vulns.has_data:

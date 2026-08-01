@@ -126,7 +126,12 @@ class Lag:
 
 @dataclass
 class IssueSignal:
-    """One GitHub issue/PR surfaced in the version window."""
+    """One GitHub issue/PR surfaced in the version window, with a shallow analysis.
+
+    The raw metadata (number/title/labels) is a link; the analysed fields below turn
+    it into a judgement -- how bad, whether it was fixed, which version it points at,
+    and an `impact` score the delta ranks on so the report leads with what matters.
+    """
 
     number: int
     title: str
@@ -135,6 +140,18 @@ class IssueSignal:
     labels: list[str] = field(default_factory=list)
     created_at: str | None = None
     kind: str = "issue"  # issue | pr
+
+    # ---- analysis (derived by delta.analyze_issue from fields already in the API response) ----
+    reactions: int = 0                    # positive reactions == how many people this bit
+    comments: int = 0                     # discussion volume
+    milestone: str | None = None
+    state_reason: str | None = None       # completed | not_planned | reopened
+    updated_at: str | None = None
+    body_excerpt: str = ""                # first meaningful line(s), for the "what is it" glance
+    severity: str = "normal"              # critical | high | normal
+    fix_status: str = "open"              # fixed | dismissed | closed | open
+    affected_version: str | None = None   # from milestone / version label / body reference
+    impact: int = 0                       # ranking score (severity + reactions + comments + fix bonus)
 
 
 @dataclass

@@ -344,37 +344,68 @@
         "window_resolved": true,
         "bug_issues": [
           {
-            "number": 4100,
-            "title": "Deserialisation regression #0",
-            "url": "https://github.com/FasterXML/jackson-databind/issues/4100",
-            "state": "open",
-            "labels": [
-              "bug"
-            ],
-            "created_at": "2025-03-01T00:00:00Z",
-            "kind": "issue"
-          },
-          {
             "number": 4101,
-            "title": "Deserialisation regression #1",
+            "title": "NPE deserialising polymorphic types since 2.18",
             "url": "https://github.com/FasterXML/jackson-databind/issues/4101",
-            "state": "open",
+            "state": "closed",
             "labels": [
-              "bug"
+              "bug",
+              "regression"
             ],
             "created_at": "2025-03-01T00:00:00Z",
-            "kind": "issue"
+            "kind": "issue",
+            "reactions": 58,
+            "comments": 24,
+            "milestone": "2.18.1",
+            "state_reason": "completed",
+            "updated_at": "2025-04-02T00:00:00Z",
+            "body_excerpt": "Upgrading from 2.17 to 2.18 throws NullPointerException on any @JsonTypeInfo class with a null default impl.",
+            "severity": "critical",
+            "fix_status": "fixed",
+            "affected_version": "2.18",
+            "impact": 282
           },
           {
-            "number": 4102,
-            "title": "Deserialisation regression #2",
-            "url": "https://github.com/FasterXML/jackson-databind/issues/4102",
+            "number": 4137,
+            "title": "Incorrect handling of BigDecimal float coercion",
+            "url": "https://github.com/FasterXML/jackson-databind/issues/4137",
             "state": "open",
             "labels": [
               "bug"
             ],
-            "created_at": "2025-03-01T00:00:00Z",
-            "kind": "issue"
+            "created_at": "2025-06-11T00:00:00Z",
+            "kind": "issue",
+            "reactions": 9,
+            "comments": 15,
+            "milestone": null,
+            "state_reason": null,
+            "updated_at": null,
+            "body_excerpt": "With USE_BIG_DECIMAL_FOR_FLOATS the value 0.1 round-trips as 0.1000000000000000055.",
+            "severity": "high",
+            "fix_status": "open",
+            "affected_version": null,
+            "impact": 72
+          },
+          {
+            "number": 4155,
+            "title": "Please document the module SPI change",
+            "url": "https://github.com/FasterXML/jackson-databind/issues/4155",
+            "state": "closed",
+            "labels": [
+              "bug"
+            ],
+            "created_at": "2025-08-20T00:00:00Z",
+            "kind": "issue",
+            "reactions": 2,
+            "comments": 1,
+            "milestone": null,
+            "state_reason": "not_planned",
+            "updated_at": null,
+            "body_excerpt": "This is a docs request, not a defect.",
+            "severity": "normal",
+            "fix_status": "dismissed",
+            "affected_version": null,
+            "impact": 0
           }
         ],
         "open_bug_count": 14,
