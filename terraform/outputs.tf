@@ -127,6 +127,11 @@ output "eso_client_id" {
   description = "Managed-identity client id for External Secrets (Workload Identity). Flows into external-secrets.yaml."
 }
 
+output "gh_deploy_client_id" {
+  value       = azurerm_user_assigned_identity.gh_deploy.client_id
+  description = "Client id of the GitHub Actions deploy identity. Set as the repo variable AZURE_CLIENT_ID (gh variable set AZURE_CLIENT_ID)."
+}
+
 output "app_client_id" {
   value       = azurerm_user_assigned_identity.app.client_id
   description = "Managed-identity client id for the driftscope app pod (Workload Identity). Annotate the driftscope ServiceAccount with it (azure.workload.identity/client-id) -- powers secretless ADO scanning and forge-auth Key Vault signing/secret reads."

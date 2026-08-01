@@ -4,6 +4,12 @@ acr_name         = "driftscopeacr12345"   # globally unique, alphanumeric only
 key_vault_name   = "driftscope-kv-12345"  # globally unique
 gateway_dns_label = "driftscope-gw-12345" # -> driftscope-gw-12345.<region>.cloudapp.azure.com (unique per region)
 
+# GitHub repo the Actions pipelines run from -> the deploy identity's OIDC federated credential.
+github_repo = "your-org/driftscope"
+# OPTIONAL: immutable numeric-id form (survives an owner/repo rename). Find the ids via:
+#   gh api users/<owner> -q .id   and   gh api repos/<owner>/<repo> -q .id
+# github_repo_ids = "your-org@1234567/driftscope@89012345"
+
 # OPTIONAL custom domain. OMIT to run on Front Door's default *.azurefd.net hostname
 # (no domain ownership / DNS delegation needed -- the app URL is a terraform output).
 # base_domain = "example.com"              # -> app at driftscope.example.com (+ Azure DNS zone)
