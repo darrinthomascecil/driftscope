@@ -116,42 +116,21 @@ jobs:
           curl -sSL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
           sudo mv kustomize /usr/local/bin/
 
-      - name: Render overlay from Azure (inject non-secret config -- the repo is a template)
+      - name: Render (shared render-overlay.sh) + apply
         run: |
-          # The committed overlay holds REPLACE-* placeholders ONLY (ADR 0001). Bind the real
-          # per-deployment values here, at deploy time, from Azure (the infra source of truth) +
-          # repo variables -- never committed. (Terraform state is local-only, so we query Azure
-          # directly rather than `terraform output`.)
+          # The overlay is a template (ADR 0001). deploy/gitops/render-overlay.sh binds the real
+          # values from Azure + repo vars and kustomize-builds -- the SAME script Argo CD's
+          # Config-Management Plugin uses (ADR 0002), so CI and GitOps render identically. It fails
+          # closed if any REPLACE-* survives into the output.
           RG="${{ vars.AKS_RESOURCE_GROUP }}"
-          APP_CID=$(az identity show -g "$RG" -n driftscope-app --query clientId -o tsv)
-          ESO_CID=$(az identity show -g "$RG" -n driftscope-eso --query clientId -o tsv)
-          KV=$(az keyvault list -g "$RG" --query "[?starts_with(name, 'driftscope-kv')].name | [0]" -o tsv)
-          O=deploy/overlays/cloud
-          sed -i \
-            -e "s|REPLACE-HOST|${{ vars.HOST }}|g" \
-            -e "s|REPLACE-TENANT-ID|${{ vars.AZURE_TENANT_ID }}|g" \
-            -e "s|REPLACE-ALLOWED-GROUP-ID|${{ vars.ALLOWED_GROUP_ID }}|g" \
-            "$O/params.yaml"
-          sed -i -e "s|REPLACE-APP-CLIENT-ID|$APP_CID|g" "$O/patch-sa.yaml"
-          sed -i \
-            -e "s|REPLACE-ESO-CLIENT-ID|$ESO_CID|g" \
-            -e "s|REPLACE-TENANT-ID|${{ vars.AZURE_TENANT_ID }}|g" \
-            -e "s|REPLACE-KEYVAULT|$KV|g" \
-            "$O/external-secrets.yaml"
-          echo "::notice::overlay rendered (host=${{ vars.HOST }}, KV=$KV, WI+ESO client-ids injected)"
-
-      - name: Build, guard, and apply the overlay
-        run: |
-          cd deploy/overlays/cloud
-          # Point the overlay at the immutable tag we just built (ephemeral CI checkout, not committed).
-          kustomize edit set image "driftscope=${{ steps.tag.outputs.image }}"
-          cd - >/dev/null
-          kustomize build deploy/overlays/cloud > /tmp/rendered.yaml
-          # Fail closed on the BUILT manifests (comments stripped): no placeholder may reach the
-          # cluster. This is the exact bug that silently deployed REPLACE-* and broke WI + ESO.
-          if grep -n 'REPLACE-' /tmp/rendered.yaml; then
-            echo "::error::unrendered REPLACE-* token in the built manifests -- refusing to apply"; exit 1
-          fi
+          export HOST="${{ vars.HOST }}" \
+                 TENANT_ID="${{ vars.AZURE_TENANT_ID }}" \
+                 ALLOWED_GROUP_ID="${{ vars.ALLOWED_GROUP_ID }}" \
+                 APP_CLIENT_ID="$(az identity show -g "$RG" -n driftscope-app --query clientId -o tsv)" \
+                 ESO_CLIENT_ID="$(az identity show -g "$RG" -n driftscope-eso --query clientId -o tsv)" \
+                 KEYVAULT="$(az keyvault list -g "$RG" --query "[?starts_with(name, 'driftscope-kv')].name | [0]" -o tsv)" \
+                 IMAGE="${{ steps.tag.outputs.image }}"
+          deploy/gitops/render-overlay.sh > /tmp/rendered.yaml
           kubectl apply -f /tmp/rendered.yaml
 
       - name: Wait for rollout (app + fleet)
