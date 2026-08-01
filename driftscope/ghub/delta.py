@@ -6,13 +6,17 @@ defensible approximation and labels it as such:
   1. Resolve both versions to release tags, and both tags to publish dates.
   2. Collect the releases in that window and mine their notes for breaking-change
      markers (this is the highest-signal part -- maintainers announce breakage).
-  3. Search issues *created* in the window and still open, filtered to bug-ish
-     labels. An issue filed after the target release shipped is evidence about the
-     target, not proof; issues are reported as signals with links, never verdicts.
+  3. Search bug-labelled issues *created* in the window (open AND closed), analyse
+     each one shallowly from the fields the search already returns -- severity,
+     whether it was fixed or dismissed, the version it points at, how many people
+     reacted -- and rank by an impact score so the report leads with what bit the
+     most people. An issue filed after the target release shipped is evidence about
+     the target, not proof; issues are reported as ranked signals, never verdicts.
 
 Step 3's weakness is real and stated in the output: a bug filed in the window may
 predate the release, and a bug introduced by it may be filed long after. The
-release notes in step 2 are the part to trust.
+release notes in step 2 are the part to trust. The per-issue analysis is a triage
+aid, not an affected-version guarantee (see analyze_issue).
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ import re
 from datetime import timezone
 
 from ..forge import BUG_LABELS, Forge, ReleaseRecord
-from ..models import GitHubDelta, IssueSignal, Release, Resolution
+from ..models import POSITIVE_REACTIONS, GitHubDelta, IssueSignal, Release, Resolution
 
 BREAKING_PATTERNS = (
     r"breaking change",
@@ -161,6 +165,161 @@ def _dates_from_resolution(
     return None
 
 
+# --- issue analysis -------------------------------------------------------------
+#
+# The old listing kept number/title/url and threw away everything else the search
+# response carries. But GitHub returns the body, reaction breakdown, comment count,
+# milestone and (for closed issues) a state_reason on every item -- enough to make a
+# shallow judgement without a single extra call. analyze_issue() turns each raw item
+# into an IssueSignal scored on `impact`, which the delta then ranks on so the report
+# leads with the issue that bit the most people, not just the newest one.
+
+# Labels that, on their own, mark an issue as high-consequence. Matched as substrings
+# so "priority: critical", "kind/regression", "sev1" etc. all land.
+_SEVERITY_LABEL_HINTS = (
+    "security", "vulnerab", "cve", "critical", "regression", "data-loss",
+    "data loss", "dataloss", "blocker", "sev1", "sev-1", "sev:1", "p0",
+    "priority:critical", "priority: critical", "severity:critical",
+)
+# Body/title wording for the same, when maintainers did not label it.
+_CRITICAL_RE = re.compile(
+    r"\b(crash(?:es|ed|ing)?|panic|segfault|deadlock|data ?loss|corrupt\w*|"
+    r"cve-\d|vulnerab\w*|\brce\b|memory leak|\boom\b|hangs?|hung|"
+    r"infinite loop|silently (?:fail|drop|lose))\b", re.I)
+# Weaker but still bug-shaped wording -> "high".
+_HIGH_RE = re.compile(
+    r"\b(regression|broke(?:n)?|fail(?:s|ed|ing)?|throws?|exception|traceback|"
+    r"stack ?trace|cannot|can't|does ?n[o']?t work|not working|unable to|"
+    r"unexpected|incorrect|wrong)\b", re.I)
+# "affects 2.3", "since v1.4", "broken in 3.0.1" -> the version an issue points at.
+_VERSION_REF_RE = re.compile(
+    r"\b(?:affect\w*|since|introduced in|broke(?:n)? in|regress\w* in|"
+    r"reproduc\w+ on|started in)\s+v?(\d+\.\d+(?:\.\d+)?)", re.I)
+# A milestone/label that looks like a version ("v2.4", "2.4.0", "1.0").
+_VERSIONISH_RE = re.compile(r"^v?\d+\.\d+")
+
+_SEVERITY_WEIGHT = {"critical": 100, "high": 30, "normal": 0}
+
+
+def _clean_excerpt(body: object, limit: int = 180) -> str:
+    """The first meaningful line of an issue body, collapsed to one line.
+
+    Skips template scaffolding -- HTML comments, short "Steps to reproduce:" style
+    headings, and markdown bullet/quote markers -- so the excerpt is the actual first
+    sentence of the report rather than a form label.
+    """
+    if not isinstance(body, str):
+        return ""
+    picked = ""
+    for line in body.splitlines():
+        s = line.strip().lstrip("#>*-• ").strip()
+        if not s or s.startswith("<!--"):
+            continue
+        # a short line ending in ':' is a template section heading, not content
+        if s.endswith(":") and len(s.split()) <= 4:
+            continue
+        picked = s
+        break
+    picked = re.sub(r"\s+", " ", picked)
+    return (picked[: limit - 1] + "…") if len(picked) > limit else picked
+
+
+def _reaction_score(item: dict) -> int:
+    r = item.get("reactions")
+    if not isinstance(r, dict):
+        return 0
+    return sum(int(r.get(k) or 0) for k in POSITIVE_REACTIONS)
+
+
+def _severity(labels: list[str], title: str, body: str) -> str:
+    low = " ".join(labels).lower()
+    if any(h in low for h in _SEVERITY_LABEL_HINTS):
+        return "critical"
+    blob = f"{title}\n{body[:1000]}"
+    if _CRITICAL_RE.search(blob):
+        return "critical"
+    if _HIGH_RE.search(blob):
+        return "high"
+    return "normal"
+
+
+def _fix_status(state: str, state_reason: str | None) -> str:
+    """open -> still live; fixed/dismissed distinguish a real fix from a won't-fix.
+
+    A closed-completed bug in the window is the strongest signal there is -- the
+    maintainers confirmed it was real and shipped a fix -- so it must not be hidden
+    the way the old `is:open` filter hid it. dismissed (not_planned) is the opposite:
+    triaged away as not-a-bug, so it should sink rather than surface.
+    """
+    if state == "open":
+        return "open"
+    if state_reason == "completed":
+        return "fixed"
+    if state_reason == "not_planned":
+        return "dismissed"
+    return "closed"
+
+
+def _affected_version(milestone: str | None, labels: list[str],
+                      title: str, body: str) -> str | None:
+    if milestone and _VERSIONISH_RE.match(milestone.strip().lstrip("vV")):
+        return milestone.strip()
+    for lab in labels:
+        if _VERSIONISH_RE.match(lab.strip().lstrip("vV")):
+            return lab.strip()
+    m = _VERSION_REF_RE.search(f"{title}\n{body[:1000]}")
+    return m.group(1) if m else None
+
+
+def analyze_issue(item: dict) -> IssueSignal:
+    """Turn a raw GitHub /search/issues item into an analysed IssueSignal.
+
+    Pure and side-effect free -- it reads only fields already on the item, so the
+    analysis costs no extra API calls. `impact` combines severity, how many people
+    reacted, discussion volume, and whether it was actually fixed; the delta ranks
+    the window's issues on it.
+    """
+    labels = [l.get("name") for l in (item.get("labels") or [])
+              if isinstance(l, dict) and l.get("name")]
+    title = (item.get("title") or "")[:200]
+    body = item.get("body") if isinstance(item.get("body"), str) else ""
+    state = item.get("state") or ""
+    state_reason = item.get("state_reason")
+    ms = item.get("milestone")
+    milestone = ms.get("title") if isinstance(ms, dict) else None
+
+    reactions = _reaction_score(item)
+    comments = int(item.get("comments") or 0)
+    severity = _severity(labels, title, body)
+    fix_status = _fix_status(state, state_reason)
+
+    impact = (_SEVERITY_WEIGHT.get(severity, 0)
+              + reactions * 3 + comments
+              + (10 if fix_status == "fixed" else 0)        # confirmed-real, fix shipped
+              - (40 if fix_status == "dismissed" else 0))   # triaged away -> demote
+    impact = max(impact, 0)
+
+    return IssueSignal(
+        number=int(item.get("number") or 0),
+        title=title,
+        url=item.get("html_url") or "",
+        state=state,
+        labels=labels,
+        created_at=item.get("created_at"),
+        kind="pr" if item.get("pull_request") else "issue",
+        reactions=reactions,
+        comments=comments,
+        milestone=milestone,
+        state_reason=state_reason,
+        updated_at=item.get("updated_at"),
+        body_excerpt=_clean_excerpt(body),
+        severity=severity,
+        fix_status=fix_status,
+        affected_version=_affected_version(milestone, labels, title, body),
+        impact=impact,
+    )
+
+
 def compute_delta(
     forge: Forge,
     repo: str | None,
@@ -247,21 +406,24 @@ def compute_delta(
     lister = getattr(forge, "search_issues", None)
     if lister is not None:
         clause = getattr(forge, "label_clause", lambda: 'label:"bug"')()
-        query = (f"repo:{repo} is:issue created:{day_from}..{day_to} "
-                 f"{clause} is:open")
-        for item in lister(query, limit=max_issues):
-            d.bug_issues.append(
-                IssueSignal(
-                    number=int(item.get("number") or 0),
-                    title=(item.get("title") or "")[:200],
-                    url=item.get("html_url") or "",
-                    state=item.get("state") or "",
-                    labels=[l.get("name") for l in (item.get("labels") or [])
-                            if isinstance(l, dict) and l.get("name")],
-                    created_at=item.get("created_at"),
-                    kind="pr" if item.get("pull_request") else "issue",
-                )
-            )
+        # No `is:open`: a fixed regression is the strongest signal in the window, and
+        # dropping it (as the old query did) hid exactly the issues worth leading with.
+        # analyze_issue re-weights closed-completed up and dismissed down instead.
+        query = f"repo:{repo} is:issue created:{day_from}..{day_to} {clause}"
+        # Over-fetch a candidate pool and ask GitHub to pre-sort by interactions
+        # (reactions + comments) so high-impact issues are in the page even when old,
+        # then analyse, rank on our own impact score, and keep the top max_issues.
+        fetch_n = max(40, max_issues * 2)
+        try:
+            raw = lister(query, limit=fetch_n, sort="interactions")
+        except TypeError:
+            # A forge/mocked lister without the `sort` kwarg -- fall back to its default.
+            raw = lister(query, limit=fetch_n)
+        signals = [analyze_issue(item) for item in (raw or [])
+                   if isinstance(item, dict)]
+        # Rank by impact, then recency as a tiebreak (newest first among equals).
+        signals.sort(key=lambda s: (s.impact, s.created_at or ""), reverse=True)
+        d.bug_issues = signals[:max_issues]
 
     if d.total_bug_count == 0 and not d.breaking_notes and not d.note:
         d.note = "no labelled bugs or breaking-change notes found in the window"

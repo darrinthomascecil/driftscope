@@ -379,10 +379,15 @@ class GitHub:
             self.cache.put(key, body)
         return body
 
-    def search_issues(self, q: str, *, limit: int = 40) -> list[dict]:
+    def search_issues(self, q: str, *, limit: int = 40, sort: str = "created",
+                      order: str = "desc") -> list[dict]:
         from urllib.parse import quote
 
-        path = f"search/issues?q={quote(q)}&per_page={min(limit, 100)}&sort=created&order=desc"
+        # `sort` picks the axis GitHub pre-orders on. The delta asks for `interactions`
+        # (reactions + comments) so the high-impact issues land in the fetched page even
+        # when they are old -- otherwise a created-desc fetch only ever sees the newest N.
+        path = (f"search/issues?q={quote(q)}&per_page={min(limit, 100)}"
+                f"&sort={sort}&order={order}")
         if not self.cache.fresh(f"gh:{path}:False"):
             self._await_search_slot()
         body = self.api(path)

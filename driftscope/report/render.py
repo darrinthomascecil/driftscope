@@ -250,6 +250,31 @@ def _md_trend(d) -> list[str]:
     return out
 
 
+_SEV_TAG = {"critical": "CRITICAL", "high": "HIGH"}
+_FIX_WORD = {"fixed": "fixed", "dismissed": "won't-fix", "closed": "closed", "open": "open"}
+
+
+def _md_issue(i) -> list[str]:
+    """One ranked bug issue: a title line, a metadata line, and (if any) an excerpt.
+
+    Severity tag shows only for critical/high (a NORMAL tag on every line is noise);
+    reaction/comment counts show only when non-zero, so a quiet issue stays a one-liner.
+    """
+    tag = _SEV_TAG.get(i.severity)
+    head = f"- {f'**{tag}** ' if tag else ''}[#{i.number}]({i.url}) {i.title}"
+    meta = [_FIX_WORD.get(i.fix_status, i.fix_status)]
+    if i.affected_version:
+        meta.append(f"affects {i.affected_version}")
+    if i.reactions:
+        meta.append(f"{i.reactions} reaction{'' if i.reactions == 1 else 's'}")
+    if i.comments:
+        meta.append(f"{i.comments} comment{'' if i.comments == 1 else 's'}")
+    out = [head, f"  {' &middot; '.join(meta)}"]
+    if i.body_excerpt:
+        out.append(f"  > {i.body_excerpt}")
+    return out
+
+
 def _md_vulns(r) -> list[str]:
     """Known advisories and, where knowable, what an upgrade would clear."""
     s = summarize_vulns(r)
@@ -472,13 +497,21 @@ def to_markdown(report: Report, *, max_detail: int = 40) -> str:
                 for n in d.breaking_notes[:12]:
                     a(f"- {n}")
                 a("")
-            if d.total_bug_count or d.bug_issues:
+            if d.bug_issues:
+                a(f"**Top bug activity in the window — ranked by impact** "
+                  f"({d.open_bug_count} open of {d.total_bug_count} bug-labelled "
+                  f"filed) — a rough signal, not scoped to a specific version")
+                a("")
+                for i in d.bug_issues[:10]:
+                    for ln in _md_issue(i):
+                        a(ln)
+                a("")
+            elif d.total_bug_count:
+                # Counts without a listing -- e.g. Azure DevOps, which has no search
+                # analogue -- so there is a number but no per-issue analysis.
                 a(f"**Bug activity in the version window** "
                   f"({d.open_bug_count} open of {d.total_bug_count} filed) — a rough "
                   f"signal, not scoped to a specific version")
-                a("")
-                for i in d.bug_issues[:10]:
-                    a(f"- [#{i.number}]({i.url}) {i.title}")
                 a("")
             if d.note:
                 a(f"_{d.note}_")

@@ -156,6 +156,7 @@ class GitHubForge(Forge):
         # throttled search once read as "this project has no issues".
         return self._gh.search_count(base), self._gh.search_count(f"{base} is:open")
 
-    def search_issues(self, query: str, *, limit: int = 15) -> list[dict]:
+    def search_issues(self, query: str, *, limit: int = 15,
+                      sort: str = "created") -> list[dict]:
         """Raw passthrough for the delta phase's issue listing (GitHub-only)."""
-        return self._gh.search_issues(query, limit=limit)
+        return self._gh.search_issues(query, limit=limit, sort=sort)
