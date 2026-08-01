@@ -15,49 +15,27 @@ workflow notifies repo admins) and opens/updates a `terraform-drift` issue with 
 
 ## Enable it
 
-### 1. Repo **variables** (Settings → Secrets and variables → Actions → Variables)
+Almost everything is wired by the bootstrap — you only flip the switch.
 
-| Variable | Value |
-|---|---|
-| `TF_DRIFT_ENABLED` | `true` |
-| `AZURE_CLIENT_ID` | client id of the identity CI authenticates as (below) |
-| `AZURE_TENANT_ID` | your tenant id |
-| `AZURE_SUBSCRIPTION_ID` | the subscription the deployment lives in |
-| `TFSTATE_RG` / `TFSTATE_SA` / `TFSTATE_CONTAINER` | the remote-state backend (from `terraform/backend.hcl`) |
+1. **Wire CI config** (idempotent; `make up` runs it automatically): `make repo-config`
+   (`scripts/bootstrap/repo-config.sh`) sets the repo variables `AZURE_CLIENT_ID`,
+   `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `TFSTATE_RG/SA/CONTAINER` and the `TFVARS` secret —
+   all from Terraform outputs + `terraform/backend.hcl`. Nothing is typed into the GitHub UI.
+2. **OIDC trust is already in place**: `terraform/gh-deploy-identity.tf` registers the federated
+   credential `repo:<owner>/<repo>:ref:refs/heads/main` (name-based + immutable-id form) on the
+   deploy identity, created by `make infra`. `schedule`/`workflow_dispatch` runs use that subject.
+3. **Turn it on**: set the repo variable `TF_DRIFT_ENABLED=true` — the one deliberate switch (drift
+   stays off until you opt in). `gh variable set TF_DRIFT_ENABLED --body true`.
 
-### 2. Repo **secret**
+### Identity + permissions
 
-| Secret | Value |
-|---|---|
-| `TFVARS` | the full contents of your `terraform/terraform.tfvars` (it carries deployment config; `terraform.tfvars` is git-ignored, so CI reconstructs it here) |
-
-### 3. Azure identity + **keyless** OIDC trust
-
-CI authenticates with **native Terraform OIDC** — no stored client secret. Create (or reuse) an
-Entra app / user-assigned identity and add a **federated credential** trusting this repo's Actions
-subject:
-
-```sh
-az ad app federated-credential create --id <AZURE_CLIENT_ID> --parameters '{
-  "name": "github-actions-drift",
-  "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:<owner>/<repo>:ref:refs/heads/main",
-  "audiences": ["api://AzureADTokenExchange"]
-}'
-```
-
-> `workflow_dispatch` and `schedule` runs use the default branch's subject
-> (`ref:refs/heads/main`). If you run drift from other refs, add matching federated subjects.
-
-### 4. Permissions the identity needs (a `plan` refreshes the whole config)
-
-- **Reader** on the subscription/resource groups — to refresh the Azure resources.
-- **Storage Blob Data Contributor** on the state storage account — to read state (keyless).
-- **Microsoft Graph directory read** (e.g. `User.Read.All`, `Group.Read.All`,
-  `Application.Read.All`) — because the config manages/reads Entra objects
-  (`azuread_application`, `azuread_group`, `data.azuread_user.admins`).
-
-Least privilege: Reader (not Contributor) on Azure, read-only Graph — a plan never writes.
+The drift job reuses the **`driftscope-gh-deploy`** identity — **Contributor** on the deployment RG
+(`terraform/gh-deploy-identity.tf`). A `plan` only reads, but the identity is Contributor because it
+is *shared* with the deploy pipeline. Contributor also covers the Graph/Entra reads the plan needs
+(`azuread_application`, `azuread_group`, `data.azuread_user.admins`) and state access. A stricter
+posture would give drift a **separate Reader-only** identity (Reader on the RG + Storage Blob Data
+Contributor on the state SA + read-only Graph); the reused-identity default trades that for one
+fewer identity to manage.
 
 ## What you'll see
 

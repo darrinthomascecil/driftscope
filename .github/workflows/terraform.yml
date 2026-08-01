@@ -45,8 +45,10 @@ jobs:
       - name: validate
         run: terraform -chdir=terraform validate
 
-  # Scheduled drift detection against the live remote state. OPT-IN: set repo variable
-  # TF_DRIFT_ENABLED=true plus the vars/secrets in docs/drift-detection.md. Skipped otherwise.
+  # Scheduled drift detection against the live remote state. The vars/secret it needs
+  # (AZURE_*, TFSTATE_*, TFVARS) are wired reproducibly by `make repo-config`, and the identity's
+  # ref:refs/heads/main federated credential is in Terraform (gh-deploy-identity.tf). OPT-IN: set
+  # repo variable TF_DRIFT_ENABLED=true to enable (skipped otherwise). See docs/drift-detection.md.
   drift:
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')

@@ -40,3 +40,24 @@ resource "azurerm_federated_identity_credential" "gh_deploy_prod_ids" {
   issuer    = "https://token.actions.githubusercontent.com"
   subject   = "repo:${var.github_repo_ids}:environment:production"
 }
+
+# The terraform.yml DRIFT job runs on schedule/workflow_dispatch (no `environment:` gate), so its
+# OIDC subject is ref:refs/heads/main -- a distinct subject from deploy.yml's environment:production.
+# Registering it makes the drift guardrail reproducibly authenticate when TF_DRIFT_ENABLED=true.
+# The job is READ-ONLY (`terraform plan -lock=false`); only workflows running on main can assume it.
+resource "azurerm_federated_identity_credential" "gh_deploy_main" {
+  name      = "gh-deploy-main"
+  parent_id = azurerm_user_assigned_identity.gh_deploy.id
+  audience  = ["api://AzureADTokenExchange"]
+  issuer    = "https://token.actions.githubusercontent.com"
+  subject   = "repo:${var.github_repo}:ref:refs/heads/main"
+}
+
+resource "azurerm_federated_identity_credential" "gh_deploy_main_ids" {
+  count     = var.github_repo_ids == "" ? 0 : 1
+  name      = "gh-deploy-main-ids"
+  parent_id = azurerm_user_assigned_identity.gh_deploy.id
+  audience  = ["api://AzureADTokenExchange"]
+  issuer    = "https://token.actions.githubusercontent.com"
+  subject   = "repo:${var.github_repo_ids}:ref:refs/heads/main"
+}
