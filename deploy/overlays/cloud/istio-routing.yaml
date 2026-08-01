@@ -51,6 +51,14 @@ spec:
         - destination:
             host: pathtrace.driftscope.svc.cluster.local
             port: { number: 8080 }
+    # fleet governance service (docs/design-org-aggregation.md) -- UI + verdict/inventory
+    # API. Behind the same SSO gate + origin lock as the app; the sole path in is the gateway.
+    - match:
+        - uri: { prefix: /fleet }
+      route:
+        - destination:
+            host: driftscope-fleet.driftscope.svc.cluster.local
+            port: { number: 80 }
     # everything else -> the app (gated by the CUSTOM AuthorizationPolicy on the gateway)
     - route:
         - destination:
