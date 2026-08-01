@@ -1,6 +1,6 @@
 # ADR 0002 — GitOps deployment with Argo CD
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-01
 - **Deciders:** platform engineering
 - **Builds on:** ADR 0001 (deployment configuration & secret management)

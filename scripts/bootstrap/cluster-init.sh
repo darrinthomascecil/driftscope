@@ -65,4 +65,17 @@ helm upgrade --install external-secrets external-secrets/external-secrets \
   --set installCRDs=true \
   --wait
 
+# Argo CD -- the GitOps controller (docs/adr/0002-gitops-with-argocd.md). Installed imperatively
+# here, in ONE place, alongside cert-manager + ESO: the minimal bootstrap before GitOps exists.
+# After this, Argo self-manages via app-of-apps; Terraform stays pure (Azure only, ADR 0001).
+# server.insecure=true: Argo's own TLS is terminated by the Istio gateway (it sits behind the SSO edge).
+log "installing Argo CD (GitOps controller)"
+helm repo add argo https://argoproj.github.io/argo-helm >/dev/null
+helm repo update argo >/dev/null
+helm upgrade --install argocd argo/argo-cd \
+  --namespace argocd --create-namespace \
+  --version 7.7.5 \
+  --set configs.params."server\.insecure"=true \
+  --wait
+
 log "cluster-init: OK"
