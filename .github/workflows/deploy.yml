@@ -74,12 +74,14 @@ jobs:
       - name: Build & push to ACR
         id: build
         run: |
+          # az acr build does NOT auto-populate the BuildKit platform args (TARGETARCH), which the
+          # Dockerfile's gh-CLI stage keys off -- so pass it explicitly for the platform we deploy.
           az acr build \
             --registry "${{ vars.ACR_NAME }}" \
             --image "driftscope:${{ steps.tag.outputs.tag }}" \
             --platform linux/amd64 \
-            --file Dockerfile . \
-            --output json > acr-build.json
+            --build-arg TARGETARCH=amd64 \
+            --file Dockerfile .
           DIGEST=$(az acr repository show \
             --name "${{ vars.ACR_NAME }}" \
             --image "driftscope:${{ steps.tag.outputs.tag }}" \
