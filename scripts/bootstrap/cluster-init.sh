@@ -93,8 +93,76 @@ helm upgrade --install argocd argo/argo-cd \
   --namespace argocd --version 7.7.5 \
   -f "$GITOPS/argocd-values.yaml" --wait
 
-# TODO(adr-0002 phase 3-4): register the repo (read-only deploy key) + apply the Argo Application
-# (deploy/gitops/application.yaml), then flip the Application to automated sync + selfHeal. Left as
-# a deliberate manual step until detect-only parity is signed off. See the ADR.
+# ── Register the repo with Argo + create the Application (ADR 0002 phase 3) ──────────────────
+# Argo pulls from git, so it needs the repo URL and -- for a PRIVATE repo -- a read-only deploy
+# key. The repo URL is NOT infrastructure (it's wherever you cloned from), so we derive it from
+# THIS checkout's own origin: a fork-and-rebuild then registers against the forker's repo with no
+# edit to application.yaml (which ships a REPLACE-REPO placeholder, ADR 0001).
+#
+# This step is additive: if it can't run (no gh, or gh not authed for a private repo) it WARNS and
+# skips -- Argo CD is still installed and the deploy pipeline still deploys. It never blocks bootstrap.
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  REPO_SLUG="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
+  REPO_SSH="$(gh repo view  --json sshUrl       -q .sshUrl        2>/dev/null || true)"
+  REPO_HTTPS="$(gh repo view --json url         -q .url           2>/dev/null || true)"
+  REPO_VIS="$(gh repo view  --json visibility   -q .visibility    2>/dev/null || echo PRIVATE)"
+else
+  REPO_SLUG=""; REPO_SSH="$(git -C "$REPO" remote get-url origin 2>/dev/null || true)"
+  REPO_HTTPS=""; REPO_VIS="UNKNOWN"
+fi
+
+if [ -z "$REPO_SSH" ]; then
+  warn "could not determine the git repo URL -> skipping Argo Application registration."
+  warn "  Argo CD is installed and the deploy pipeline still deploys; register manually per ADR 0002."
+elif [ "$REPO_VIS" = "PUBLIC" ]; then
+  # Public repo: Argo clones anonymously over HTTPS -- no deploy key / repo Secret needed.
+  REPO_TARGET="${REPO_HTTPS:-$REPO_SSH}"
+  log "applying Argo Application (public repo, anonymous HTTPS clone: $REPO_TARGET)"
+  sed "s#REPLACE-REPO#${REPO_TARGET}#g" "$GITOPS/application.yaml" | kubectl apply -f -
+else
+  # Private repo: Argo needs an SSH read-only deploy key. Reuse an existing driftscope-repo Secret
+  # (idempotent rerun -> no key sprawl); otherwise mint an ed25519 keypair, register the PUBLIC
+  # half read-only on the repo (needs gh with admin, which repo owners have), and store the PRIVATE
+  # half in the argocd repo Secret. github.com host key ships in the argo-cd chart's known-hosts CM.
+  if kubectl -n argocd get secret driftscope-repo >/dev/null 2>&1; then
+    log "Argo repo Secret driftscope-repo already present -> reusing deploy key"
+  elif [ -n "$REPO_SLUG" ]; then
+    log "minting read-only deploy key for $REPO_SLUG and registering it on the repo"
+    KEYDIR="$(mktemp -d)"; trap 'rm -rf "$KEYDIR"' EXIT
+    ssh-keygen -t ed25519 -N '' -C "argocd-driftscope@$AKS" -f "$KEYDIR/id" >/dev/null
+    gh api -X POST "repos/$REPO_SLUG/keys" \
+      -f title="argocd-driftscope ($AKS)" \
+      -f key="$(cat "$KEYDIR/id.pub")" \
+      -F read_only=true >/dev/null
+    # stringData + indented key; lib.sh forbids `set -x`, so the private key never hits a trace.
+    kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: driftscope-repo
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  type: git
+  url: ${REPO_SSH}
+  sshPrivateKey: |
+$(sed 's/^/    /' "$KEYDIR/id")
+EOF
+    rm -rf "$KEYDIR"; trap - EXIT
+  else
+    warn "private repo but gh is unavailable to register a deploy key -> skipping Application."
+    warn "  Argo CD is installed and the pipeline still deploys; add a read-only deploy key +"
+    warn "  driftscope-repo Secret, then apply deploy/gitops/application.yaml, per ADR 0002."
+  fi
+
+  # Apply the Application once the repo credential exists (detect-only; the auto-sync cutover is
+  # gated on the image-tag unification -- see application.yaml / ADR 0002).
+  if kubectl -n argocd get secret driftscope-repo >/dev/null 2>&1; then
+    log "applying Argo Application (detect-only; see ADR 0002 for the auto-sync cutover gate)"
+    sed "s#REPLACE-REPO#${REPO_SSH}#g" "$GITOPS/application.yaml" | kubectl apply -f -
+  fi
+fi
 
 log "cluster-init: OK"
