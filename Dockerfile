@@ -61,7 +61,12 @@ ARG GH_VERSION
 # TARGETARCH is supplied by BuildKit and is already Go-style (amd64/arm64), which
 # matches gh's release asset naming exactly -- so an arm64 Mac and an amd64 CI
 # runner both build from this one line.
-ARG TARGETARCH
+#
+# Default to amd64 (the AKS node arch) so NON-BuildKit builders -- `az acr build`, the classic
+# `docker build`, ACR Tasks -- don't hard-fail on an unset TARGETARCH under `set -eux`. BuildKit
+# still OVERRIDES this with the real target arch for multi-platform builds, so arm64 is unaffected.
+# See .claude/skills/build-driftscope-image (this has bitten repeatedly).
+ARG TARGETARCH=amd64
 
 # Checksums from the release's own gh_${GH_VERSION}_checksums.txt. Pinning the
 # version alone is not enough: a release asset can be replaced, and this binary
