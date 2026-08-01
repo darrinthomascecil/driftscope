@@ -196,6 +196,37 @@ def test_an_unknown_subcommand_is_rejected():
         build_parser().parse_args(["nonsense"])
 
 
+def test_a_remote_scan_without_byo_config_resolves_to_no_identity(monkeypatch):
+    """Regression: `_resolve_identity` on a REMOTE target with no --identity, no
+    --forge-auth, and no $DRIFTSCOPE_FORGE_AUTH must return None -- the default flow. This
+    once raised `NameError: name 'os' is not defined` (a missing import), crashing every
+    plain remote CLI scan; the unit path was uncovered because tests passed a registry.
+    """
+    monkeypatch.delenv("DRIFTSCOPE_FORGE_AUTH", raising=False)
+    args = build_parser().parse_args(["scan", "https://dev.azure.com/x/y/_git/z"])
+    assert cli_mod._resolve_identity(args) is None
+
+
+def test_the_forge_auth_env_var_is_read_when_no_flag(monkeypatch, tmp_path):
+    """The $DRIFTSCOPE_FORGE_AUTH branch is exercised (the exact line that had the bug):
+    with it set to a real registry and no --identity, a remote target auto-resolves.
+    """
+    reg = tmp_path / "fa.json"
+    reg.write_text(json.dumps({
+        "version": 1,
+        "identities": [{
+            "name": "acme", "forge": "github",
+            "match": {"hosts": ["github.com"], "owners": ["acme"]},
+            "github": {"app_id": "1", "installation_id": "2",
+                       "signing_key": {"vault_uri": "https://v.vault.azure.net", "key_name": "k"}},
+        }],
+    }))
+    monkeypatch.setenv("DRIFTSCOPE_FORGE_AUTH", str(reg))
+    args = build_parser().parse_args(["scan", "https://github.com/acme/widgets"])
+    ident = cli_mod._resolve_identity(args)
+    assert ident is not None and ident.name == "acme"
+
+
 def test_an_invalid_fail_on_level_is_rejected_at_parse_time():
     """A typo'd threshold must not silently become "never fail"."""
     with pytest.raises(SystemExit):
