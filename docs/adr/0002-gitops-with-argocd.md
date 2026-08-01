@@ -107,17 +107,23 @@ bootstrap). The bootstrap install + Argo self-management (above) is cleaner and 
    confirmed (Argo renders the same image the pipeline deployed, and the `OutOfSync` is uniformly
    tracking-metadata adoption, not content drift).
 
-### Cutover gate (blocks Phase 4)
+### Cutover gate (Phase 4) — CLOSED
 
-Auto-sync + `selfHeal` must **not** be enabled until the **image tag lives in git**. Today the render's
-`IMAGE` comes from a mutable cluster ConfigMap (`driftscope-deploy-config`), while the deploy pipeline
-renders `sha-<commit>`. With `selfHeal` on, Argo would continuously revert every pipeline image bump back
-to the ConfigMap's tag — the two would fight over the running image. The fix is to make the committed
-overlay carry the image tag (kustomize `images:`) and have the pipeline bump it via a git commit; then the
-CMP no longer needs `IMAGE` and pipeline + Argo agree by construction. Close this gate first, **then**
-uncomment the automated `syncPolicy` in `application.yaml`.
+Auto-sync + `selfHeal` could not be enabled until the **image tag lived in git**: the CMP rendered the
+tag from a mutable cluster ConfigMap while the deploy pipeline rendered `sha-<commit>`, so `selfHeal`
+would have continuously reverted every pipeline image bump — the two fighting over the running image.
+**Resolved:** the image tag is now `kustomization.yaml`'s `newTag` (the single source of truth) and
+`render-overlay.sh` no longer takes a tag override, so the CMP and the pipeline render the *same* tag by
+construction. The `driftscope-deploy-config` ConfigMap carries only `IMAGE_REPO` (the registry), not a tag.
 
-4. **Cut the pipeline over** (after the gate above): it builds/signs/**bumps the tracked image tag in git**;
-   Argo reconciles. Remove `kubectl apply` and the cluster-admin grant from CI.
+4. **Cut the pipeline over.** **Done** — the deployed version is a **semantic version** in git
+   (`kustomization.yaml` `newTag`). Cutting a release (a `vX.Y.Z` tag → GitHub Release) makes
+   `deploy.yml` build + sign that version and **bump `newTag` via a commit to main** (`promote=true`);
+   a plain `workflow_dispatch` builds a throwaway `sha-<commit>` test image and does **not** touch
+   git, so `main` never accumulates sha tags. The pipeline no longer runs `kubectl apply` and holds no
+   cluster credential (only `contents: write` to push the bump); `application.yaml` enables
+   `automated: { prune, selfHeal }`, so Argo CD is the sole applier. The bootstrap's `image.sh` builds
+   the committed `newTag`, so a fresh cluster's image matches what Argo renders and a rebuild is
+   reproducible from the committed version.
 5. **Multi-tenant (later):** `ApplicationSet` templating one Application per tenant, keyed to the
    per-tenant identity registry.

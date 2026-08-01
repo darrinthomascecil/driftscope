@@ -1,10 +1,11 @@
-# Build the image into ACR and roll it out to the AKS cluster (app + fleet governance).
+# Build + sign the image into ACR and bump the deployed version in git (app + fleet governance).
 #
-# This is the *deploy* pipeline. `release.yml` publishes the public, signed image to GHCR;
-# this one builds the image the CLUSTER actually pulls (ACR, via kubelet AcrPull) and applies
-# the cloud overlay. First-time cluster infra (managed Istio, mesh/, edge/, the gateway) is
-# stood up by the bootstrap (`make up` / scripts/bootstrap/*); this handles ongoing app + fleet
-# deploys onto that cluster.
+# This is the *deploy* pipeline. `release.yml` publishes the public, signed image to GHCR; this one
+# builds the image the CLUSTER actually pulls (ACR, via kubelet AcrPull). Since ADR 0002 phase 4 it
+# is PULL-based GitOps: the pipeline builds + signs, then bumps the committed image tag
+# (kustomization.yaml newTag) on main -- it does NOT apply manifests. Argo CD reconciles the bump
+# onto the cluster (auto-sync + selfHeal), so CI holds no cluster-admin credential. First-time
+# cluster infra (Istio, mesh/, edge/, gateway, Argo itself) is stood up by the bootstrap.
 #
 # Auth is Azure OIDC -- the same keyless, secretless pattern terraform.yml uses. No stored
 # credentials: a federated credential on the Azure identity trusts this repo's Actions subject.
@@ -12,12 +13,12 @@
 # ── Prerequisites (one-time) ────────────────────────────────────────────────────────────────
 #   Repo *variables* (Settings → Secrets and variables → Actions → Variables):
 #     AZURE_CLIENT_ID  AZURE_TENANT_ID  AZURE_SUBSCRIPTION_ID   (the deploy identity)
-#     ACR_NAME         AKS_CLUSTER      AKS_RESOURCE_GROUP
+#     ACR_NAME                                                  (the registry to build into)
 #   The Azure identity needs, scoped to the deployment RG:
 #     • AcrPush on the ACR                         (build + push the image)
 #     • a federated credential trusting subject    repo:darrinthomascecil/driftscope:environment:production
-#     • AKS access to apply manifests: "Azure Kubernetes Service RBAC Writer" (AAD RBAC clusters)
-#       or membership in the cluster admin group. `az aks get-credentials` (non-admin) is used.
+#   No AKS/kubectl access is needed anymore -- Argo CD applies. `contents: write` (below) lets the
+#   job push the tag-bump commit to main.
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 name: deploy
 
@@ -34,7 +35,7 @@ on:
     types: [published]
 
 permissions:
-  contents: read
+  contents: write          # push the image-tag bump commit to main (Argo then reconciles)
   id-token: write          # Azure OIDC + cosign keyless
 
 concurrency:
@@ -56,18 +57,26 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Resolve image tag (immutable)
+      - name: Resolve image tag + promote flag
         id: tag
         run: |
-          # A release deploys its tag; otherwise the short SHA -- immutable, so every deploy is a
-          # distinct image and the rollout actually picks it up (a reused tag would serve stale).
-          if [ -n "${{ inputs.image_tag }}" ]; then TAG="${{ inputs.image_tag }}"
-          elif [ "${{ github.event_name }}" = "release" ]; then TAG="${GITHUB_REF_NAME}"
+          # The deployed version is a SEMANTIC VERSION in git (ADR 0002 phase 4). A release (a
+          # vX.Y.Z tag) -- or a dispatch with an explicit vX.Y.Z -- is a real version we PROMOTE:
+          # build it and bump kustomization.yaml newTag. A plain dispatch builds a throwaway sha
+          # image for testing and does NOT touch git (no sha tags on main).
+          if [ "${{ github.event_name }}" = "release" ]; then TAG="${GITHUB_REF_NAME}"
+          elif [ -n "${{ inputs.image_tag }}" ];        then TAG="${{ inputs.image_tag }}"
           else TAG="sha-$(git rev-parse --short HEAD)"; fi
+          # Promote only real semver versions (vMAJOR.MINOR.PATCH, optional -prerelease).
+          if printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            PROMOTE=true; else PROMOTE=false; fi
           ACR="${{ vars.ACR_NAME }}"
-          echo "tag=${TAG}"                      >> "$GITHUB_OUTPUT"
-          echo "image=${ACR}.azurecr.io/driftscope:${TAG}" >> "$GITHUB_OUTPUT"
-          echo "::notice::deploying ${ACR}.azurecr.io/driftscope:${TAG}"
+          {
+            echo "tag=${TAG}"
+            echo "promote=${PROMOTE}"
+            echo "image=${ACR}.azurecr.io/driftscope:${TAG}"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::building ${ACR}.azurecr.io/driftscope:${TAG} (promote=${PROMOTE})"
 
       # Server-side build in ACR: no docker daemon on the runner, and the image lands in the
       # registry the cluster pulls from. Same Dockerfile + platform the app is deployed as.
@@ -100,50 +109,31 @@ jobs:
           az acr login --name "${{ vars.ACR_NAME }}"
           cosign sign --yes "${{ vars.ACR_NAME }}.azurecr.io/driftscope@${{ steps.build.outputs.digest }}"
 
-      - name: Get cluster credentials
+      # ADR 0002 phase 4: the pipeline's job ends at "build + sign + declare intent". For a real
+      # version (promote=true) it bumps the committed newTag on main; Argo CD (auto-sync + selfHeal)
+      # reconciles it. No kubectl, no cluster-admin credential -- Argo is the sole applier.
+      - name: Promote version on main (GitOps -- Argo reconciles)
+        if: ${{ steps.tag.outputs.promote == 'true' }}
         run: |
-          az aks install-cli >/dev/null    # kubectl on the runner
-          # This cluster uses local accounts (no AAD RBAC), so --admin returns a cluster-admin
-          # certificate credential directly -- no kubelogin/AAD token conversion needed. The
-          # deploy identity's Contributor role grants listClusterAdminCredential.
-          az aks get-credentials \
-            --resource-group "${{ vars.AKS_RESOURCE_GROUP }}" \
-            --name "${{ vars.AKS_CLUSTER }}" \
-            --admin --overwrite-existing
+          TAG="${{ steps.tag.outputs.tag }}"
+          # Build happened against the triggering ref; the version bump belongs on main (Argo tracks it).
+          git fetch origin main
+          git checkout -B main origin/main
+          # newTag is the single source of truth for the deployed version (kustomization.yaml).
+          sed -i "s|^\( *newTag:\).*|\1 ${TAG}|" deploy/overlays/cloud/kustomization.yaml
+          git config user.name  "driftscope-deploy[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/overlays/cloud/kustomization.yaml
+          if git diff --cached --quiet; then
+            echo "::notice::already on ${TAG}; nothing to bump"
+          else
+            # [skip ci]: this commit only moves a version tag. A GITHUB_TOKEN push does not retrigger
+            # workflows regardless, so there is no deploy loop.
+            git commit -m "chore(deploy): release ${TAG} [skip ci]"
+            git push origin main
+            echo "::notice::promoted ${TAG} on main; Argo CD will reconcile it"
+          fi
 
-      - name: Install kustomize
-        run: |
-          curl -sSL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          sudo mv kustomize /usr/local/bin/
-
-      - name: Render (shared render-overlay.sh) + apply
-        run: |
-          # The overlay is a template (ADR 0001). deploy/gitops/render-overlay.sh binds the real
-          # values from Azure + repo vars and kustomize-builds -- the SAME script Argo CD's
-          # Config-Management Plugin uses (ADR 0002), so CI and GitOps render identically. It fails
-          # closed if any REPLACE-* survives into the output.
-          RG="${{ vars.AKS_RESOURCE_GROUP }}"
-          # Assign separately so a failed az lookup fails the step (not silently exports empty).
-          APP_CLIENT_ID="$(az identity show -g "$RG" -n driftscope-app --query clientId -o tsv)"
-          ESO_CLIENT_ID="$(az identity show -g "$RG" -n driftscope-eso --query clientId -o tsv)"
-          KEYVAULT="$(az keyvault list -g "$RG" --query "[?starts_with(name, 'driftscope-kv')].name | [0]" -o tsv)"
-          export APP_CLIENT_ID ESO_CLIENT_ID KEYVAULT \
-                 HOST="${{ vars.HOST }}" \
-                 TENANT_ID="${{ vars.AZURE_TENANT_ID }}" \
-                 ALLOWED_GROUP_ID="${{ vars.ALLOWED_GROUP_ID }}" \
-                 IMAGE_REPO="${{ vars.ACR_NAME }}.azurecr.io/driftscope" \
-                 IMAGE_TAG="${{ steps.tag.outputs.tag }}"
-          deploy/gitops/render-overlay.sh > /tmp/rendered.yaml
-          kubectl apply -f /tmp/rendered.yaml
-
-      - name: Wait for rollout (app + fleet)
-        run: |
-          kubectl -n driftscope rollout status deploy/driftscope        --timeout=180s
-          kubectl -n driftscope rollout status deploy/driftscope-fleet  --timeout=180s
-
-      - name: Post-deploy status
-        run: |
-          kubectl -n driftscope get pods -o wide
-          # The rollout gates above already prove /healthz on BOTH deployments (it's the readiness
-          # probe). We don't curl the fleet from an ad-hoc pod: the allow-gateway-only mTLS policy
-          # would (correctly) deny it -- the sole path in is the gateway. Readiness IS the check.
+      - name: Test image (not promoted)
+        if: ${{ steps.tag.outputs.promote != 'true' }}
+        run: echo "::notice::built + signed ${{ steps.tag.outputs.image }} for testing; not promoted to main (cut a vX.Y.Z release to deploy)"

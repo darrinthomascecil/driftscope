@@ -2,17 +2,17 @@
 # overlay via the driftscope-render CMP (which runs deploy/gitops/render-overlay.sh), so it can
 # reconcile a repo that never holds live values.
 #
-# Starts detect-only (no automated syncPolicy): confirm Argo computes the same manifests the
-# pipeline applies, THEN enable automated sync + selfHeal (uncomment below) for drift auto-heal.
+# Pull-based GitOps (ADR 0002 phase 4): Argo CD reconciles the app + fleet from git, rendering the
+# overlay via the driftscope-render CMP. The deploy pipeline builds/signs the image and bumps the
+# committed tag (kustomization.yaml newTag); Argo rolls it out. CI holds no cluster credential.
 #
 # repoURL is a placeholder (ADR 0001: nothing fork-specific committed). The bootstrap
 # (scripts/bootstrap/cluster-init.sh) fills it from the checkout's own `git remote origin`, so a
 # fork-and-rebuild registers against the forker's repo with no edit here.
 #
-# CUTOVER GATE (ADR 0002 Phase 4): do NOT enable automated syncPolicy until the image tag lives in
-# git. Today the CMP renders IMAGE=:v1 (from the deploy-config ConfigMap) while the deploy pipeline
-# renders sha-<commit>; with selfHeal on, Argo would revert every pipeline image bump back to :v1.
-# Unify the image-tag source first, then uncomment below.
+# The image-tag cutover gate is CLOSED: the CMP and the pipeline both render the committed newTag
+# (render-overlay.sh no longer takes a tag override), so auto-sync + selfHeal cannot fight the
+# pipeline over the running image. That is why automated syncPolicy is enabled below.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -29,9 +29,11 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: driftscope
-  # syncPolicy left empty on purpose (detect-only). To cut over to GitOps auto-heal (after the
-  # image-tag gate above is closed):
-  # syncPolicy:
-  #   automated:
-  #     prune: true
-  #     selfHeal: true
+  syncPolicy:
+    # Auto-heal drift and reconcile the pipeline's tag bumps. prune removes resources deleted from
+    # git (the ESO-created oauth2-proxy Secret is NOT git-tracked, so it is never pruned).
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true   # the driftscope namespace is created by the bootstrap; harmless if present
