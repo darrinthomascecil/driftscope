@@ -44,9 +44,18 @@ Consequences of that choice:
 
 ### Placement and lifecycle
 
-- **Argo CD is installed via Terraform `helm_release`.** This is a legitimate "Terraform owns the
-  *control plane*" — distinct from application manifests, which stay Kustomize per ADR 0001. Terraform
-  already owns the cluster; the GitOps controller is cluster infrastructure, not workload config.
+Installing Argo is the **GitOps bootstrap problem**: Argo deploys everything via GitOps, but *something*
+must install Argo *before* GitOps exists, and that something is inherently not GitOps. Make that step
+minimal and imperative, then let Argo take over.
+
+- **Argo CD is installed by the bootstrap** (`scripts/bootstrap/cluster-init.sh`, `helm upgrade --install`),
+  right alongside cert-manager and ESO — the project's existing pattern for day-0 cluster controllers.
+  It is **not** installed via Terraform: Terraform stays pure (Azure infrastructure + outputs, never the
+  Kubernetes API, per ADR 0001), which also avoids the fragile Terraform Helm/Kubernetes providers
+  (apply-time cluster dependency, CRD-ordering issues) for a controller that ships many CRDs.
+- **Then Argo self-manages via app-of-apps.** After the minimal imperative install, Argo's own config
+  (and progressively cert-manager/ESO, and Argo's own upgrades) becomes a git-tracked `Application`, so
+  everything past the initial install is declarative GitOps.
 - **Argo CD's own UI is behind the existing SSO edge** (Front Door → oauth2-proxy), same as the app and
   fleet dashboard.
 - **The deploy pipeline's job shrinks** to: build + sign the image, and bump the tracked image tag. It
@@ -66,6 +75,12 @@ Consequences of that choice:
 The CMP approach reuses the mechanism ADR 0001 already defines (render from Azure), so it is the smallest
 consistent step.
 
+**Installing Argo via Terraform `helm_release`** was the initial proposal and was **rejected**: it
+re-couples Terraform to the Kubernetes API (apply-time cluster dependency, fragile Helm/Kubernetes
+providers for a CRD-heavy controller), contradicting ADR 0001's "Terraform never touches k8s," and it is
+inconsistent with how the project already installs cluster controllers (cert-manager and ESO via the
+bootstrap). The bootstrap install + Argo self-management (above) is cleaner and consistent.
+
 ## Consequences
 
 - **Positive:** drift detection + auto-heal (the class of failure that bit this project becomes
@@ -79,8 +94,9 @@ consistent step.
 
 ## Phased plan
 
-1. **Install Argo CD** (Terraform `helm_release`), UI behind the SSO edge, WI granted read on the Azure
-   resources the render needs. No Applications yet — verify the control plane is healthy.
+1. **Install Argo CD** in the bootstrap (`cluster-init.sh`, `helm upgrade --install`, alongside
+   cert-manager/ESO), UI behind the SSO edge, WI granted read on the Azure resources the render needs.
+   No Applications yet — verify the control plane is healthy.
 2. **Config-Management Plugin** that runs the render (resolve `REPLACE-*` from Azure) + `kustomize build`.
 3. **One `Application`** for driftscope (app + fleet), synced from `deploy/overlays/cloud`. Run it in
    parallel with the pipeline (Argo in "detect but do not auto-sync" first) to confirm parity, then enable
