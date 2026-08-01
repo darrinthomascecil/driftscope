@@ -67,7 +67,9 @@ def make_handler(service: FleetService, default_tenant: str = "default"):
             # Public, tenant-free endpoints first (health probe + dashboard).
             if path == "/healthz":
                 return self._send(200, {"status": "ok"})
-            if path == "/":
+            # Dashboard at "/" (local) AND "/fleet"|"/fleet/" -- the gateway routes the /fleet prefix
+            # here WITHOUT rewriting, so the browser path lands as /fleet/ (not /). Serve both.
+            if path in ("/", "/fleet", "/fleet/"):
                 return self._send_html(200, render_dashboard(service, q.get("tenant", default_tenant)))
             # Tenant-scoped JSON below.
             tenant = q.get("tenant", default_tenant)

@@ -202,6 +202,18 @@ def test_dashboard_renders_repos_and_verdicts(tmp_path):
     assert "gh/app" in markup and "BLOCK" in markup and "unsanctioned-upgrade" in markup
 
 
+def test_dashboard_served_at_fleet_prefix(tmp_path):
+    # The gateway routes the /fleet prefix to the pod WITHOUT rewriting, so a browser hitting
+    # https://host/fleet/ lands as GET /fleet/ -- which must serve the dashboard, not 404.
+    service = svc(tmp_path, CURATED)
+    service.ingest("default", report("gh/app", [("pypi", "django", "5.0.0", None, False)]))
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))  # default_tenant="default"
+    threading.Thread(target=httpd.handle_request).start()
+    port = httpd.server_address[1]
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/fleet/", timeout=5) as r:
+        assert r.status == 200 and "gh/app" in r.read().decode()
+
+
 def test_healthz_needs_no_tenant(tmp_path):
     service = svc(tmp_path, CURATED)
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
