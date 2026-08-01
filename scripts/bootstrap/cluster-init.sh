@@ -77,12 +77,12 @@ kubectl get ns argocd >/dev/null 2>&1 || kubectl create ns argocd
 # deploy pipeline uses, sourced from Terraform outputs + the login tenant.
 kubectl create configmap driftscope-deploy-config -n argocd \
   --from-literal=HOST="$(tf_out host)" \
-  --from-literal=TENANT_ID="$(az account show --query tenantId -o tsv)" \
+  --from-literal=TENANT_ID="$(tf_out tenant_id)" \
   --from-literal=ALLOWED_GROUP_ID="$(tf_out allowed_group_id)" \
   --from-literal=APP_CLIENT_ID="$(tf_out app_client_id)" \
   --from-literal=ESO_CLIENT_ID="$(tf_out eso_client_id)" \
   --from-literal=KEYVAULT="$(tf_out key_vault_name)" \
-  --from-literal=IMAGE="$(tf_out acr_login_server)/driftscope:v1" \
+  --from-literal=IMAGE_REPO="$(tf_out acr_login_server)/driftscope" \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f "$GITOPS/argocd-cmp-plugin.configmap.yaml"
 

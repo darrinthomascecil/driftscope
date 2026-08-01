@@ -14,7 +14,7 @@ spec:
     istio: aks-istio-ingressgateway-external   # managed external gateway (BYO public IP)
   servers:
     - port: { number: 80, name: http, protocol: HTTP }
-      hosts: ["driftscope.justmakeitgo.net"]   # <- overwritten by kustomize replacements (HOST)
+      hosts: ["REPLACE-HOST"]   # <- overwritten by kustomize replacements (params.HOST); placeholder, ADR 0001
     # HTTPS origin listener (custom-domain mode). Front Door dials origin.<domain> (SNI); the
     # gateway presents the cert-manager cert in secret driftscope-origin-tls (issued into
     # aks-istio-ingress, the gateway's own namespace, where Istio reads credentialName secrets).
@@ -32,7 +32,7 @@ kind: VirtualService
 metadata:
   name: driftscope
 spec:
-  hosts: ["driftscope.justmakeitgo.net"]
+  hosts: ["REPLACE-HOST"]   # <- overwritten by kustomize replacements (params.HOST); placeholder, ADR 0001
   gateways: ["driftscope"]
   http:
     # oauth2-proxy owns its login/callback endpoints; these bypass the ext_authz

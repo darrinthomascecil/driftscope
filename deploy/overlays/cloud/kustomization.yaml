@@ -14,9 +14,10 @@ resources:
   #   mesh/  -- ext_authz provider, mesh-wide STRICT + default-deny, path normalization
   #   edge/  -- origin TLS (cert-manager) + X-Azure-FDID origin lock (Terraform-generated)
 images:
-  # The ACR/image is a deployment parameter -- set to your registry (Phase 0.2: Terraform emits it).
+  # The registry is a per-deployment PARAMETER (ADR 0001), never committed: render-overlay.sh binds
+  # newName from Terraform's acr_login_server output at deploy time. The tag lives in git (below).
   - name: driftscope
-    newName: dscopeacr18860.azurecr.io/driftscope
+    newName: REPLACE-IMAGE-REPO
     newTag: v1
 
 # Inject the public HOST (from driftscope-params) into the Istio Gateway + VirtualService, so the

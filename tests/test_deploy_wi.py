@@ -61,6 +61,10 @@ def test_committed_overlay_is_a_placeholder_template():
     import re
 
     uuid = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+    # A live image registry (myacr.azurecr.io) is a per-deployment value too -- it once sat
+    # hardcoded (and STALE) in kustomization.yaml's newName, slipping past the uuid check. The
+    # registry must be a REPLACE-IMAGE-REPO placeholder, bound at render (ADR 0001).
+    registry = re.compile(r"[a-z0-9]+\.azurecr\.io")
     for path in sorted(CLOUD.glob("**/*.yaml")):
         for i, line in enumerate(path.read_text().splitlines(), 1):
             code = line.split("#", 1)[0]  # comments may legitimately mention ids / "REPLACE-*"
@@ -68,6 +72,10 @@ def test_committed_overlay_is_a_placeholder_template():
                 f"{path.relative_to(DEPLOY)}:{i} commits a live id -- must be a REPLACE-* "
                 f"placeholder, injected at deploy time (ADR 0001)"
             )
-    for name in ("params.yaml", "patch-sa.yaml", "external-secrets.yaml"):
+            assert not registry.search(code), (
+                f"{path.relative_to(DEPLOY)}:{i} commits a live image registry -- must be the "
+                f"REPLACE-IMAGE-REPO placeholder, bound at render time (ADR 0001)"
+            )
+    for name in ("params.yaml", "patch-sa.yaml", "external-secrets.yaml", "kustomization.yaml"):
         assert "REPLACE-" in (CLOUD / name).read_text(), \
             f"{name} must hold REPLACE-* placeholders bound at deploy time"

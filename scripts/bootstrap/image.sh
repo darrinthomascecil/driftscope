@@ -14,9 +14,10 @@ log "building $ACR/driftscope:$TAG in ACR (from $REPO)"
 az acr build --registry "$ACR_NAME" --image "driftscope:$TAG" \
   --platform linux/amd64 --build-arg TARGETARCH=amd64 "$REPO"
 
-# Point the cloud overlay at THIS registry. This edits the (tracked) kustomization.yaml in place
-# -- it's your per-deployment registry, not something to commit. `git checkout` it to reset.
-log "setting overlay image -> $ACR/driftscope:$TAG"
-( cd "$OVERLAY" && kustomize edit set image "driftscope=$ACR/driftscope:$TAG" )
+# The registry is NOT committed (ADR 0001): the overlay's newName is a REPLACE-IMAGE-REPO
+# placeholder that render-overlay.sh binds from `terraform output acr_login_server` at deploy time
+# (deploy.sh). The tag ($TAG) is the committed newTag in kustomization.yaml, which is what we just
+# built -- so no in-tree `kustomize edit` is needed here anymore.
+log "built $ACR/driftscope:$TAG (registry bound at deploy by render-overlay.sh)"
 
 log "image: OK"
