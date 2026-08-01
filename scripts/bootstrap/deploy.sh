@@ -35,16 +35,27 @@ kubectl apply -f "$OVERLAY/mesh/hardening.yaml"
 kubectl apply -f "$OVERLAY/mesh/access-logs.yaml"
 kubectl apply -f "$OVERLAY/mesh/require-sso.authorizationpolicy.yaml"
 
-# 3. Edge. Custom domain: issue the origin cert and wait for it; then the origin lock (both modes).
+# 3. Edge (aks-istio-ingress). The edge manifests are committed REPLACE-* templates (ADR 0001);
+#    render-edge.sh binds the values from Terraform outputs -- Terraform no longer writes these
+#    files. Custom domain: issue the origin cert (DNS-01) and wait; the origin lock applies in BOTH
+#    modes (it's what stops the internet reaching the origin IP and bypassing Front Door's WAF).
+RENDER_EDGE="$REPO/deploy/gitops/render-edge.sh"
 if custom_domain; then
-  log "issuing origin certificate (DNS-01)"
-  kubectl apply -f "$OVERLAY/edge/cluster-issuer.yaml"
-  kubectl apply -f "$OVERLAY/edge/origin-certificate.yaml"
+  log "issuing origin certificate (DNS-01, render-edge.sh)"
+  DNS_ZONE="$(tf_out zone_name)" \
+  RESOURCE_GROUP="$(tf_out resource_group)" \
+  SUBSCRIPTION_ID="$(tf_out subscription_id)" \
+  CERTMANAGER_CLIENT_ID="$(tf_out certmanager_client_id)" \
+  ACME_EMAIL="$(tf_out acme_email)" \
+    "$RENDER_EDGE" "$OVERLAY/edge/cluster-issuer.yaml" | kubectl apply -f -
+  ORIGIN_HOST="$(tf_out origin_host)" \
+    "$RENDER_EDGE" "$OVERLAY/edge/origin-certificate.yaml" | kubectl apply -f -
   kubectl wait --for=condition=Ready certificate/driftscope-origin -n aks-istio-ingress --timeout=300s \
     || warn "origin cert not Ready yet -- check: kubectl describe certificate driftscope-origin -n aks-istio-ingress"
 fi
-log "applying X-Azure-FDID origin lock"
-kubectl apply -f "$OVERLAY/edge/origin-lock.authorizationpolicy.yaml"
+log "applying X-Azure-FDID origin lock (render-edge.sh, both modes)"
+FRONT_DOOR_GUID="$(tf_out frontdoor_id)" \
+  "$RENDER_EDGE" "$OVERLAY/edge/origin-lock.authorizationpolicy.yaml" | kubectl apply -f -
 
 # 4. Make sure oauth2-proxy picked up the secret.
 kubectl -n driftscope rollout status deployment/oauth2-proxy --timeout=120s \

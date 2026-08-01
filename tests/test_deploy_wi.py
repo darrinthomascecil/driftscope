@@ -76,6 +76,13 @@ def test_committed_overlay_is_a_placeholder_template():
                 f"{path.relative_to(DEPLOY)}:{i} commits a live image registry -- must be the "
                 f"REPLACE-IMAGE-REPO placeholder, bound at render time (ADR 0001)"
             )
-    for name in ("params.yaml", "patch-sa.yaml", "external-secrets.yaml", "kustomization.yaml"):
+    for name in (
+        "params.yaml", "patch-sa.yaml", "external-secrets.yaml", "kustomization.yaml",
+        # edge/ (gateway namespace) is rendered by render-edge.sh from Terraform outputs -- the
+        # DNS zone, origin host, Front Door GUID, and ACME email are all per-deployment values.
+        "edge/origin-lock.authorizationpolicy.yaml",
+        "edge/cluster-issuer.yaml",
+        "edge/origin-certificate.yaml",
+    ):
         assert "REPLACE-" in (CLOUD / name).read_text(), \
             f"{name} must hold REPLACE-* placeholders bound at deploy time"

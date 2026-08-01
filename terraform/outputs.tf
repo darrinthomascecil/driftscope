@@ -90,6 +90,22 @@ output "certmanager_client_id" {
   description = "Managed-identity client id for cert-manager Workload Identity (custom-domain mode). Feed to the cert-manager helm install -- see edge/README.md."
 }
 
+# ---- Edge render inputs (render-edge.sh binds these into edge/* at deploy; ADR 0001) ----
+output "zone_name" {
+  value       = local.zone_name
+  description = "DNS zone cert-manager solves DNS-01 against (edge/cluster-issuer.yaml hostedZoneName)."
+}
+
+output "subscription_id" {
+  value       = var.subscription_id
+  description = "Subscription of the DNS zone (edge/cluster-issuer.yaml subscriptionID)."
+}
+
+output "acme_email" {
+  value       = var.acme_email
+  description = "Let's Encrypt account email (edge/cluster-issuer.yaml). Empty -> render-edge.sh drops the email line."
+}
+
 # ---- Consumed by the bootstrap (scripts/bootstrap/*, `make up`) so nothing is hardcoded ----
 output "use_custom_domain" {
   value       = local.use_custom_domain

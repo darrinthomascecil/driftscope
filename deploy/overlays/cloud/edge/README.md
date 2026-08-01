@@ -2,8 +2,10 @@
 
 These objects live in the managed-Istio ingress namespace (`aks-istio-ingress`), **not** the
 app namespace, so — like `mesh/` — they are applied **directly**, outside the kustomization.
-All three files are **Terraform-generated** (`terraform/edge.tf`); `terraform apply` regenerates
-them from your tfvars. Do not hand-edit.
+All three files are committed `REPLACE-*` **templates** (ADR 0001): the bootstrap renders them with
+`deploy/gitops/render-edge.sh`, binding the DNS zone / origin host / Front Door GUID / ACME email
+from `terraform output` at deploy time. Terraform emits those values as **outputs** and no longer
+writes these files, so nothing per-deployment is committed to git.
 
 The full design + the rejected alternatives (HTTP-01, Premium/Private Link) are in
 [`docs/design-edge-origin-cert.md`](../../../../docs/design-edge-origin-cert.md).
