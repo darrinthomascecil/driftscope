@@ -4,6 +4,15 @@
 #
 # Starts detect-only (no automated syncPolicy): confirm Argo computes the same manifests the
 # pipeline applies, THEN enable automated sync + selfHeal (uncomment below) for drift auto-heal.
+#
+# repoURL is a placeholder (ADR 0001: nothing fork-specific committed). The bootstrap
+# (scripts/bootstrap/cluster-init.sh) fills it from the checkout's own `git remote origin`, so a
+# fork-and-rebuild registers against the forker's repo with no edit here.
+#
+# CUTOVER GATE (ADR 0002 Phase 4): do NOT enable automated syncPolicy until the image tag lives in
+# git. Today the CMP renders IMAGE=:v1 (from the deploy-config ConfigMap) while the deploy pipeline
+# renders sha-<commit>; with selfHeal on, Argo would revert every pipeline image bump back to :v1.
+# Unify the image-tag source first, then uncomment below.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -12,7 +21,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:darrinthomascecil/driftscope.git
+    repoURL: REPLACE-REPO         # bootstrap fills from `git remote origin` (e.g. git@github.com:owner/driftscope.git)
     targetRevision: main
     path: .                       # repo root, so the plugin's generate cmd resolves deploy/gitops/*
     plugin:
@@ -20,7 +29,8 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: driftscope
-  # syncPolicy left empty on purpose (detect-only). To cut over to GitOps auto-heal:
+  # syncPolicy left empty on purpose (detect-only). To cut over to GitOps auto-heal (after the
+  # image-tag gate above is closed):
   # syncPolicy:
   #   automated:
   #     prune: true

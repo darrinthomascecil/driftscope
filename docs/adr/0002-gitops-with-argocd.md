@@ -100,8 +100,24 @@ bootstrap). The bootstrap install + Argo self-management (above) is cleaner and 
 2. **Config-Management Plugin** that runs the render (resolve `REPLACE-*` from Azure) + `kustomize build`.
 3. **One `Application`** for driftscope (app + fleet), synced from `deploy/overlays/cloud`. Run it in
    parallel with the pipeline (Argo in "detect but do not auto-sync" first) to confirm parity, then enable
-   auto-sync + self-heal.
-4. **Cut the pipeline over:** it builds/signs/bumps-the-tag; Argo reconciles. Remove `kubectl apply` and
-   the cluster-admin grant from CI.
+   auto-sync + self-heal. **Done** — the Application (`deploy/gitops/application.yaml`) is applied by the
+   bootstrap (`cluster-init.sh`) with the repo URL derived from the checkout's own `git remote origin`
+   (a `REPLACE-REPO` placeholder, so a fork-and-rebuild registers against the forker's repo) and a
+   read-only deploy key minted + registered for private repos. It runs **detect-only**; parity is
+   confirmed (Argo renders the same image the pipeline deployed, and the `OutOfSync` is uniformly
+   tracking-metadata adoption, not content drift).
+
+### Cutover gate (blocks Phase 4)
+
+Auto-sync + `selfHeal` must **not** be enabled until the **image tag lives in git**. Today the render's
+`IMAGE` comes from a mutable cluster ConfigMap (`driftscope-deploy-config`), while the deploy pipeline
+renders `sha-<commit>`. With `selfHeal` on, Argo would continuously revert every pipeline image bump back
+to the ConfigMap's tag — the two would fight over the running image. The fix is to make the committed
+overlay carry the image tag (kustomize `images:`) and have the pipeline bump it via a git commit; then the
+CMP no longer needs `IMAGE` and pipeline + Argo agree by construction. Close this gate first, **then**
+uncomment the automated `syncPolicy` in `application.yaml`.
+
+4. **Cut the pipeline over** (after the gate above): it builds/signs/**bumps the tracked image tag in git**;
+   Argo reconciles. Remove `kubectl apply` and the cluster-admin grant from CI.
 5. **Multi-tenant (later):** `ApplicationSet` templating one Application per tenant, keyed to the
    per-tenant identity registry.
