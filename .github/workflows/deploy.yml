@@ -1,0 +1,135 @@
+# Build the image into ACR and roll it out to the AKS cluster (app + fleet governance).
+#
+# This is the *deploy* pipeline. `release.yml` publishes the public, signed image to GHCR;
+# this one builds the image the CLUSTER actually pulls (ACR, via kubelet AcrPull) and applies
+# the cloud overlay. First-time cluster infra (managed Istio, mesh/, edge/, the gateway) is
+# stood up by the bootstrap (`make up` / scripts/bootstrap/*); this handles ongoing app + fleet
+# deploys onto that cluster.
+#
+# Auth is Azure OIDC -- the same keyless, secretless pattern terraform.yml uses. No stored
+# credentials: a federated credential on the Azure identity trusts this repo's Actions subject.
+#
+# ── Prerequisites (one-time) ────────────────────────────────────────────────────────────────
+#   Repo *variables* (Settings → Secrets and variables → Actions → Variables):
+#     AZURE_CLIENT_ID  AZURE_TENANT_ID  AZURE_SUBSCRIPTION_ID   (the deploy identity)
+#     ACR_NAME         AKS_CLUSTER      AKS_RESOURCE_GROUP
+#   The Azure identity needs, scoped to the deployment RG:
+#     • AcrPush on the ACR                         (build + push the image)
+#     • a federated credential trusting subject    repo:darrinthomascecil/driftscope:environment:production
+#     • AKS access to apply manifests: "Azure Kubernetes Service RBAC Writer" (AAD RBAC clusters)
+#       or membership in the cluster admin group. `az aks get-credentials` (non-admin) is used.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+name: deploy
+
+on:
+  # Deliberate, gated deploys. `environment: production` allows a manual approval + protection.
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to build & deploy (default: short SHA)."
+        required: false
+        default: ""
+  # Auto-deploy a published GitHub release (release-cadence, per the design).
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write          # Azure OIDC + cosign keyless
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false   # never cancel a deploy mid-rollout
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: production     # gate: required reviewers / env protection apply here
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC, keyless)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve image tag (immutable)
+        id: tag
+        run: |
+          # A release deploys its tag; otherwise the short SHA -- immutable, so every deploy is a
+          # distinct image and the rollout actually picks it up (a reused tag would serve stale).
+          if [ -n "${{ inputs.image_tag }}" ]; then TAG="${{ inputs.image_tag }}"
+          elif [ "${{ github.event_name }}" = "release" ]; then TAG="${GITHUB_REF_NAME}"
+          else TAG="sha-$(git rev-parse --short HEAD)"; fi
+          ACR="${{ vars.ACR_NAME }}"
+          echo "tag=${TAG}"                      >> "$GITHUB_OUTPUT"
+          echo "image=${ACR}.azurecr.io/driftscope:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "::notice::deploying ${ACR}.azurecr.io/driftscope:${TAG}"
+
+      # Server-side build in ACR: no docker daemon on the runner, and the image lands in the
+      # registry the cluster pulls from. Same Dockerfile + platform the app is deployed as.
+      - name: Build & push to ACR
+        id: build
+        run: |
+          az acr build \
+            --registry "${{ vars.ACR_NAME }}" \
+            --image "driftscope:${{ steps.tag.outputs.tag }}" \
+            --platform linux/amd64 \
+            --file Dockerfile . \
+            --output json > acr-build.json
+          DIGEST=$(az acr repository show \
+            --name "${{ vars.ACR_NAME }}" \
+            --image "driftscope:${{ steps.tag.outputs.tag }}" \
+            --query digest -o tsv)
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: v3.1.2
+
+      # Sign the ACR image keyless (Fulcio/Rekor), matching release.yml's supply-chain posture.
+      # az login already populated docker creds for ACR via the OIDC token.
+      - name: Sign the image (keyless)
+        run: |
+          az acr login --name "${{ vars.ACR_NAME }}"
+          cosign sign --yes "${{ vars.ACR_NAME }}.azurecr.io/driftscope@${{ steps.build.outputs.digest }}"
+
+      - name: Get cluster credentials
+        run: |
+          az aks install-cli >/dev/null    # kubectl on the runner
+          # This cluster uses local accounts (no AAD RBAC), so --admin returns a cluster-admin
+          # certificate credential directly -- no kubelogin/AAD token conversion needed. The
+          # deploy identity's Contributor role grants listClusterAdminCredential.
+          az aks get-credentials \
+            --resource-group "${{ vars.AKS_RESOURCE_GROUP }}" \
+            --name "${{ vars.AKS_CLUSTER }}" \
+            --admin --overwrite-existing
+
+      - name: Install kustomize
+        run: |
+          curl -sSL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Pin the image + apply the overlay
+        run: |
+          cd deploy/overlays/cloud
+          # Point the overlay at the immutable tag we just built (ephemeral CI checkout, not committed).
+          kustomize edit set image "driftscope=${{ steps.tag.outputs.image }}"
+          cd - >/dev/null
+          kubectl apply -k deploy/overlays/cloud/
+
+      - name: Wait for rollout (app + fleet)
+        run: |
+          kubectl -n driftscope rollout status deploy/driftscope        --timeout=180s
+          kubectl -n driftscope rollout status deploy/driftscope-fleet  --timeout=180s
+
+      - name: Post-deploy status
+        run: |
+          kubectl -n driftscope get pods -o wide
+          # The rollout gates above already prove /healthz on BOTH deployments (it's the readiness
+          # probe). We don't curl the fleet from an ad-hoc pod: the allow-gateway-only mTLS policy
+          # would (correctly) deny it -- the sole path in is the gateway. Readiness IS the check.

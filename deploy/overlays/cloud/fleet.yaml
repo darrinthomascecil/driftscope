@@ -1,0 +1,148 @@
+# driftscope-fleet: the org-wide governance service (docs/design-org-aggregation.md).
+#
+# Runs the SAME image as the app -- just a different command (`python -m driftscope.fleet`)
+# -- so there is no second image to build/sign. It ingests per-repo report artifacts,
+# evaluates them against the policy ConfigMap + fleet baseline, and serves verdicts + a
+# dashboard. It is fronted by the same gateway (Front Door FDID -> SSO -> mTLS) via a
+# /fleet route in istio-routing.yaml, and locked to the gateway's identity below.
+#
+# NOTE (open item #3, ingest identity): the CI-facing ingest (POST /fleet/reports) currently
+# sits behind the same SSO gate as the UI, so PIPELINES cannot push yet -- ingest is via an
+# authenticated human/session or in-cluster until the per-tenant token auth lands. The UI +
+# verdict/inventory queries are usable now.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: driftscope-fleet-store
+spec:
+  accessModes: ["ReadWriteOnce"]     # single-writer, single replica -- the MVP store is file-backed
+  resources:
+    requests:
+      storage: 1Gi
+---
+# The curated policy + baseline config. Edit and `kubectl apply` (later: a proper authoring
+# surface, open item #2). A package absent from `curated` is ungoverned unless the baseline
+# covers it. block_on decides which violation kinds fail a promotion.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: driftscope-fleet-policy
+data:
+  policy.json: |
+    {
+      "curated": {},
+      "baseline": { "enabled": true, "min_repos": 3, "min_share": 0.6 },
+      "block_on": ["unsanctioned-upgrade", "deprecated"]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: driftscope-fleet
+  labels:
+    app.kubernetes.io/name: driftscope-fleet
+    app.kubernetes.io/component: fleet-governance
+spec:
+  replicas: 1                         # RWO store + single-node inventory (MVP)
+  strategy:
+    type: Recreate                    # the PVC is RWO; never run two pods against it at once
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: driftscope-fleet
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: driftscope-fleet
+        app.kubernetes.io/component: fleet-governance
+    spec:
+      serviceAccountName: driftscope   # reuse the app SA; the fleet needs no Azure access itself
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000                  # makes the PVC writable by the drift user
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fleet
+          image: driftscope:dev        # overlay `images:` transformer repoints this at ACR
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "driftscope.fleet"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DRIFTSCOPE_FLEET_STORE
+              value: /data/fleet
+            - name: DRIFTSCOPE_FLEET_POLICY
+              value: /etc/driftscope-fleet/policy.json
+            - name: DRIFTSCOPE_FLEET_PORT
+              value: "8080"
+            - name: DRIFTSCOPE_FLEET_TENANT
+              value: "default"
+            - name: HOME               # readOnlyRootFilesystem -> point HOME at writable scratch
+              value: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          volumeMounts:
+            - name: store
+              mountPath: /data
+            - name: policy
+              mountPath: /etc/driftscope-fleet
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+      volumes:
+        - name: store
+          persistentVolumeClaim:
+            claimName: driftscope-fleet-store
+        - name: policy
+          configMap:
+            name: driftscope-fleet-policy
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: driftscope-fleet
+  labels:
+    app.kubernetes.io/name: driftscope-fleet
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: driftscope-fleet
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Same assume-breach posture as the app: only the ingress gateway's identity may reach the
+# fleet service directly, so the sole path in is through the gateway (FDID + SSO). Without
+# this, any in-mesh workload could hit /fleet and bypass the gate.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: driftscope-fleet-allow-gateway-only
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: driftscope-fleet
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/aks-istio-ingress/sa/aks-istio-ingressgateway-external

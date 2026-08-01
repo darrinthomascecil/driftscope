@@ -9,6 +9,7 @@ resources:
   - external-secrets.yaml # ESO: sync oauth2-proxy creds from Key Vault (Terraform-generated, 0.6b)
   - istio-routing.yaml    # Gateway + VirtualService + STRICT mTLS
   - networkpolicy.yaml    # egress lockdown (blocks IMDS + private ranges)
+  - fleet.yaml            # org-wide governance service (docs/design-org-aggregation.md)
   # Gateway-namespace objects are applied directly, outside this kustomization:
   #   mesh/  -- ext_authz provider, mesh-wide STRICT + default-deny, path normalization
   #   edge/  -- origin TLS (cert-manager) + X-Azure-FDID origin lock (Terraform-generated)
