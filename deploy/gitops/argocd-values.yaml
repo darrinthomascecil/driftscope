@@ -1,0 +1,47 @@
+# Helm values for Argo CD (ADR-0002). Used by the bootstrap:
+#   helm upgrade --install argocd argo/argo-cd --version 7.7.5 -n argocd -f deploy/gitops/argocd-values.yaml
+#
+# Adds the driftscope Config-Management Plugin as a sidecar on the repo-server. The sidecar reuses
+# the Argo image (it already has bash + kustomize), runs argocd-cmp-server, reads the render inputs
+# from the driftscope-deploy-config ConfigMap (envFrom), and mounts the plugin.yaml.
+configs:
+  params:
+    # Argo's own TLS is terminated by the Istio gateway (it sits behind the SSO edge).
+    server.insecure: true
+
+repoServer:
+  extraContainers:
+    - name: driftscope-render
+      # Same image as Argo -- it already ships bash + kustomize + argocd-cmp-server.
+      image: quay.io/argoproj/argocd:v2.13.1
+      imagePullPolicy: IfNotPresent
+      command: ["/var/run/argocd/argocd-cmp-server"]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault
+      # The non-secret render inputs (host, tenant/client/group ids, vault, image). No secrets.
+      envFrom:
+        - configMapRef:
+            name: driftscope-deploy-config
+      volumeMounts:
+        - name: var-files
+          mountPath: /var/run/argocd
+        - name: plugins
+          mountPath: /home/argocd/cmp-server/plugins
+        - name: driftscope-cmp-plugin
+          mountPath: /home/argocd/cmp-server/config/plugin.yaml
+          subPath: plugin.yaml
+        - name: cmp-tmp
+          mountPath: /tmp
+  volumes:
+    - name: driftscope-cmp-plugin
+      configMap:
+        name: driftscope-cmp-plugin
+    - name: cmp-tmp
+      emptyDir: {}
