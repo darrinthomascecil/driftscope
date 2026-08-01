@@ -131,7 +131,8 @@ jobs:
                  HOST="${{ vars.HOST }}" \
                  TENANT_ID="${{ vars.AZURE_TENANT_ID }}" \
                  ALLOWED_GROUP_ID="${{ vars.ALLOWED_GROUP_ID }}" \
-                 IMAGE="${{ steps.tag.outputs.image }}"
+                 IMAGE_REPO="${{ vars.ACR_NAME }}.azurecr.io/driftscope" \
+                 IMAGE_TAG="${{ steps.tag.outputs.tag }}"
           deploy/gitops/render-overlay.sh > /tmp/rendered.yaml
           kubectl apply -f /tmp/rendered.yaml
 

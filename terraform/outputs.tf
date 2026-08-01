@@ -12,6 +12,11 @@ output "host" {
   description = "Public hostname the app is served at."
 }
 
+output "tenant_id" {
+  value       = local.tenant_id
+  description = "Entra (Azure AD) tenant id. Flows into params.yaml + external-secrets.yaml at render (ADR 0001)."
+}
+
 output "oidc_issuer_url" {
   value       = azurerm_kubernetes_cluster.this.oidc_issuer_url
   description = "Cluster OIDC issuer (for Workload Identity federated credentials, Phase 0.3)."
@@ -19,7 +24,7 @@ output "oidc_issuer_url" {
 
 output "acr_login_server" {
   value       = azurerm_container_registry.this.login_server
-  description = "Set this as the image registry in deploy/overlays/cloud/kustomization.yaml."
+  description = "Image registry. render-overlay.sh binds it into kustomization.yaml (IMAGE_REPO) at deploy (ADR 0001)."
 }
 
 output "key_vault_name" {

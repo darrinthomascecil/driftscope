@@ -48,14 +48,6 @@ resource "azurerm_role_assignment" "app_kv_secrets_user" {
   principal_id         = azurerm_user_assigned_identity.app.principal_id
 }
 
-# Generate the cloud overlay's SA patch with the real client id, the same way params.tf /
-# secrets.tf generate their manifests -- so the annotation is always correct and can never drift
-# out of sync with the UAMI (which is how it got silently stripped before). `terraform apply`
-# reproduces the committed reference identically when tfvars match.
-resource "local_file" "patch_sa" {
-  filename        = "${path.module}/../deploy/overlays/cloud/patch-sa.yaml"
-  file_permission = "0644"
-  content = templatefile("${path.module}/templates/patch-sa.yaml.tftpl", {
-    app_client_id = azurerm_user_assigned_identity.app.client_id
-  })
-}
+# The app UAMI client id is exposed as the `app_client_id` OUTPUT (outputs.tf). The cloud overlay's
+# patch-sa.yaml is a committed REPLACE-* template; render-overlay.sh binds this value at deploy time
+# (ADR 0001). Terraform no longer writes into the git tree -- it ends at outputs.

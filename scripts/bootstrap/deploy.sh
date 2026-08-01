@@ -5,8 +5,18 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # 1. App namespace: deployment, oauth2-proxy, routing, STRICT mTLS, gateway-only allows, and the
 #    ESO SecretStore + ExternalSecret. (Namespace is already labeled for injection by cluster-init.)
-log "applying app overlay (kustomize)"
-kubectl apply -k "$OVERLAY"
+#
+# The overlay is a REPLACE-* template (ADR 0001); render-overlay.sh binds the real values from
+# Terraform outputs -- the SAME renderer CI and Argo CD use, so bootstrap/CI/GitOps are identical.
+log "rendering + applying app overlay (render-overlay.sh, values from terraform outputs)"
+HOST="$(tf_out host)" \
+TENANT_ID="$(tf_out tenant_id)" \
+ALLOWED_GROUP_ID="$(tf_out allowed_group_id)" \
+APP_CLIENT_ID="$(tf_out app_client_id)" \
+ESO_CLIENT_ID="$(tf_out eso_client_id)" \
+KEYVAULT="$(tf_out key_vault_name)" \
+IMAGE_REPO="$(tf_out acr_login_server)/driftscope" \
+  "$REPO/deploy/gitops/render-overlay.sh" | kubectl apply -f -
 
 # 1a. ESO syncs the oauth2-proxy Secret from Key Vault (replaces `make secret`). Wait for it so
 #     oauth2-proxy has its credentials before rollout. If it doesn't sync, check the SecretStore:

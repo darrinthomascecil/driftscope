@@ -10,12 +10,15 @@
 # render time. Non-destructive: it renders a temp copy, never the working tree.
 #
 # Required env (the caller supplies them):
-#   HOST TENANT_ID ALLOWED_GROUP_ID APP_CLIENT_ID ESO_CLIENT_ID KEYVAULT
+#   HOST TENANT_ID ALLOWED_GROUP_ID APP_CLIENT_ID ESO_CLIENT_ID KEYVAULT IMAGE_REPO
+#     IMAGE_REPO -- the registry+repo WITHOUT a tag, e.g. myacr.azurecr.io/driftscope. The
+#                   deployment's registry is a parameter (ADR 0001), resolved here, not committed.
 # Optional env:
-#   IMAGE  -- if set (e.g. acr.azurecr.io/driftscope:sha-abc), pin it; else use the committed tag.
+#   IMAGE_TAG  -- if set (e.g. sha-abc), pin that tag; else use the committed newTag in git.
+#                 (ADR 0002 phase 4 will make the pipeline bump the committed tag and drop this.)
 set -euo pipefail
 
-for v in HOST TENANT_ID ALLOWED_GROUP_ID APP_CLIENT_ID ESO_CLIENT_ID KEYVAULT; do
+for v in HOST TENANT_ID ALLOWED_GROUP_ID APP_CLIENT_ID ESO_CLIENT_ID KEYVAULT IMAGE_REPO; do
   [ -n "${!v:-}" ] || { echo "render-overlay: \$$v is required" >&2; exit 2; }
 done
 
@@ -36,9 +39,13 @@ sed -i.bak \
   -e "s|REPLACE-TENANT-ID|${TENANT_ID}|g" \
   -e "s|REPLACE-KEYVAULT|${KEYVAULT}|g" \
   "$O/external-secrets.yaml"
+# The image registry is a per-deployment parameter (ADR 0001): bind newName here, keeping the tag
+# from the committed kustomization.yaml (git is the source of truth for the version).
+sed -i.bak -e "s|REPLACE-IMAGE-REPO|${IMAGE_REPO}|g" "$O/kustomization.yaml"
 find "$O" -name '*.bak' -delete
 
-[ -n "${IMAGE:-}" ] && ( cd "$O" && kustomize edit set image "driftscope=${IMAGE}" )
+# Optional tag pin (transitional -- CI's built sha). Absent -> the committed newTag is used.
+[ -n "${IMAGE_TAG:-}" ] && ( cd "$O" && kustomize edit set image "driftscope=${IMAGE_REPO}:${IMAGE_TAG}" )
 
 built="$(kustomize build "$O")"
 # Fail closed: no placeholder may reach the output (the exact bug that broke WI + ESO).

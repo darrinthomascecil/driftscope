@@ -40,14 +40,6 @@ resource "azurerm_role_assignment" "eso_kv_secrets_user" {
   principal_id         = azurerm_user_assigned_identity.eso.principal_id
 }
 
-# Generate the in-cluster wiring (SA + SecretStore + ExternalSecret) with the real client id +
-# vault URL, the same way params.tf / edge.tf generate their manifests.
-resource "local_file" "external_secrets" {
-  filename        = "${path.module}/../deploy/overlays/cloud/external-secrets.yaml"
-  file_permission = "0644"
-  content = templatefile("${path.module}/templates/external-secrets.yaml.tftpl", {
-    eso_client_id = azurerm_user_assigned_identity.eso.client_id
-    key_vault_uri = azurerm_key_vault.this.vault_uri
-    tenant_id     = local.tenant_id
-  })
-}
+# The ESO client id + vault are exposed as OUTPUTS (eso_client_id, key_vault_name/uri; outputs.tf).
+# The in-cluster wiring (external-secrets.yaml) is a committed REPLACE-* template; render-overlay.sh
+# binds these at deploy time (ADR 0001). Terraform no longer writes into the git tree.

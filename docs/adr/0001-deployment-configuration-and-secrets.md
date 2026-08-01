@@ -89,8 +89,21 @@ Concretely:
 1. **Now:** stop extending the anti-pattern. (Done — reverted the `istio-routing.yaml` `local_file`
    experiment; `local_file` is not expanded to new manifests.)
 2. **Templatise git:** make every committed overlay `REPLACE-*` placeholders, including
-   `params.yaml` (remove the live tenant/group ids).
+   `params.yaml` (remove the live tenant/group ids). **Done.**
 3. **Move injection to the pipeline:** render `params` + SA/edge patches from `terraform output`
-   at deploy; add the host-consistency guard test.
-4. **Remove Terraform `local_file` manifest resources.**
+   at deploy; add the host-consistency guard test. **Done** (`deploy/gitops/render-overlay.sh`).
+4. **Remove Terraform `local_file` manifest resources.** **Done for the app overlay** — the three
+   app-overlay `local_file` resources (`params`, `patch_sa`, `external_secrets`) and their templates
+   are deleted; `render-overlay.sh` is now the *single* renderer for the app overlay across the
+   bootstrap, CI, and Argo CD, and the stale hardcoded ACR (`kustomization.yaml`) + host
+   (`istio-routing.yaml`) are placeholders. The image registry is a `REPLACE-IMAGE-REPO` placeholder
+   bound from `acr_login_server`; the tag lives in git. **Remaining:** the `edge/` `local_file`
+   resources (cert-manager DNS-01 issuer, origin cert, X-Azure-FDID origin lock) — single-mechanism,
+   custom-domain-only — are a scoped follow-up.
+   - **State migration (existing deployments):** `local_file` *deletes its file on destroy*, so
+     `terraform apply` after this change would remove the now-committed templates from the working
+     tree. Before applying, forget the resources so Terraform won't delete the files:
+     `terraform state rm local_file.params local_file.patch_sa local_file.external_secrets`.
+     Fresh deployments (no prior state) are unaffected — the resources simply never existed.
 5. **GitOps:** introduce Argo CD (or Flux) reconciling the overlay; retire imperative `kubectl`.
+   (ADR 0002 — Argo installed + reconciling; auto-sync cutover gated on the image-tag-in-git change.)
