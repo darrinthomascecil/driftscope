@@ -92,18 +92,21 @@ Concretely:
    `params.yaml` (remove the live tenant/group ids). **Done.**
 3. **Move injection to the pipeline:** render `params` + SA/edge patches from `terraform output`
    at deploy; add the host-consistency guard test. **Done** (`deploy/gitops/render-overlay.sh`).
-4. **Remove Terraform `local_file` manifest resources.** **Done for the app overlay** — the three
-   app-overlay `local_file` resources (`params`, `patch_sa`, `external_secrets`) and their templates
-   are deleted; `render-overlay.sh` is now the *single* renderer for the app overlay across the
-   bootstrap, CI, and Argo CD, and the stale hardcoded ACR (`kustomization.yaml`) + host
-   (`istio-routing.yaml`) are placeholders. The image registry is a `REPLACE-IMAGE-REPO` placeholder
-   bound from `acr_login_server`; the tag lives in git. **Remaining:** the `edge/` `local_file`
-   resources (cert-manager DNS-01 issuer, origin cert, X-Azure-FDID origin lock) — single-mechanism,
-   custom-domain-only — are a scoped follow-up.
+4. **Remove Terraform `local_file` manifest resources.** **Done — no `local_file` remain.**
+   - *App overlay:* `local_file` `params`/`patch_sa`/`external_secrets` + templates deleted;
+     `render-overlay.sh` is the single renderer across bootstrap, CI, and Argo CD; the stale ACR
+     (`kustomization.yaml`) + host (`istio-routing.yaml`) are placeholders; the registry is a
+     `REPLACE-IMAGE-REPO` bound from `acr_login_server`, the tag lives in git.
+   - *Edge* (`aks-istio-ingress`): `terraform/edge.tf` (the DNS-01 issuer, origin cert, X-Azure-FDID
+     origin lock) deleted; the manifests are committed `REPLACE-*` templates rendered by
+     `render-edge.sh` from outputs (DNS zone, origin host, Front Door GUID, ACME email). This also
+     purged three more stale hardcodes (zone `justmakeitgo.net`, `origin.justmakeitgo.net`, and the
+     committed ACME email). Terraform now emits **outputs only** and writes nothing into git.
    - **State migration (existing deployments):** `local_file` *deletes its file on destroy*, so
-     `terraform apply` after this change would remove the now-committed templates from the working
-     tree. Before applying, forget the resources so Terraform won't delete the files:
-     `terraform state rm local_file.params local_file.patch_sa local_file.external_secrets`.
+     `terraform apply` after these changes would remove the now-committed templates from the working
+     tree. Before applying, forget every removed resource so Terraform won't delete the files:
+     `terraform state rm local_file.params local_file.patch_sa local_file.external_secrets \`
+     `local_file.edge_cluster_issuer local_file.edge_origin_certificate local_file.edge_origin_lock`.
      Fresh deployments (no prior state) are unaffected — the resources simply never existed.
 5. **GitOps:** introduce Argo CD (or Flux) reconciling the overlay; retire imperative `kubectl`.
    (ADR 0002 — Argo installed + reconciling; auto-sync cutover gated on the image-tag-in-git change.)
