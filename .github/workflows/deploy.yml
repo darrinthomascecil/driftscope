@@ -123,12 +123,14 @@ jobs:
           # Config-Management Plugin uses (ADR 0002), so CI and GitOps render identically. It fails
           # closed if any REPLACE-* survives into the output.
           RG="${{ vars.AKS_RESOURCE_GROUP }}"
-          export HOST="${{ vars.HOST }}" \
+          # Assign separately so a failed az lookup fails the step (not silently exports empty).
+          APP_CLIENT_ID="$(az identity show -g "$RG" -n driftscope-app --query clientId -o tsv)"
+          ESO_CLIENT_ID="$(az identity show -g "$RG" -n driftscope-eso --query clientId -o tsv)"
+          KEYVAULT="$(az keyvault list -g "$RG" --query "[?starts_with(name, 'driftscope-kv')].name | [0]" -o tsv)"
+          export APP_CLIENT_ID ESO_CLIENT_ID KEYVAULT \
+                 HOST="${{ vars.HOST }}" \
                  TENANT_ID="${{ vars.AZURE_TENANT_ID }}" \
                  ALLOWED_GROUP_ID="${{ vars.ALLOWED_GROUP_ID }}" \
-                 APP_CLIENT_ID="$(az identity show -g "$RG" -n driftscope-app --query clientId -o tsv)" \
-                 ESO_CLIENT_ID="$(az identity show -g "$RG" -n driftscope-eso --query clientId -o tsv)" \
-                 KEYVAULT="$(az keyvault list -g "$RG" --query "[?starts_with(name, 'driftscope-kv')].name | [0]" -o tsv)" \
                  IMAGE="${{ steps.tag.outputs.image }}"
           deploy/gitops/render-overlay.sh > /tmp/rendered.yaml
           kubectl apply -f /tmp/rendered.yaml
