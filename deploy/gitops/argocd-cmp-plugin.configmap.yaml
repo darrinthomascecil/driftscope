@@ -1,0 +1,20 @@
+# The Config-Management Plugin definition (ADR-0002): teaches Argo CD to render driftscope's
+# placeholder template by running deploy/gitops/render-overlay.sh (the SAME render the pipeline
+# uses). Mounted into the CMP sidecar at /home/argocd/cmp-server/config/plugin.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: driftscope-cmp-plugin
+  namespace: argocd
+data:
+  plugin.yaml: |
+    apiVersion: argoproj.io/v1alpha1
+    kind: ConfigManagementPlugin
+    metadata:
+      name: driftscope-render
+    spec:
+      version: v1.0
+      # Argo runs this in the Application's source path (repo root); the script resolves REPLACE-*
+      # from the sidecar's env (driftscope-deploy-config) and kustomize-builds, fail-closed.
+      generate:
+        command: [bash, deploy/gitops/render-overlay.sh]

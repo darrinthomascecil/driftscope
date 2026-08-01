@@ -1,0 +1,27 @@
+# The Argo CD Application for driftscope (app + fleet), ADR-0002. Argo renders the placeholder
+# overlay via the driftscope-render CMP (which runs deploy/gitops/render-overlay.sh), so it can
+# reconcile a repo that never holds live values.
+#
+# Starts detect-only (no automated syncPolicy): confirm Argo computes the same manifests the
+# pipeline applies, THEN enable automated sync + selfHeal (uncomment below) for drift auto-heal.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: driftscope
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:darrinthomascecil/driftscope.git
+    targetRevision: main
+    path: .                       # repo root, so the plugin's generate cmd resolves deploy/gitops/*
+    plugin:
+      name: driftscope-render-v1.0   # <ConfigManagementPlugin name>-<version>
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: driftscope
+  # syncPolicy left empty on purpose (detect-only). To cut over to GitOps auto-heal:
+  # syncPolicy:
+  #   automated:
+  #     prune: true
+  #     selfHeal: true

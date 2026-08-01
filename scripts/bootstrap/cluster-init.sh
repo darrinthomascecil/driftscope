@@ -67,15 +67,34 @@ helm upgrade --install external-secrets external-secrets/external-secrets \
 
 # Argo CD -- the GitOps controller (docs/adr/0002-gitops-with-argocd.md). Installed imperatively
 # here, in ONE place, alongside cert-manager + ESO: the minimal bootstrap before GitOps exists.
-# After this, Argo self-manages via app-of-apps; Terraform stays pure (Azure only, ADR 0001).
-# server.insecure=true: Argo's own TLS is terminated by the Istio gateway (it sits behind the SSO edge).
+# Terraform stays pure (Azure only, ADR 0001); Argo then self-manages via app-of-apps.
+GITOPS="$(dirname "${BASH_SOURCE[0]}")/../../deploy/gitops"
 log "installing Argo CD (GitOps controller)"
+kubectl get ns argocd >/dev/null 2>&1 || kubectl create ns argocd
+
+# Render inputs for the driftscope Config-Management Plugin -- NON-SECRET ids only (ADR 0001).
+# Secrets never land here; they stay in Key Vault (ESO + Workload Identity). Same values the
+# deploy pipeline uses, sourced from Terraform outputs + the login tenant.
+kubectl create configmap driftscope-deploy-config -n argocd \
+  --from-literal=HOST="$(tf_out host)" \
+  --from-literal=TENANT_ID="$(az account show --query tenantId -o tsv)" \
+  --from-literal=ALLOWED_GROUP_ID="$(tf_out allowed_group_id)" \
+  --from-literal=APP_CLIENT_ID="$(tf_out app_client_id)" \
+  --from-literal=ESO_CLIENT_ID="$(tf_out eso_client_id)" \
+  --from-literal=KEYVAULT="$(tf_out key_vault_name)" \
+  --from-literal=IMAGE="$(tf_out acr_login_server)/driftscope:v1" \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f "$GITOPS/argocd-cmp-plugin.configmap.yaml"
+
+# The values file adds the render CMP as a repo-server sidecar + server.insecure (TLS at the gateway).
 helm repo add argo https://argoproj.github.io/argo-helm >/dev/null
 helm repo update argo >/dev/null
 helm upgrade --install argocd argo/argo-cd \
-  --namespace argocd --create-namespace \
-  --version 7.7.5 \
-  --set configs.params."server\.insecure"=true \
-  --wait
+  --namespace argocd --version 7.7.5 \
+  -f "$GITOPS/argocd-values.yaml" --wait
+
+# TODO(adr-0002 phase 3-4): register the repo (read-only deploy key) + apply the Argo Application
+# (deploy/gitops/application.yaml), then flip the Application to automated sync + selfHeal. Left as
+# a deliberate manual step until detect-only parity is signed off. See the ADR.
 
 log "cluster-init: OK"
