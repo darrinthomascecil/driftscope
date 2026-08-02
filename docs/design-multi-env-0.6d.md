@@ -88,10 +88,17 @@ is `environment:<github_environment>` (`prod`→`production`). The AcrPull grant
 (scope = shared ACR data source, principal = this env's kubelet) so the dependency runs env→shared
 only.
 
-**Migration ordering (critical):** the current `driftscope.tfstate` owns the live ACR + DNS zone.
-`terraform state rm` the ACR + zone (+ records) from the old state so a later destroy can't delete
-them, then `terraform import` them into `terraform/shared`. Verify the registrar/Cloudflare NS is
-unchanged. Retire the old state once dev is proven.
+**Migration ordering (critical):** the current `driftscope.tfstate` owns the live ACR + DNS zone,
+and both currently sit in the `driftscope-cloud` RG — but `terraform/shared` expects them in a **new
+`driftscope-shared` RG**. So a bare `terraform import` would plan a `resource_group_name` change →
+**replacement** (new zone = new name servers = broken Cloudflare delegation; recreated ACR = lost
+images). The correct order is: `terraform state rm` the ACR + zone (+ their records) from the old
+state, **`az resource move` them into `driftscope-shared`** (same subscription ⇒ name servers +
+images preserved), *then* `terraform import` into `terraform/shared`, verify NS unchanged, and only
+after new prod is cut over, decommission old prod with `az group delete` (not a Terraform destroy —
+the flat config is gone). Because prod is at the zone **apex**, the prod DNS cutover has an inherent
+few-minutes outage. **The full, exact, rollback-covered procedure is `docs/runbook-prod-migration.md`
+— follow it, not this paragraph.**
 
 ## 6. Overlays, render, promotion pointer
 
