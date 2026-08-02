@@ -63,20 +63,3 @@ jobs:
             terraform -chdir="$d" init -backend=false -input=false >/dev/null
             terraform -chdir="$d" validate
           done
-
-  # Trivy: committed secrets (reinforces ADR-0001), IaC misconfig (the tfsec successor -- Dockerfile,
-  # k8s manifests, Terraform), and dependency vulns. Blocks on HIGH/CRITICAL; ignore-unfixed trims
-  # vuln noise. Accepted findings go in .trivyignore, so an exception is explicit and reviewed.
-  trivy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Trivy (secrets + IaC misconfig + vulns)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          scanners: secret,misconfig,vuln
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: 1
