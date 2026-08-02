@@ -31,7 +31,8 @@ jobs:
           shellcheck -x --severity=warning $files
 
   # GitHub Actions workflows: expression/syntax/type errors + shellcheck of every run: block.
-  # SHELLCHECK_OPTS drops style/info + SC2209 (a false positive on `MODE=test`-style literal assigns).
+  # --severity=warning drops advisory style/info only; real findings (incl. any SC2209) still block --
+  # the one prior false positive is fixed at source (quoted string), not suppressed here.
   actionlint:
     runs-on: ubuntu-latest
     steps:
@@ -39,7 +40,7 @@ jobs:
       - name: actionlint (.github/workflows)
         uses: docker://rhysd/actionlint:1.7.7
         env:
-          SHELLCHECK_OPTS: --severity=warning --exclude=SC2209
+          SHELLCHECK_OPTS: --severity=warning
         with:
           args: -color
 
