@@ -186,8 +186,10 @@ jobs:
           if git diff --cached --quiet; then
             echo "::notice::dev already on ${NEWTAG}; nothing to bump"
           else
-            # [skip ci]: a pointer-only commit. A GITHUB_TOKEN push does not retrigger workflows.
-            git commit -m "chore(deploy): dev -> ${NEWTAG} [skip ci]"
+            # NO [skip ci]: a GITHUB_TOKEN push already doesn't retrigger workflows (so no build loop),
+            # and [skip ci] on this commit would make a later `git tag`/release on HEAD get silently
+            # skipped -- the tag would land on a [skip ci] commit and never fire the promotion.
+            git commit -m "chore(deploy): dev -> ${NEWTAG}"
             git push origin main
             echo "::notice::bumped dev to ${NEWTAG} on main; dev's Argo CD will reconcile it"
           fi
@@ -292,9 +294,10 @@ jobs:
           if git diff --cached --quiet; then
             echo "::notice::${ENVN} already on ${NEWTAG}; nothing to bump"
           else
-            # [skip ci]: a pointer-only commit. A GITHUB_TOKEN push does not retrigger workflows, so a
-            # staging/prod promotion never re-triggers the dev build — no deploy loop.
-            git commit -m "chore(deploy): ${ENVN} -> ${NEWTAG} [skip ci]"
+            # NO [skip ci]: the GITHUB_TOKEN push already doesn't retrigger workflows (no dev-build
+            # loop), and a [skip ci] here would make a later `git tag`/release on HEAD get silently
+            # skipped — so promotion by tagging the latest commit would never fire.
+            git commit -m "chore(deploy): ${ENVN} -> ${NEWTAG}"
             git push origin main
             echo "::notice::bumped ${ENVN} to ${NEWTAG} on main; ${ENVN}'s Argo CD will reconcile it"
           fi
