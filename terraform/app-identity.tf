@@ -51,3 +51,21 @@ resource "azurerm_role_assignment" "app_kv_secrets_user" {
 # The app UAMI client id is exposed as the `app_client_id` OUTPUT (outputs.tf). The cloud overlay's
 # patch-sa.yaml is a committed REPLACE-* template; render-overlay.sh binds this value at deploy time
 # (ADR 0001). Terraform no longer writes into the git tree -- it ends at outputs.
+
+# Optional: grant the app identity Crypto User on the vault holding the shared GitHub App signing
+# key, so the pod can KV-SIGN the App JWT (docs/forge-auth.md) -- the private key never leaves the
+# vault. The vault may be EXTERNAL (a shared/permanent secrets vault in another RG), so it's a data
+# source, not a managed resource. Set github_app_key_vault_name to enable private-repo scanning;
+# empty -> skipped (public-repo only). Pairs with GITHUB_APP_* in the cloud overlay's config.env.
+data "azurerm_key_vault" "github_app" {
+  count               = var.github_app_key_vault_name == "" ? 0 : 1
+  name                = var.github_app_key_vault_name
+  resource_group_name = var.github_app_key_vault_rg
+}
+
+resource "azurerm_role_assignment" "app_github_app_kv_crypto" {
+  count                = var.github_app_key_vault_name == "" ? 0 : 1
+  scope                = data.azurerm_key_vault.github_app[0].id
+  role_definition_name = "Key Vault Crypto User"
+  principal_id         = azurerm_user_assigned_identity.app.principal_id
+}
