@@ -1,0 +1,21 @@
+# Forge-auth registry -- bring-your-own GitHub App / ADO Entra identities (docs/forge-auth.md).
+#
+# Mounted read-only into the server at /etc/driftscope/forge-auth.json; the Deployment points
+# DRIFTSCOPE_FORGE_AUTH at it (see the patch in kustomization.yaml). The server loads it at startup
+# and selects the right identity per scan, isolating each tenant's token.
+#
+# CONTENTS ARE KEY VAULT *REFERENCES* ONLY -- never secret material (ADR 0001). A GitHub App's
+# private key is a KV *key* (signed by KV `sign`); an ADO Entra app's client secret is a KV
+# *secret* read at mint time. driftscope's own workload identity is granted access to the referenced
+# vault (app-identity.tf: Key Vault Crypto User / Secrets User); the tenant never hands over key
+# material. Empty by default -- add a tenant by appending to `identities` and committing (GitOps:
+# reviewed via PR, reconciled by Argo; a live `kubectl edit` would be reverted by selfHeal). See
+# docs/forge-auth.md for the identity schema.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: driftscope-forge-auth
+  namespace: driftscope
+data:
+  forge-auth.json: |
+    { "version": 1, "identities": [] }

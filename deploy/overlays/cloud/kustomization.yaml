@@ -10,6 +10,7 @@ resources:
   - istio-routing.yaml    # Gateway + VirtualService + STRICT mTLS
   - networkpolicy.yaml    # egress lockdown (blocks IMDS + private ranges)
   - fleet.yaml            # org-wide governance service (docs/design-org-aggregation.md)
+  - forge-auth.yaml       # bring-your-own forge identities registry (KV-refs only, docs/forge-auth.md)
   # Gateway-namespace objects are applied directly, outside this kustomization:
   #   mesh/  -- ext_authz provider, mesh-wide STRICT + default-deny, path normalization
   #   edge/  -- origin TLS (cert-manager) + X-Azure-FDID origin lock (Terraform-generated)
@@ -60,3 +61,16 @@ patches:
       - op: replace
         path: /spec/ports/0/port
         value: 80
+  - target: {kind: Deployment, name: driftscope}
+    patch: |-
+      # Mount the forge-auth registry (KV-refs) read-only and point the server at it, so the
+      # bring-your-own GitHub App / ADO Entra identities are active in-cluster (docs/forge-auth.md).
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value: { name: forge-auth, configMap: { name: driftscope-forge-auth } }
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value: { name: forge-auth, mountPath: /etc/driftscope, readOnly: true }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: DRIFTSCOPE_FORGE_AUTH, value: /etc/driftscope/forge-auth.json }

@@ -119,6 +119,30 @@ a secret in the tenant's vault.
 > These are cross-tenant infrastructure grants — the multi-tenant model needs a small
 > amount of Azure configuration outside driftscope itself.
 
+## In the deployed cluster (onboarding a tenant)
+
+The server reads its registry from `$DRIFTSCOPE_FORGE_AUTH`. In the cloud overlay this is wired to a
+ConfigMap mounted read-only at `/etc/driftscope/forge-auth.json`:
+
+- **`deploy/overlays/cloud/forge-auth.yaml`** — the `driftscope-forge-auth` ConfigMap. It ships
+  **empty** (`{"version":1,"identities":[]}`) — a deployment onboards no tenants by default, so
+  behaviour is the ambient single-credential flow until you add one. The ConfigMap + the Deployment
+  mount/env (a patch in `kustomization.yaml`) are the *plumbing*; the mount requires the ConfigMap to
+  exist, so it can't be omitted.
+
+**To onboard a tenant** (GitOps — no live edits; Argo `selfHeal` would revert a `kubectl edit`):
+
+1. In the tenant's Azure: store their GitHub App key (a KV **key**) or ADO client secret (a KV
+   **secret**) in a Key Vault, and grant **driftscope's** app identity access to it (the roles in
+   *Azure setup* above — `app-identity.tf` already grants driftscope's own vault).
+2. Append a KV-**reference** identity to `identities` in `forge-auth.yaml` (schema above — no secret
+   material, only refs + `match` rules) and open a PR. On merge, Argo reconciles it and the server
+   picks it up; the CI deploy (continuous deployment) rolls a pod that mounts the updated ConfigMap.
+3. Select it per scan by `match` (host + owner/org) or an explicit `"identity"` in the request.
+
+Because the registry holds only references, it is safe to commit and review in git; the secrets stay
+in Key Vault, reached by driftscope's own workload identity.
+
 ## Token isolation & revocation
 
 Minted tokens are cached keyed by the app/installation/vault-ref (GitHub) or
