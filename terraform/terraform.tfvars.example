@@ -10,6 +10,13 @@ github_repo = "your-org/driftscope"
 #   gh api users/<owner> -q .id   and   gh api repos/<owner>/<repo> -q .id
 # github_repo_ids = "your-org@1234567/driftscope@89012345"
 
+# OPTIONAL: shared GitHub App signing key vault -> private-repo scanning. Set to the Key Vault
+# holding your App's `gh-app-key` (may be an existing shared vault); the app identity is granted
+# Crypto User on it, and deploy/overlays/cloud/config.env carries the App id/installation. Omit for
+# public-repo-only.
+# github_app_key_vault_name = "my-shared-kv"
+# github_app_key_vault_rg   = "my-shared-rg"
+
 # OPTIONAL custom domain. OMIT to run on Front Door's default *.azurefd.net hostname
 # (no domain ownership / DNS delegation needed -- the app URL is a terraform output).
 # base_domain = "example.com"              # -> app at driftscope.example.com (+ Azure DNS zone)

@@ -67,6 +67,19 @@ variable "admin_members" {
   description = "UPNs to add to the access group initially (e.g. [\"you@your-tenant.onmicrosoft.com\"]). Optional; membership can also be managed outside Terraform."
 }
 
+# ---- Shared GitHub App signing key (optional; enables private-repo scanning) ----
+variable "github_app_key_vault_name" {
+  type        = string
+  default     = ""
+  description = "Key Vault holding the shared GitHub App's signing key (gh-app-key). Empty -> no grant (public-repo scanning only). May be an EXISTING external vault (a shared secrets vault); the app identity is granted Key Vault Crypto User on it to KV-sign the App JWT -- the key never leaves the vault. Pair with GITHUB_APP_* in deploy/overlays/cloud/config.env."
+}
+
+variable "github_app_key_vault_rg" {
+  type        = string
+  default     = ""
+  description = "Resource group of github_app_key_vault_name (may differ from the deployment RG)."
+}
+
 # ---- GitHub Actions deploy identity (OIDC federation, gh-deploy-identity.tf) ----
 variable "github_repo" {
   type        = string
