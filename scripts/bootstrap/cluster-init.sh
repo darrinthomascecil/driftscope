@@ -121,8 +121,10 @@ if [ -z "$REPO_SSH" ]; then
 elif [ "$REPO_VIS" = "PUBLIC" ]; then
   # Public repo: Argo clones anonymously over HTTPS -- no deploy key / repo Secret needed.
   REPO_TARGET="${REPO_HTTPS:-$REPO_SSH}"
-  log "applying Argo Application (public repo, anonymous HTTPS clone: $REPO_TARGET)"
-  sed "s#REPLACE-REPO#${REPO_TARGET}#g" "$GITOPS/application.yaml" | kubectl apply -f -
+  log "applying Argo Applications: app + monitoring (public repo, anonymous HTTPS clone: $REPO_TARGET)"
+  for app in application monitoring-application; do
+    sed "s#REPLACE-REPO#${REPO_TARGET}#g" "$GITOPS/$app.yaml" | kubectl apply -f -
+  done
 else
   # Private repo: Argo needs an SSH read-only deploy key. Reuse an existing driftscope-repo Secret
   # (idempotent rerun -> no key sprawl); otherwise mint an ed25519 keypair, register the PUBLIC
@@ -164,8 +166,10 @@ EOF
   # Apply the Application once the repo credential exists (detect-only; the auto-sync cutover is
   # gated on the image-tag unification -- see application.yaml / ADR 0002).
   if kubectl -n argocd get secret driftscope-repo >/dev/null 2>&1; then
-    log "applying Argo Application (detect-only; see ADR 0002 for the auto-sync cutover gate)"
-    sed "s#REPLACE-REPO#${REPO_SSH}#g" "$GITOPS/application.yaml" | kubectl apply -f -
+    log "applying Argo Applications: app + monitoring (see ADR 0002 for the auto-sync cutover gate)"
+    for app in application monitoring-application; do
+      sed "s#REPLACE-REPO#${REPO_SSH}#g" "$GITOPS/$app.yaml" | kubectl apply -f -
+    done
   fi
 fi
 

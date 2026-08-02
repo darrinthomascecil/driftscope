@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# The security-observability stack (Prometheus + Grafana + Alertmanager) turns Istio mesh telemetry
+# into attack signals + alerts. Deployed as its OWN Argo Application (deploy/gitops/monitoring-
+# application.yaml) via render-overlay.sh RENDER_TARGET=monitoring, so its lifecycle is isolated from
+# the app. The `monitoring` namespace is NOT istio-injected (so deny-all/STRICT don't block scraping).
+namespace: monitoring
+resources:
+  - prometheus.yaml        # Namespace + Prometheus (SA/RBAC/config/Deployment/Service)
+  - grafana.yaml           # Grafana (datasource + "Mesh Security" dashboard); admin pw via ESO
+  - alertmanager.yaml      # Alertmanager (routes firing alerts); webhook via ESO
+  - external-secrets.yaml  # ESO: SA + SecretStore + ExternalSecrets (grafana-admin, alertmanager-webhook)

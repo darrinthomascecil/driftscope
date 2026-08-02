@@ -22,14 +22,18 @@ and **MeshAuthzDenied fired**.
 kubectl -n monitoring port-forward svc/grafana 3000:3000     # http://localhost:3000  (dashboard: "Mesh Security")
 kubectl -n monitoring port-forward svc/prometheus 9090:9090  # http://localhost:9090/alerts
 ```
-Grafana: anonymous **Viewer** is on for read-only; admin password is in the `grafana-admin`
-Secret (change `changeme-driftscope`). Both are ClusterIP / internal-only — nothing public.
+Grafana: anonymous **Viewer** is on for read-only; the admin password is synced by ESO from the Key
+Vault secret `grafana-admin-password` (Terraform-generated) into the `grafana-admin` Secret. Both are
+ClusterIP / internal-only — nothing public.
 
 ## Deploy
-```sh
-kubectl apply -f prometheus.yaml
-kubectl apply -f grafana.yaml
-```
+
+**GitOps** — a dedicated Argo CD Application (`deploy/gitops/monitoring-application.yaml`) reconciles
+this stack on every cluster, rendered via `render-overlay.sh RENDER_TARGET=monitoring`. `make up`
+(cluster-init) registers it; Argo self-heals it thereafter — no manual `kubectl apply`. Secrets
+(Grafana admin password, Alertmanager webhook) are synced from Key Vault by ESO, so nothing secret is
+committed (ADR 0001). It's a **separate** Application from the app so a monitoring change can't stall
+the app's rollout.
 
 ## Known tuning / caveats
 - **NonMutualTLSToWorkload** currently also flags traffic Istio reports as
@@ -37,10 +41,10 @@ kubectl apply -f grafana.yaml
   with `reporter="destination"` and by excluding probe sources before treating it as
   actionable — otherwise it's noisy.
 - **Alertmanager is deployed** (`alertmanager.yaml`) and wired to Prometheus (verified:
-  `MeshAuthzDenied` routes to it). It uses a **placeholder webhook** (`example.invalid`) read
-  from the `alertmanager-webhook` Secret, so delivery fails harmlessly until you set a real
-  URL. To go live, replace the Secret (Slack/webhook/PagerDuty adapter) and restart:
-  `kubectl -n monitoring create secret generic alertmanager-webhook --from-literal=webhook-url='https://...' --dry-run=client -o yaml | kubectl apply -f - && kubectl -n monitoring rollout restart deployment alertmanager`
+  `MeshAuthzDenied` routes to it). The webhook URL is synced by ESO from the Key Vault secret
+  `alertmanager-webhook-url`, which Terraform seeds with a placeholder (`example.invalid`) — delivery
+  fails harmlessly until it's real. To go live, set the real URL in Key Vault and restart:
+  `az keyvault secret set --vault-name <kv> --name alertmanager-webhook-url --value 'https://...' && kubectl -n monitoring rollout restart deploy alertmanager` (ESO re-syncs within its refresh interval).
 - Retention is 6h on an `emptyDir` — this is a security-signal store, not long-term
   metrics. For history, point it at a PVC or Azure Monitor managed Prometheus.
 - Not exposed through the gateway/SSO. If you want Grafana behind Entra like the app,

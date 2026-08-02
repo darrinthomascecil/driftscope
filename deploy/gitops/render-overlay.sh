@@ -22,6 +22,34 @@
 # render the SAME tag by construction -- the pipeline bumps newTag via a commit; nobody overrides it.
 set -euo pipefail
 
+# RENDER_TARGET selects what to render: the app overlay (default) or the monitoring stack. A separate
+# Argo Application renders monitoring with RENDER_TARGET=monitoring (Argo exposes plugin.env as
+# ARGOCD_ENV_*), so a monitoring manifest error can't break the app's render. ONE script, two targets.
+TARGET="${RENDER_TARGET:-${ARGOCD_ENV_RENDER_TARGET:-app}}"
+if [ "$TARGET" = "monitoring" ]; then
+  for v in ESO_CLIENT_ID TENANT_ID KEYVAULT; do
+    [ -n "${!v:-}" ] || { echo "render-overlay(monitoring): \$$v is required" >&2; exit 2; }
+  done
+  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+  cp -r "$ROOT/deploy" "$TMP/deploy"
+  M="$TMP/deploy/monitoring"
+  # Only external-secrets.yaml carries per-env values; the rest of the stack is env-agnostic.
+  sed -i.bak \
+    -e "s|REPLACE-ESO-CLIENT-ID|${ESO_CLIENT_ID}|g" \
+    -e "s|REPLACE-TENANT-ID|${TENANT_ID}|g" \
+    -e "s|REPLACE-KEYVAULT|${KEYVAULT}|g" \
+    "$M/external-secrets.yaml"
+  find "$M" -name '*.bak' -delete
+  built="$(kustomize build "$M")"
+  if grep -q 'REPLACE-' <<<"$built"; then
+    echo "render-overlay(monitoring): unrendered REPLACE-* token in built manifests -- refusing" >&2
+    exit 1
+  fi
+  printf '%s\n' "$built"
+  exit 0
+fi
+
 for v in HOST TENANT_ID ALLOWED_GROUP_ID APP_CLIENT_ID ESO_CLIENT_ID KEYVAULT IMAGE_REPO DRIFTSCOPE_ENV; do
   [ -n "${!v:-}" ] || { echo "render-overlay: \$$v is required" >&2; exit 2; }
 done

@@ -68,13 +68,7 @@ data:
       ]
     }
 ---
-apiVersion: v1
-kind: Secret
-metadata: { name: grafana-admin, namespace: monitoring }
-type: Opaque
-stringData:
-  admin-password: "changeme-driftscope"
----
+# grafana-admin Secret (admin-password) is synced from Key Vault by ESO -- see external-secrets.yaml.
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: grafana, namespace: monitoring, labels: { app: grafana } }

@@ -3,21 +3,10 @@
 # groups, dedupes, and delivers them. Out of mesh, internal-only, like the rest of monitoring/.
 #
 # PLACEHOLDER RECEIVER: the webhook URL is read from a file (url_file) mounted from the
-# `alertmanager-webhook` Secret, so it's swappable without touching config. Until you set a
-# real URL (Slack incoming-webhook / a bridge / PagerDuty-events adapter), delivery attempts
-# will fail harmlessly and log. To go live:
-#   kubectl -n monitoring create secret generic alertmanager-webhook \
-#     --from-literal=webhook-url='https://hooks.slack.com/services/XXX/YYY/ZZZ' \
-#     --dry-run=client -o yaml | kubectl apply -f -
-#   kubectl -n monitoring rollout restart deployment alertmanager
----
-apiVersion: v1
-kind: Secret
-metadata: { name: alertmanager-webhook, namespace: monitoring }
-type: Opaque
-stringData:
-  # REPLACE with your real Slack/webhook/PagerDuty-adapter URL.
-  webhook-url: "https://example.invalid/REPLACE-WITH-YOUR-WEBHOOK-URL"
+# `alertmanager-webhook` Secret, which ESO syncs from Key Vault (see external-secrets.yaml) --
+# Terraform seeds a placeholder there, so delivery fails harmlessly until you set a real URL. To go
+# live, update the KV secret `alertmanager-webhook-url` (Slack incoming-webhook / a bridge /
+# PagerDuty-events adapter) and restart: `kubectl -n monitoring rollout restart deploy alertmanager`.
 ---
 apiVersion: v1
 kind: ConfigMap
