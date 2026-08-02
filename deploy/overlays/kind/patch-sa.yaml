@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: driftscope
-  annotations:
-    # The local kind UAMI (driftscope-wi). Federated to this cluster's OIDC issuer
-    # with subject system:serviceaccount:driftscope:driftscope.
-    azure.workload.identity/client-id: "5d507c31-385d-4e1c-82a8-034a4115fc13"

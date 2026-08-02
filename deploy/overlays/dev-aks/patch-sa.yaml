@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: driftscope
-  annotations:
-    # The dev AKS UAMI's client-id. Federated to the AKS managed OIDC issuer with
-    # subject system:serviceaccount:driftscope:driftscope (same subject as every env).
-    azure.workload.identity/client-id: "<DEV_UAMI_CLIENT_ID>"

@@ -1,0 +1,10 @@
+# Partial backend for `terraform -chdir=terraform/envs/prod init -backend-config=backend.hcl`.
+# `make state` WRITES this (as backend.hcl) for every env from the ONE shared state storage account
+# (scripts/bootstrap/state-backend.sh) -- same account+container, a PER-ENV key so state is isolated.
+# backend.hcl is git-ignored (deployment-specific). Keyless auth (AAD): no storage keys anywhere.
+resource_group_name  = "driftscope-tfstate"
+storage_account_name = "driftscopetfstate12345" # your globally-unique shared state account
+container_name       = "tfstate"
+key                  = "driftscope-prod.tfstate"
+use_azuread_auth     = true
+subscription_id      = "00000000-0000-0000-0000-000000000000"

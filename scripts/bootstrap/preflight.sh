@@ -12,8 +12,10 @@ az account show >/dev/null 2>&1 || die "not logged in to Azure -- run: az login"
 SUB="$(az account show --query id -o tsv)"
 log "preflight: active subscription $SUB"
 
-log "preflight: checking config"
-[ -f "$REPO/terraform/terraform.tfvars" ] || die \
-  "terraform/terraform.tfvars not found -- copy terraform.tfvars.example to it and fill it in"
+log "preflight: checking config (env=$ENV)"
+[ -f "$REPO/terraform/envs/$ENV/$ENV.tfvars" ] || die \
+  "terraform/envs/$ENV/$ENV.tfvars not found -- copy $ENV.tfvars.example to it and fill it in"
+[ -f "$REPO/terraform/shared/terraform.tfvars" ] || die \
+  "terraform/shared/terraform.tfvars not found -- copy shared/terraform.tfvars.example to it (run 'make shared-up' once before the first env)"
 
 log "preflight: OK"

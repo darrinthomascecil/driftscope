@@ -45,28 +45,24 @@ log "container $STATE_CONTAINER (role assignment can take ~30s to propagate; wil
 az storage container create -n "$STATE_CONTAINER" --account-name "$STATE_SA" --auth-mode login -o none \
   || { sleep 30; az storage container create -n "$STATE_CONTAINER" --account-name "$STATE_SA" --auth-mode login -o none; }
 
-cat > "$REPO/terraform/backend.hcl" <<EOF
+# Phase 0.6d: ONE shared state account, PER-ENV state keys. Write a backend.hcl into every root
+# module -- the shared layer (key=shared.tfstate) and each env root (key=driftscope-<env>.tfstate) --
+# so `terraform -chdir=<root> init -backend-config=backend.hcl` targets isolated state on a shared
+# backend. The azurerm backend block itself is committed (terraform/*/versions.tf); only these
+# account-specific coordinates are generated (git-ignored).
+write_backend() { # $1=dir  $2=key
+  cat > "$REPO/terraform/$1/backend.hcl" <<EOF
 resource_group_name  = "$STATE_RG"
 storage_account_name = "$STATE_SA"
 container_name       = "$STATE_CONTAINER"
-key                  = "driftscope.tfstate"
+key                  = "$2"
 use_azuread_auth     = true
 subscription_id      = "$SUB"
 EOF
+  log "wrote terraform/$1/backend.hcl (key=$2)"
+}
 
-log "wrote terraform/backend.hcl"
-
-# Activate the azurerm backend so `terraform init` uses it. Generated (not committed) so a bare
-# `terraform` invocation without this file still defaults to local -- the backend is opt-in at the
-# file level, default at the `make up` level.
-if [ ! -f "$REPO/terraform/backend.tf" ]; then
-  cp "$REPO/terraform/backend.tf.example" "$REPO/terraform/backend.tf"
-  log "activated terraform/backend.tf (azurerm backend)"
-fi
-
-# If a LOCAL state file with resources already exists, it must be migrated up (one-time) rather
-# than silently starting a fresh empty remote state. A brand-new deploy has neither and just inits.
-if [ -s "$REPO/terraform/terraform.tfstate" ] && grep -q '"resources"' "$REPO/terraform/terraform.tfstate" 2>/dev/null \
-   && grep -q '"instances"' "$REPO/terraform/terraform.tfstate" 2>/dev/null; then
-  warn "existing LOCAL state detected -- run \`make state-migrate\` once to move it into the backend"
-fi
+write_backend shared shared.tfstate
+for env in dev staging prod; do
+  write_backend "envs/$env" "driftscope-$env.tfstate"
+done

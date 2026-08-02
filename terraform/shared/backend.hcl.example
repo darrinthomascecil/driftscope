@@ -1,0 +1,8 @@
+# Partial backend for `terraform -chdir=terraform/shared init -backend-config=backend.hcl`.
+# `make state` writes this (as backend.hcl) with key=shared.tfstate in the ONE shared state account.
+resource_group_name  = "driftscope-tfstate"
+storage_account_name = "driftscopetfstate12345"
+container_name       = "tfstate"
+key                  = "shared.tfstate"
+use_azuread_auth     = true
+subscription_id      = "00000000-0000-0000-0000-000000000000"

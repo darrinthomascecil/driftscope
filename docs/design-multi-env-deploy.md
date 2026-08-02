@@ -1,5 +1,15 @@
 # Design: multi-environment deployment (kind locally, AKS in higher envs)
 
+> **Superseded (Phase 0.6d).** The environment topology + promotion model that shipped are in
+> **`docs/design-multi-env-0.6d.md`**: cluster-per-env (dev/staging/prod), a shared ACR + DNS zone,
+> build-once/promote-the-digest, Terraform module + per-env roots, per-cluster Argo. In particular the
+> **Ingress via Application Gateway for Containers (AGC) / Gateway API** sections below are **NOT** how
+> the edge works — the deployment uses managed **Istio** + **Azure Front Door** (see
+> `docs/design-edge-origin-cert.md`). What remains valid here and carried forward into 0.6d is the
+> **per-environment identity isolation** model (own UAMI + federated credential + Key Vault per env;
+> invariant `system:serviceaccount:driftscope:driftscope` subject; shared GitHub App with its key
+> imported into each env's vault). Read this for that rationale; read 0.6d for the shipped design.
+
 Status: **proposed** — reviewed, not yet implemented.
 Related: `docs/design-github-app-auth.md`, and the live workload-identity setup
 (`~/driftscope-wi/setup-oidc-kind.sh`, kept as a reference environment).

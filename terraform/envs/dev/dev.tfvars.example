@@ -1,0 +1,33 @@
+# Copy to dev.tfvars and fill in. dev.tfvars is gitignored (deployment-specific).
+# This is the dev environment. Run: make up ENV=dev  (or terraform -chdir=terraform/envs/dev apply).
+subscription_id       = "00000000-0000-0000-0000-000000000000"
+
+# SHARED resources (terraform/shared) this env REFERENCES -- same values in all three envs:
+shared_resource_group = "driftscope-shared"
+acr_name              = "driftscopeacr12345"   # the ONE shared ACR (build once, promote the digest)
+
+# PER-ENV, globally-unique names (must differ across envs):
+key_vault_name        = "driftscope-kv-dev-12345"  # <= 24 chars, globally unique
+gateway_dns_label     = "driftscope-gw-dev-12345"  # -> <label>.<region>.cloudapp.azure.com (unique per region)
+
+# GitHub repo the Actions pipelines run from -> this env's deploy identity OIDC subject
+# (environment:dev for dev/staging, environment:production for prod).
+github_repo = "your-org/driftscope"
+# github_repo_ids = "your-org@1234567/driftscope@89012345"  # optional: survives an owner/repo rename
+
+# Terraform CREATES this env's Entra access group (driftscope-dev); add yourself so you can log in:
+admin_members = ["you@your-tenant.onmicrosoft.com"]
+
+# OPTIONAL custom domain (shared zone driftscope.<base_domain>). OMIT to run on Front Door's default
+# *.azurefd.net hostname (the app URL is a terraform output).
+# base_domain = "example.com"   # -> app at dev.driftscope.example.com (shared Azure DNS zone)
+
+# Optional (defaults shown):
+# tenant_id          = null
+# name_prefix        = "driftscope"
+# location           = "eastus"
+# node_vm_size       = "Standard_B4ms"
+node_count           = 1
+# istio_revision     = "asm-1-29"
+# kubernetes_version = null
+# allowed_group_name = "driftscope"     # the access group is named <this>-dev

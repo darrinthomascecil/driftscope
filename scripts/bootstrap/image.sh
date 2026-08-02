@@ -4,11 +4,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ACR="$(tf_out acr_login_server)"   # e.g. driftscopeacr12345.azurecr.io
 ACR_NAME="${ACR%%.*}"              # -> driftscopeacr12345
-# Build the tag the overlay actually deploys: kustomization.yaml newTag is the single source of
-# truth (ADR 0002 phase 4), which Argo CD also renders -- so a fresh cluster's built image matches
-# what Argo expects (no ImagePullBackOff), and the pipeline's later bumps take over from here.
-TAG="$(awk '/name: driftscope$/{f=1} f&&/newTag:/{print $2; exit}' "$OVERLAY/kustomization.yaml")"
-[ -n "$TAG" ] || die "could not read newTag from $OVERLAY/kustomization.yaml"
+# Build the tag THIS env's overlay actually deploys: overlays/<env>/kustomization.yaml newTag is the
+# single source of truth (ADR 0002 phase 4), which Argo CD also renders -- so a fresh cluster's built
+# image matches what Argo expects (no ImagePullBackOff), and the pipeline's later bumps take over.
+ENV_KUST="$REPO/deploy/overlays/$ENV/kustomization.yaml"
+TAG="$(awk '/name: driftscope$/{f=1} f&&/newTag:/{print $2; exit}' "$ENV_KUST")"
+[ -n "$TAG" ] || die "could not read newTag from $ENV_KUST"
+# A promoted tag may be digest-pinned (vX.Y.Z@sha256:...); build the plain version part.
+TAG="${TAG%@*}"
 
 log "building $ACR/driftscope:$TAG in ACR (from $REPO)"
 # The Dockerfile is multi-arch (uses $TARGETARCH to pick the gh binary). `az acr build` uses the

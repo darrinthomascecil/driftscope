@@ -83,7 +83,11 @@ kubectl create configmap driftscope-deploy-config -n argocd \
   --from-literal=ESO_CLIENT_ID="$(tf_out eso_client_id)" \
   --from-literal=KEYVAULT="$(tf_out key_vault_name)" \
   --from-literal=IMAGE_REPO="$(tf_out acr_login_server)/driftscope" \
+  --from-literal=DRIFTSCOPE_ENV="$(tf_out environment)" \
   --dry-run=client -o yaml | kubectl apply -f -
+# ^ DRIFTSCOPE_ENV (Phase 0.6d) is what makes this cluster's CMP render overlays/<env>. The Argo
+# Application, CMP plugin, and argocd-values are byte-identical in every env -- only this value
+# differs, so all three clusters run the same GitOps config and diverge solely by their env.
 kubectl apply -f "$GITOPS/argocd-cmp-plugin.configmap.yaml"
 
 # The values file adds the render CMP as a repo-server sidecar + server.insecure (TLS at the gateway).
