@@ -139,6 +139,15 @@ RUN git config --system --add safe.directory /work
 ENV DRIFTSCOPE_CACHE=/cache
 RUN mkdir -p /cache && chown drift:drift /cache
 
+# OCI provenance: bind the image to its source commit + version so any running digest is traceable to
+# the exact build. CD passes these via --build-arg; local builds default to "unknown". Inherited by the
+# `cloud`/`default` stages that FROM this one.
+ARG GIT_SHA=unknown
+ARG IMAGE_VERSION=unknown
+LABEL org.opencontainers.image.revision="$GIT_SHA" \
+      org.opencontainers.image.version="$IMAGE_VERSION" \
+      org.opencontainers.image.source="https://github.com/darrinthomascecil/driftscope"
+
 USER drift
 # Reports are written relative to the working directory, so `-v "$PWD:/work"` puts
 # them straight onto the host.

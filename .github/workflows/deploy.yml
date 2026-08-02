@@ -3,19 +3,20 @@
 # bumps a committed image pointer (overlays/<env>/kustomization.yaml newTag); each cluster's Argo CD
 # reconciles its own overlay. CI never runs kubectl and holds no cluster credential.
 #
-# THE PROMOTION LADDER (build once, promote the digest -- the shared ACR makes every env able to pull
-# it, so there is NO az acr import on promotion):
-#   * push to main        -> BUILD + sign a new patch version; bump overlays/dev  newTag = vX.Y.Z
-#                            (dev always runs latest main).                       GitHub env: dev
-#   * push tag vX.Y.Z      -> NO rebuild; resolve that version's digest from ACR;
-#                            set overlays/staging newTag = vX.Y.Z@<digest>.       GitHub env: staging
-#   * publish a release    -> NO rebuild; set overlays/prod newTag = vX.Y.Z@<digest>.
+# THE PROMOTION LADDER (build once, promote the SAME digest by COPY -- the shared ACR makes every env
+# able to pull it, so there is NO az acr import on promotion):
+#   * push to main        -> BUILD + sign vX.Y.Z (also tag sha-<gitsha> + OCI labels); record the digest
+#                            and bump overlays/dev newTag = vX.Y.Z@<digest>. dev is digest-PINNED, so it
+#                            can't drift on a repointed tag.                      GitHub env: dev
+#   * push tag vX.Y.Z      -> NO rebuild, NO re-resolution; COPY dev's pinned vX.Y.Z@<digest> into
+#                            overlays/staging (guard: dev must be on vX.Y.Z).     GitHub env: staging
+#   * publish a release    -> NO rebuild; COPY staging's pinned vX.Y.Z@<digest> into overlays/prod.
 #                                                                                 GitHub env: production
 #
 # Each GitHub Environment is federated to its OWN driftscope-<env>-gh-deploy identity (OIDC subject
 # environment:<env>), so the promotion job for one env can never authenticate to another env's Azure
 # -- vars.AZURE_CLIENT_ID resolves to the environment-scoped value. A version can only be promoted
-# after it was built (its digest must exist in the shared ACR), which enforces build-once.
+# after the previous env is digest-pinned on it (dev builds it first), which enforces build-once.
 #
 # ── Prerequisites (all reproducible -- no manual GitHub-UI setup) ────────────────────────────
 #   `make repo-config ENV=<env>` (scripts/bootstrap/repo-config.sh) sets, per GitHub Environment,
@@ -126,17 +127,25 @@ jobs:
           # az acr build uses the classic (non-BuildKit) builder, which does NOT auto-populate
           # TARGETARCH (the Dockerfile's gh-CLI stage keys off it) -- pass it + --platform explicitly
           # for the amd64 AKS nodes. (See .claude/skills/build-driftscope-image.)
+          # Tag with BOTH the version AND sha-<gitsha> (traceability), and stamp the source commit +
+          # version as OCI labels -- so any running digest traces back to its exact commit.
+          GITSHA="$(git rev-parse HEAD)"
+          SHATAG="sha-$(git rev-parse --short HEAD)"
           az acr build \
             --registry "${{ vars.ACR_NAME }}" \
             --image "driftscope:${{ steps.plan.outputs.tag }}" \
+            --image "driftscope:${SHATAG}" \
             --platform linux/amd64 \
             --build-arg TARGETARCH=amd64 \
+            --build-arg GIT_SHA="${GITSHA}" \
+            --build-arg IMAGE_VERSION="${{ steps.plan.outputs.tag }}" \
             --file Dockerfile .
           DIGEST=$(az acr repository show \
             --name "${{ vars.ACR_NAME }}" \
             --image "driftscope:${{ steps.plan.outputs.tag }}" \
             --query digest -o tsv)
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "::notice::built ${{ steps.plan.outputs.tag }} (+ ${SHATAG}) @ ${DIGEST}"
 
       - name: Install cosign
         if: ${{ steps.plan.outputs.mode == 'build' || steps.plan.outputs.mode == 'test' }}
@@ -150,27 +159,37 @@ jobs:
           az acr login --name "${{ vars.ACR_NAME }}"
           cosign sign --yes "${{ vars.ACR_NAME }}.azurecr.io/driftscope@${{ steps.build.outputs.digest }}"
 
-      # PROMOTE (staging + prod): NO rebuild. Resolve the ALREADY-built version's digest from the
-      # shared ACR -- fail if it doesn't exist (you can only promote a version dev built).
-      - name: Resolve digest to promote (mode=promote)
+      # PROMOTE (staging + prod): NO rebuild, and NO re-resolution from a mutable tag. COPY the exact
+      # digest-pinned reference the PREVIOUS environment is running (dev->staging, staging->prod). The
+      # version->digest binding was recorded when dev built it; promotion carries that pinned reference
+      # forward verbatim, so every env provably runs ONE artifact (closes red-team R3). A version guard
+      # fails closed if the previous env isn't on the version you're promoting.
+      - name: Resolve pinned reference to promote (copy from the previous env)
         id: promote
         if: ${{ steps.plan.outputs.mode == 'promote' }}
         run: |
           TAG="${{ steps.plan.outputs.tag }}"
-          DIGEST=$(az acr repository show \
-            --name "${{ vars.ACR_NAME }}" \
-            --image "driftscope:${TAG}" \
-            --query digest -o tsv 2>/dev/null) || true
-          if [ -z "$DIGEST" ]; then
-            echo "::error::${TAG} has no image in the shared ACR -- build it first (merge to main so dev builds ${TAG}), then promote."
+          case "${{ steps.plan.outputs.overlay }}" in
+            staging) PREV=dev ;;
+            prod)    PREV=staging ;;
+            *) echo "::error::unexpected overlay '${{ steps.plan.outputs.overlay }}'"; exit 1 ;;
+          esac
+          PINNED=$(awk '/name: driftscope$/{f=1} f&&/newTag:/{print $2; exit}' "deploy/overlays/${PREV}/kustomization.yaml")
+          case "$PINNED" in
+            *@sha256:*) : ;;
+            *) echo "::error::${PREV} is not digest-pinned (newTag='${PINNED}') -- it must be built by the dev pipeline before it can be promoted."; exit 1 ;;
+          esac
+          PREV_VERSION="${PINNED%@*}"
+          if [ "$PREV_VERSION" != "$TAG" ]; then
+            echo "::error::promoting ${TAG} but ${PREV} runs ${PREV_VERSION}. Promote the version ${PREV} actually validated (tag/release ${PREV_VERSION}), or roll ${PREV} to ${TAG} first."
             exit 1
           fi
-          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
-          echo "::notice::promoting ${TAG}@${DIGEST} to ${{ steps.plan.outputs.env }}"
+          echo "pinned=${PINNED}" >> "$GITHUB_OUTPUT"
+          echo "::notice::promoting ${PINNED} (copied from ${PREV}) to ${{ steps.plan.outputs.env }}"
 
-      # Bump this env's overlay pointer on main; Argo CD (auto-sync + selfHeal) reconciles it. dev gets
-      # the plain version; staging/prod get the version PINNED BY DIGEST so all envs provably run one
-      # artifact. The single concurrency group above serializes this push across all triggers.
+      # Bump this env's overlay pointer on main; Argo CD (auto-sync + selfHeal) reconciles it. EVERY env
+      # is pinned by digest (dev at build; staging/prod by copying dev's pinned ref), so all envs
+      # provably run one artifact. The single concurrency group above serializes this push across triggers.
       - name: Bump env pointer on main (GitOps -- Argo reconciles)
         if: ${{ steps.plan.outputs.mode == 'build' || steps.plan.outputs.mode == 'promote' }}
         run: |
@@ -178,9 +197,9 @@ jobs:
           OVERLAY="${{ steps.plan.outputs.overlay }}"
           TAG="${{ steps.plan.outputs.tag }}"
           if [ "${{ steps.plan.outputs.mode }}" = "promote" ]; then
-            NEWTAG="${TAG}@${{ steps.promote.outputs.digest }}"   # digest-pinned promotion
+            NEWTAG="${{ steps.promote.outputs.pinned }}"          # copied verbatim from the previous env
           else
-            NEWTAG="${TAG}"                                       # dev: plain version
+            NEWTAG="${TAG}@${{ steps.build.outputs.digest }}"     # dev: digest-PINNED at build (no drift)
           fi
           # The bump belongs on main (Argo tracks it), regardless of the triggering ref (a tag/release).
           git fetch origin main
