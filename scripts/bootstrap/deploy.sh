@@ -16,6 +16,7 @@ APP_CLIENT_ID="$(tf_out app_client_id)" \
 ESO_CLIENT_ID="$(tf_out eso_client_id)" \
 KEYVAULT="$(tf_out key_vault_name)" \
 IMAGE_REPO="$(tf_out acr_login_server)/driftscope" \
+DRIFTSCOPE_ENV="$ENV" \
   "$REPO/deploy/gitops/render-overlay.sh" | kubectl apply -f -
 
 # 1a. ESO syncs the oauth2-proxy Secret from Key Vault (replaces `make secret`). Wait for it so

@@ -1,9 +1,0 @@
-# Partial backend config for `terraform init -backend-config=backend.hcl` (remote state, opt-in).
-# `make state-backend` WRITES this file for you (as backend.hcl); this .example just documents it.
-# backend.hcl is git-ignored (deployment-specific). No secrets here -- auth is keyless (AAD).
-resource_group_name  = "driftscope-tfstate"
-storage_account_name = "driftscopetfstate12345" # your globally-unique name
-container_name       = "tfstate"
-key                  = "driftscope.tfstate"
-use_azuread_auth     = true
-subscription_id      = "00000000-0000-0000-0000-000000000000"

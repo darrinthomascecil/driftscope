@@ -14,16 +14,12 @@ resources:
   # Gateway-namespace objects are applied directly, outside this kustomization:
   #   mesh/  -- ext_authz provider, mesh-wide STRICT + default-deny, path normalization
   #   edge/  -- origin TLS (cert-manager) + X-Azure-FDID origin lock (Terraform-generated)
-images:
-  # The registry is a per-deployment PARAMETER (ADR 0001): render-overlay.sh binds newName from
-  # Terraform's acr_login_server output at deploy time. The TAG is a semantic version and the single
-  # source of truth for the deployed version (ADR 0002 phase 4): cutting a release (a `vX.Y.Z` git
-  # tag) makes the deploy pipeline build that version and bump this newTag via a commit; Argo CD
-  # reconciles it. A rebuild builds this exact version tag, so it is reproducible. Bump via a release,
-  # not by hand.
-  - name: driftscope
-    newName: REPLACE-IMAGE-REPO
-    newTag: v0.1.2
+# The image transformer (registry + tag) is NOT here. It lives entirely in each per-env overlay
+# (deploy/overlays/{dev,staging,prod}/kustomization.yaml), which sets BOTH newName (REPLACE-IMAGE-REPO,
+# the shared ACR, bound by render-overlay.sh) and newTag (the promotion POINTER). One transformer in
+# one place keyed on the base image name `driftscope` -- splitting newName/newTag across base+overlay
+# silently drops the tag (the base's newName rewrites the name so the overlay no longer matches).
+# See docs/design-multi-env-0.6d.md (Phase 0.6d).
 
 # Inject the public HOST (from driftscope-params) into the Istio Gateway + VirtualService, so the
 # routing isn't hardcoded to a domain. The literals in istio-routing.yaml are overwritten here.

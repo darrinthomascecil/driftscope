@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Thin prod overlay over ../cloud -- the REPLACE-templated base that holds ALL real config (params,
+# oauth2-proxy, ESO, routing, mesh, edge). This overlay sets ONLY the three things that differ per
+# environment: the image newTag (the PROMOTION POINTER), the replica count, and an env label.
+#
+# HOST and every identity value still come from THIS cluster's driftscope-deploy-config ConfigMap at
+# render time (ADR 0001) -- never committed here. render-overlay.sh selects this overlay from
+# DRIFTSCOPE_ENV=prod and kustomize-builds it. See docs/design-multi-env-0.6d.md.
+resources:
+  - ../cloud
+
+# Env label on every object's metadata. includeSelectors:false -- the driftscope Deployment's
+# selector is immutable, so we must NOT fold this into label selectors.
+labels:
+  - pairs:
+      driftscope.io/env: prod
+    includeSelectors: false
+
+images:
+  # The PROMOTION POINTER. dev is patch-bumped on merge->main; staging/prod are set to the SAME
+  # version pinned by digest (vX.Y.Z@sha256:...) on tag/release, so all envs provably run one
+  # artifact. newName (REPLACE-IMAGE-REPO) is the shared ACR, bound here by render-overlay.sh.
+  - name: driftscope
+    newName: REPLACE-IMAGE-REPO
+    newTag: v0.1.2
+replicas:
+  - name: driftscope
+    count: 2

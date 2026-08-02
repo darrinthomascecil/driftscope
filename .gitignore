@@ -21,12 +21,13 @@ terraform/.terraform/
 *.tfstate
 *.tfstate.*
 *.tfplan
-terraform/terraform.tfvars
+# Per-env + shared tfvars are deployment-specific (also caught by terraform/.gitignore's *.tfvars).
+terraform/**/*.tfvars
+!terraform/**/*.tfvars.example
 crash.log
 crash.*.log
-# Remote-state opt-in: the active backend config is per-deployment (keep the .example committed).
-terraform/backend.tf
-terraform/backend.hcl
+# Remote-state backend config is per-deployment + per-env (keep the .example files committed).
+terraform/**/backend.hcl
 driftscope.egg-info/
 uv.lock
 

@@ -98,7 +98,11 @@ Delivered as sub-steps:
   cookie secret is now Terraform-generated + stored in Key Vault (stable across deploys). ESO owns
   the `oauth2-proxy` Secret; `make secret` is now fallback-only, dropped from `make up`.
 - **0.6c GitOps** — ArgoCD or Flux reconciling the overlays (retire imperative `kubectl`).
-- **0.6d Environments** — real dev/staging/prod separation.
+- **0.6d Environments** ✅ — real dev/staging/prod separation: **cluster-per-env** (3 isolated AKS,
+  each own Front Door/Key Vault/identities/Entra), a **shared** ACR + DNS zone + state account,
+  **build-once / promote-the-digest** up a dev → staging → prod ladder (merge→dev, `git tag`→staging,
+  release→prod), Terraform refactored into a module + per-env roots, per-cluster Argo selected by a
+  `DRIFTSCOPE_ENV` ConfigMap key. See `docs/design-multi-env-0.6d.md` + `docs/runbook-promotion.md`.
 
 This is what makes *ongoing* change reproducible and safe, not just the first install.
 

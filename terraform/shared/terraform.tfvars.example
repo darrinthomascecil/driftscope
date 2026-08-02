@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (gitignored). The shared layer: ACR + DNS zone, applied once.
+subscription_id = "00000000-0000-0000-0000-000000000000"
+acr_name        = "driftscopeacr12345"   # globally unique, alphanumeric -- the ONE registry
+# base_domain   = "example.com"          # -> shared zone driftscope.example.com (OMIT for demo mode)
+# name_prefix   = "driftscope"           # shared RG = <name_prefix>-shared
+# location      = "eastus"

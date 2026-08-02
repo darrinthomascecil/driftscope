@@ -1,78 +1,58 @@
 # Deploying the driftscope scan service
 
-One Kustomize base with per-environment overlays: **kind** for a fast local loop, **AKS**
-for higher environments. Design and rationale: [`docs/design-multi-env-deploy.md`](../docs/design-multi-env-deploy.md).
+One Kustomize base (`overlays/cloud`, a REPLACE-templated template) with **thin per-environment
+overlays** — `dev`, `staging`, `prod` (Phase 0.6d). Design: [`docs/design-multi-env-0.6d.md`](../docs/design-multi-env-0.6d.md);
+promotion: [`docs/runbook-promotion.md`](../docs/runbook-promotion.md).
 
 ```
 deploy/
-  base/                     # env-agnostic: Deployment (hardened, workload-identity),
-                            # ServiceAccount, Service, Namespace
+  base/                     # env-agnostic: Deployment (hardened, workload-identity), SA, Service, Namespace
   overlays/
-    kind/                   # local: image driftscope:dev, the local UAMI/KV, 1 replica
-    dev-aks/               # AKS: ACR image, per-env UAMI/KV, AGC ingress, 2 replicas
-    prod-aks/              # AKS: promoted image, prod UAMI/KV, AGC ingress, 3 replicas
-  aks/setup-aks-wi.sh       # one-time AKS workload-identity + Key Vault setup (per env)
+    cloud/                  # the REAL config as a REPLACE-* template: params, oauth2-proxy, ESO,
+                            #   istio-routing, networkpolicy, forge-auth, mesh/, edge/
+    dev/  staging/  prod/   # THIN overlays over ../cloud: image newName+newTag, replicas, an env label
+  gitops/                   # Argo CD Application + the render CMP (render-overlay.sh) + argocd values
 ```
 
-Every environment shares the same identity contract: namespace + ServiceAccount are
-`driftscope`, so the federated subject `system:serviceaccount:driftscope:driftscope` is
-identical across clusters. Only the Azure resources differ per env (a `driftscope-<env>`
-UAMI, a per-env Key Vault). The GitHub App is shared; its key is imported into each env's
-own vault. Two identities per cluster — the driftscope **app** identity and the ALB
-Controller **platform** identity — each least-privileged to its own job.
+Every environment shares the same identity contract: the namespace + ServiceAccount are `driftscope`,
+so the federated subject `system:serviceaccount:driftscope:driftscope` is identical across all three
+clusters. Only the **Azure** resources differ per env (a `driftscope-<env>` UAMI, a per-env Key Vault,
+a per-env Front Door + Entra app). The GitHub App is shared; its key is imported into each env's own
+vault. (The edge is managed **Istio + Azure Front Door**, not AGC — the old
+`docs/design-multi-env-deploy.md` AGC/Gateway-API sections are superseded.)
 
-## Local (kind)
+## How a deploy happens
+
+You don't `kubectl apply` overlays by hand — **Argo CD** in each cluster reconciles its own env
+(pull-based GitOps, ADR-0002). Each cluster's CMP runs `deploy/gitops/render-overlay.sh`, which binds
+the `REPLACE-*` placeholders from that cluster's `driftscope-deploy-config` ConfigMap and builds
+`overlays/$DRIFTSCOPE_ENV`. The env is selected **entirely** by that ConfigMap's `DRIFTSCOPE_ENV` key
+— the Argo `Application`, CMP plugin, and values are byte-identical in every cluster.
+
+Standing an environment up (bootstrap, one command):
 
 ```bash
-# 1. build + load the image (kind can't see your local Docker daemon)
-docker build -t driftscope:dev .
-kind load docker-image driftscope:dev --name <cluster>
-
-# 2. deploy
-kubectl apply -k deploy/overlays/kind
-
-# 3. reach it
-kubectl -n driftscope rollout status deploy/driftscope
-kubectl -n driftscope port-forward deploy/driftscope 8081:8080 &
-curl -s localhost:8081/healthz
+make shared-up            # ONCE: shared ACR + DNS zone + state backend
+make up ENV=dev           # dev end-to-end (default ENV=dev; also staging, prod)
 ```
 
-The `kind` overlay assumes workload identity is already set up on the cluster (managed
-identity + federated credential + Key Vault, per `docs/design-multi-env-deploy.md`). On a
-plain cluster with no WI, the pod still runs — GitHub/ADO just degrade to `unknown`
-(or supply a `driftscope-tokens` Secret with `GITHUB_TOKEN`/`AZURE_DEVOPS_TOKEN`).
+## The image transformer lives in the env overlay
 
-### Updating after a code change (the tag gotcha)
-Reusing `:dev` means k8s serves the **cached** image — a rebuild alone does nothing:
-```bash
-docker build -t driftscope:dev .
-kind load docker-image driftscope:dev --name <cluster>
-kubectl -n driftscope rollout restart deploy/driftscope
-```
+`overlays/cloud` carries **no** `images:` entry. Each env overlay sets the WHOLE transformer —
+`newName: REPLACE-IMAGE-REPO` (the shared ACR, bound by `render-overlay.sh`) **and** `newTag` (the
+promotion pointer). Splitting `newName`/`newTag` across base + overlay silently drops the tag: once
+the base rewrites `newName`, the overlay's `name: driftscope` no longer matches. The CD pipeline
+(`.github/workflows/deploy.yml`) moves each env's `newTag`:
 
-## Higher env (AKS)
-
-```bash
-# 1. one-time per env: workload identity + Key Vault + ACR (managed OIDC, ~a few az cmds)
-ENV_NAME=dev AKS_CLUSTER=<cluster> ACR_NAME=<acr> KEYVAULT_NAME=<vault> \
-  AZURE_TENANT_ID=<tenant> APPLY=true bash deploy/aks/setup-aks-wi.sh
-#   (plus the ALB Controller + AGC bootstrap — its own identity; see the script's footer)
-
-# 2. fill the overlay placeholders:
-#    deploy/overlays/dev-aks/{kustomization.yaml (ACR image), config.env (tenant, vault),
-#                             patch-sa.yaml (UAMI client-id), gateway.yaml (AGC id, TLS)}
-
-# 3. build + push, then deploy
-az acr build -r <acr> -t driftscope:<tag> .
-az aks get-credentials -g <rg> -n <cluster>
-kubectl apply -k deploy/overlays/dev-aks
-```
-
-Promote the **same image** dev→prod (`kubectl apply -k deploy/overlays/prod-aks` with the
-tag/digest validated in dev) rather than rebuilding.
+- **push to main** → `overlays/dev/newTag = vX.Y.Z`
+- **git tag `vX.Y.Z`** → `overlays/staging/newTag = vX.Y.Z@<digest>` (same image, no rebuild)
+- **GitHub release** → `overlays/prod/newTag = vX.Y.Z@<digest>`
 
 ## Validate an overlay without applying
+
 ```bash
-kubectl kustomize deploy/overlays/kind            # render the YAML
-kubectl apply -k deploy/overlays/kind --dry-run=server   # validate against a cluster
+# Render exactly as Argo/the bootstrap do (all inputs are required; fail-closed on any REPLACE-* left):
+HOST=dev.driftscope.example.com TENANT_ID=… ALLOWED_GROUP_ID=… APP_CLIENT_ID=… ESO_CLIENT_ID=… \
+KEYVAULT=driftscope-kv-dev-… IMAGE_REPO=<acr>.azurecr.io/driftscope DRIFTSCOPE_ENV=dev \
+  bash deploy/gitops/render-overlay.sh | less
 ```

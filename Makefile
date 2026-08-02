@@ -1,26 +1,29 @@
-# DriftScope cloud bootstrap -- clone -> running on Azure (Phase 0.5).
+# DriftScope cloud bootstrap -- clone -> running on Azure (Phase 0.6d: dev/staging/prod).
 #
-#   cp terraform/terraform.tfvars.example terraform/terraform.tfvars   # fill it in
+#   cp terraform/shared/terraform.tfvars.example terraform/shared/terraform.tfvars  # ACR + DNS zone
+#   cp terraform/envs/dev/dev.tfvars.example     terraform/envs/dev/dev.tfvars      # fill it in
 #   az login
-#   make up
+#   make shared-up            # ONCE: the shared ACR + DNS zone + state backend
+#   make up ENV=dev           # then each environment (default ENV=dev)
 #
-# `make up` runs the whole pipeline; each step is also a target you can run alone (re-runnable).
-# For unattended infra: make up AUTO=-auto-approve   (otherwise terraform apply prompts once).
-# Details + prerequisites: docs/quickstart-deploy.md.
+# `make up ENV=<env>` runs the whole per-env pipeline; each step is also a re-runnable target.
+# ENV selects the Terraform env-root (terraform/envs/$ENV, its own state key) + DRIFTSCOPE_ENV for
+# the ConfigMap + render. For unattended infra: make up ENV=dev AUTO=-auto-approve.
+# Details + prerequisites: docs/quickstart-deploy.md, docs/design-multi-env-0.6d.md.
 
-TF   := terraform -chdir=terraform
-B    := scripts/bootstrap
+ENV      ?= dev
+export ENV                                     # the env-aware bootstrap scripts read $ENV
+TF       := terraform -chdir=terraform/envs/$(ENV)
+TFSHARED := terraform -chdir=terraform/shared
+B        := scripts/bootstrap
 AUTO ?=
-# Remote state is the DEFAULT: `make up` provisions an Azure Storage backend (make state) and writes
-# terraform/backend.hcl, so `infra` inits against locked, versioned, shared state. Opt out with
-# LOCAL_STATE=1 (local state -- fine for a throwaway demo, but a lone unlocked state file is how
-# deployments silently drift; see docs/remote-state.md). `infra` detects backend.hcl at RUN time
-# (not parse time), because within one `make up` the `state` step creates it just before `infra`.
-LOCAL_STATE ?=
+# Remote state is REQUIRED for multi-env (per-env keys on one shared account, ADR 0.6d). `make state`
+# provisions the Azure Storage backend and writes a backend.hcl into shared + every env root, so each
+# `terraform init -backend-config=backend.hcl` targets isolated, locked, versioned state.
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up down preflight state infra repo-config image cluster secret deploy url state-backend state-migrate verify-image
+.PHONY: help up shared-up down shared-down preflight state shared kv-recover infra repo-config image cluster secret deploy url state-backend verify-image
 
 # Keyless cosign verification of a published image. No secrets, no key files: it checks the
 # signature chains to a Fulcio cert whose identity is THIS repo's release workflow, issued by
@@ -33,39 +36,43 @@ help: ## Show this help
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
 	  | sort | awk 'BEGIN{FS=":.*## "}{printf "  \033[1;36m%-10s\033[0m %s\n", $$1, $$2}'
 
-up: preflight state infra repo-config image cluster deploy ## Full bootstrap: remote state -> infra -> CI wiring -> image -> cluster -> app (prints URL)
+up: preflight state kv-recover infra repo-config image cluster deploy ## Bootstrap ONE env: make up ENV=dev (state -> KV recover -> infra -> CI wiring -> image -> cluster -> app)
 
-preflight: ## Check tools, Azure login, and terraform.tfvars
+shared-up: preflight state shared ## ONCE: the shared ACR + DNS zone + state backend (run before the first env)
+
+preflight: ## Check tools, Azure login, and this env's tfvars
 	@$(B)/preflight.sh
 
-state: ## Provision the remote Terraform state backend (default). Skip with LOCAL_STATE=1.
-	@if [ -n "$(LOCAL_STATE)" ]; then \
-	  echo "LOCAL_STATE set -> using LOCAL Terraform state (not recommended: unlocked, unshared, drift-prone)"; \
-	else \
-	  $(B)/state-backend.sh; \
-	fi
+state: ## Provision the remote state backend + write per-env/shared backend.hcl (idempotent)
+	@$(B)/state-backend.sh
 
-infra: ## terraform init + apply (AKS, ACR, KV, Entra, DNS, Front Door; emits outputs)
-	@if [ -f terraform/backend.hcl ]; then BA="-backend-config=backend.hcl"; else BA=""; fi; \
-	 $(TF) init -input=false $$BA
-	@$(TF) apply -input=false $(AUTO)
+shared: ## terraform init + apply the SHARED layer (ACR + DNS zone)
+	@$(TFSHARED) init -input=false -backend-config=backend.hcl
+	@$(TFSHARED) apply -input=false $(AUTO)
 
-repo-config: ## Wire the GitHub Actions pipelines (repo vars + TFVARS secret) from terraform outputs
+kv-recover: ## Recover this env's soft-deleted Key Vault if a prior teardown reserved the name
+	@$(B)/kv-recover.sh
+
+infra: ## terraform init + apply this env (AKS, KV, Entra, Front Door, DNS records; emits outputs)
+	@$(TF) init -input=false -backend-config=backend.hcl
+	@$(TF) apply -input=false -var-file=$(ENV).tfvars $(AUTO)
+
+repo-config: ## Wire GitHub Actions for this env (env-scoped AZURE_CLIENT_ID/TFVARS + shared repo vars)
 	@$(B)/repo-config.sh
 
-image: ## Build the app image in ACR and point the overlay at it
+image: ## Build the app image (this env's newTag) into the SHARED ACR
 	@$(B)/image.sh
 
-cluster: ## Kubeconfig, ext_authz provider, namespace, BYO gateway IP, cert-manager (custom domain)
+cluster: ## Kubeconfig, ext_authz provider, namespace, BYO gateway IP, cert-manager, Argo (this env)
 	@$(B)/cluster-init.sh
 
 secret: ## FALLBACK only: create the oauth2-proxy Secret by hand (default flow uses ESO)
 	@$(B)/secret.sh
 
-deploy: ## Apply the app + mesh hardening + edge TLS/origin-lock, then print the URL
+deploy: ## Render + apply this env's app + mesh hardening + edge TLS/origin-lock, then print the URL
 	@$(B)/deploy.sh
 
-url: ## Print the app URL
+url: ## Print this env's app URL (ENV=dev|staging|prod)
 	@$(TF) output -raw app_url; echo
 
 kustomize: ## Install the standalone kustomize binary for this platform (Linux/macOS; not brew)
@@ -73,9 +80,6 @@ kustomize: ## Install the standalone kustomize binary for this platform (Linux/m
 
 state-backend: ## Create the Azure Storage remote-state backend directly (also run by `make state`)
 	@$(B)/state-backend.sh
-
-state-migrate: ## One-time: migrate an existing LOCAL state into the remote backend
-	@$(TF) init -input=false -migrate-state -backend-config=backend.hcl
 
 verify-image: ## Verify a published image's cosign signature + SBOM (IMAGE=... ; keyless, no secrets)
 	@command -v cosign >/dev/null || { echo "cosign not found -- https://docs.sigstore.dev/cosign/installation"; exit 1; }
@@ -85,6 +89,12 @@ verify-image: ## Verify a published image's cosign signature + SBOM (IMAGE=... ;
 	@cosign verify-attestation --type spdxjson --certificate-identity-regexp '$(IDENTITY)' --certificate-oidc-issuer '$(ISSUER)' '$(IMAGE)' >/dev/null
 	@echo "OK: signature + SBOM verified, signed by $(IMAGE) release workflow"
 
-down: ## Tear down ALL Azure resources (terraform destroy)
-	@echo "This destroys the entire deployment (AKS, ACR, KV, DNS, Front Door, Entra app+group)."
-	@$(TF) destroy -input=false $(AUTO)
+down: ## Tear down ONE env: make down ENV=dev (destroys that env's AKS/KV/FD/Entra + its DNS records; NOT the shared ACR/zone)
+	@echo "This destroys the '$(ENV)' environment (AKS, KV, Front Door, Entra app+group, this env's DNS records)."
+	@echo "The SHARED ACR + DNS zone (and its registrar NS delegation) are untouched -- use 'make shared-down' for those."
+	@$(TF) destroy -input=false -var-file=$(ENV).tfvars $(AUTO)
+
+shared-down: ## DANGER: destroy the SHARED ACR + DNS zone (breaks NS delegation + deletes all images). Rarely wanted.
+	@echo "WARNING: this deletes the shared ACR (ALL images) and the DNS zone (the registrar NS delegation breaks)."
+	@echo "Only do this to fully decommission. Every env must be torn down first. Ctrl-C now to abort."
+	@$(TFSHARED) destroy -input=false $(AUTO)

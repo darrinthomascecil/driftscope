@@ -26,33 +26,54 @@ objects are the existing overlays + `mesh/`.
 
 The chosen host flows automatically into the Entra redirect URI, `params.yaml`, and oauth2-proxy.
 
+## Structure (Phase 0.6d: module + per-env roots + shared)
+
+```
+terraform/
+  shared/                    # applied ONCE (make shared-up): the ACR + DNS zone every env shares
+  modules/driftscope/        # the per-env footprint, parameterized by var.environment; the shared
+                             #   ACR + zone are DATA SOURCES here (data.tf), never recreated
+  envs/{dev,staging,prod}/   # each is a Terraform ROOT: provider + backend(key=driftscope-<env>.tfstate)
+                             #   + a module call (environment = "<env>") + <env>.tfvars + outputs
+```
+
+Why module + env-roots (not workspaces): separate state, backend, and tfvars per env, and an explicit
+`terraform -chdir=terraform/envs/prod apply` — no hidden `workspace select` that silently retargets
+prod. See `docs/design-multi-env-0.6d.md`.
+
 ## Use
 
-```sh
-cd terraform
-cp terraform.tfvars.example terraform.tfvars   # fill in: subscription, base_domain, acr/kv names, group id
-terraform init
-terraform plan        # review what will be created
-terraform apply       # ~10 min for AKS
+Prefer the Makefile (it wires state, the shared layer, and the per-env flow):
 
-# then wire kubectl + deploy the app:
-az aks get-credentials -g $(terraform output -raw resource_group) -n $(terraform output -raw cluster_name)
-# set the ACR in kustomization.yaml to: terraform output -raw acr_login_server
-# create the oauth2-proxy secret from Key Vault (see deploy/overlays/cloud/oauth2-proxy.yaml)
-kubectl apply -k ../deploy/overlays/cloud
-kubectl apply -f ../deploy/overlays/cloud/mesh/    # the cluster-scoped mesh objects
+```sh
+make shared-up            # ONCE: shared ACR + DNS zone + remote state backend
+make up ENV=dev           # a whole environment end-to-end (default ENV=dev; also staging, prod)
+```
+
+Raw Terraform, per root:
+
+```sh
+# shared (once):
+terraform -chdir=terraform/shared init -backend-config=backend.hcl
+terraform -chdir=terraform/shared apply
+
+# an environment:
+terraform -chdir=terraform/envs/dev init -backend-config=backend.hcl
+terraform -chdir=terraform/envs/dev apply -var-file=dev.tfvars   # ~10 min for AKS
 ```
 
 ## What it deliberately changes vs. the hand-built cluster
 - **`network_policy = cilium`** (was `none`) — so NetworkPolicies actually enforce (closes
   stress-test finding T2, and enables Hubble later in Phase 1).
-- **Key Vault purge-protection on** (was off).
+- **Key Vault purge-protection on** (was off). Note the teardown/rebuild gotcha: purge protection
+  reserves a destroyed vault name for 7 days — `make up` runs `scripts/bootstrap/kv-recover.sh` first.
 - Node count/size and k8s version are variables — `node_count >= 2` for HA (stress-test finding).
 
 ## Notes / follow-ups
-- **State** is local for now. For a team, move to a remote `azurerm` backend (see `versions.tf`).
-- **Acceptance test** = `terraform apply` into a *fresh* subscription/RG (costs money) proving a
-  clone stands up from scratch; run deliberately, not in CI.
-- Entra `allowed_group_id` is an input here; Phase 0.3 will create the group and feed its id in.
-- The generated `params.yaml` overwrites the committed one identically when tfvars match this
-  deployment; new deployers get their own.
+- **State** is remote + per-env: one shared Azure Storage account, isolated keys, keyless (AAD). See
+  `docs/remote-state.md`. `make state` provisions it and writes each root's `backend.hcl` (gitignored).
+- **Migration** from the pre-0.6d single state: `terraform state rm` the ACR + DNS zone (+ records)
+  from the old `driftscope.tfstate`, then `terraform import` them into `terraform/shared`, so a later
+  env destroy can't delete the shared registry/zone. Verify the registrar NS is unchanged.
+- **Acceptance test** = `make up ENV=dev` into a *fresh* subscription (costs money) proving a clone
+  stands up from scratch; run deliberately, not in CI.
