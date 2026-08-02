@@ -6,7 +6,7 @@ variable "subscription_id" {
 variable "name_prefix" {
   type        = string
   default     = "driftscope"
-  description = "Prefix for shared resource names. The shared RG is ${name_prefix}-shared."
+  description = "Prefix for shared resource names. The shared RG is <name_prefix>-shared."
 }
 
 variable "location" {
