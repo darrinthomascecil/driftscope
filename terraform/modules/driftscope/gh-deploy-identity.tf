@@ -11,10 +11,22 @@ resource "azurerm_user_assigned_identity" "gh_deploy" {
   location            = azurerm_resource_group.this.location
 }
 
-# Contributor on the deployment RG: build/push images to ACR, and (terraform.yml) manage the RG's
-# resources. Scoped to the RG, not the subscription -- the pipeline only ever touches this RG.
+# Contributor on the deployment RG: (terraform.yml) manages this env's resources. Scoped to the RG,
+# not the subscription -- the pipeline only ever touches this RG. NOTE: 0.6d moved the ACR OUT of this
+# RG into the shared RG, so this grant no longer covers image push -- the shared-ACR grant below does.
 resource "azurerm_role_assignment" "gh_deploy_contributor" {
   scope                = azurerm_resource_group.this.id
+  role_definition_name = "Contributor"
+  principal_id         = azurerm_user_assigned_identity.gh_deploy.principal_id
+}
+
+# Contributor on the SHARED ACR so this env's BUILD job can `az acr build` there. 0.6d relocated the
+# ACR into driftscope-shared, so the deployment-RG grant above stopped covering it -- without this the
+# build fails "registry could not be found" (the identity can't even see it). `az acr build` queues an
+# ACR Task, which needs Contributor on the registry (AcrPush alone can't schedule a run). Scoped to the
+# one shared registry; principal is THIS env's deploy identity, so per-env isolation still holds.
+resource "azurerm_role_assignment" "gh_deploy_acr" {
+  scope                = data.azurerm_container_registry.shared.id
   role_definition_name = "Contributor"
   principal_id         = azurerm_user_assigned_identity.gh_deploy.principal_id
 }
