@@ -1,0 +1,38 @@
+# The Argo CD Application for the security-observability stack (Prometheus + Grafana + Alertmanager,
+# deploy/monitoring/). SEPARATE from the driftscope app Application on purpose: monitoring is an
+# add-on whose lifecycle should be isolated -- a monitoring render/manifest error must not stall the
+# app's rollout, and vice versa.
+#
+# It reuses the SAME driftscope-render CMP, selecting the monitoring render via plugin.env
+# RENDER_TARGET=monitoring (render-overlay.sh binds only the ESO placeholders + builds
+# deploy/monitoring, fail-closed). The CMP sidecar's env (driftscope-deploy-config) supplies
+# ESO_CLIENT_ID / TENANT_ID / KEYVAULT -- the same values the app render uses.
+#
+# repoURL is a placeholder (ADR 0001): cluster-init.sh fills it from `git remote origin`, same as
+# application.yaml. Secrets (grafana-admin, alertmanager-webhook) are ESO-owned, not git-tracked, so
+# prune never removes them.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: driftscope-monitoring
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: REPLACE-REPO         # bootstrap fills from `git remote origin`
+    targetRevision: main
+    path: .                       # repo root, so the plugin's generate cmd resolves deploy/gitops/*
+    plugin:
+      name: driftscope-render-v1.0
+      env:
+        - name: RENDER_TARGET
+          value: monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true   # deploy/monitoring also ships the Namespace object; harmless if present
