@@ -20,6 +20,7 @@ esac
 # the app render: mesh/ (ext_authz provider, hardening, SSO gate) and edge/ (origin cert + FDID lock).
 # These are the same in every env (rendered per-cluster from that env's TF outputs), so this stays
 # pinned at cloud -- only the APP overlay render is env-specific (render-overlay.sh + DRIFTSCOPE_ENV).
+# shellcheck disable=SC2034  # consumed by sourcing scripts (render-edge.sh / deploy.sh), not this file
 OVERLAY="$REPO/deploy/overlays/cloud"
 
 # terraform wrappers + raw-output readers. TF() targets THIS env's root (per-env state);

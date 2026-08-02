@@ -1,0 +1,65 @@
+# Static-analysis gates. The app suite (ci.yml) tests the PRODUCT; this tests the PLUMBING -- the
+# bootstrap scripts, the workflows, and the IaC -- which is where the Phase-0.6d-from-scratch bugs
+# lived (kv-recover, the [skip ci] promotion trap, the OIDC/ACR grant gaps) precisely because nothing
+# lint-gated those paths. Gates block on errors + real warnings, not pedantic style.
+name: static
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Bootstrap + GitOps shell scripts. -x follows the sourced lib.sh; gate at warning (style/info are
+  # advisory). shellcheck is preinstalled on ubuntu-latest.
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck (scripts/ + deploy/)
+        run: |
+          shopt -s globstar
+          files="$(find scripts deploy -name '*.sh')"
+          echo "linting:"; echo "$files" | sed 's/^/  /'
+          shellcheck -x --severity=warning $files
+
+  # GitHub Actions workflows: expression/syntax/type errors + shellcheck of every run: block.
+  # --severity=warning drops advisory style/info only; real findings (incl. any SC2209) still block --
+  # the one prior false positive is fixed at source (quoted string), not suppressed here.
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint (.github/workflows)
+        uses: docker://rhysd/actionlint:1.7.7
+        env:
+          SHELLCHECK_OPTS: --severity=warning
+        with:
+          args: -color
+
+  # Terraform: formatting, and config validity for the shared layer + every env root (which pulls in
+  # the module transitively). -backend=false installs providers/modules without any cloud credential.
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+          terraform_wrapper: false
+      - name: terraform fmt
+        run: terraform fmt -check -recursive terraform/
+      - name: terraform validate (shared + each env root)
+        run: |
+          for d in terraform/shared terraform/envs/dev terraform/envs/staging terraform/envs/prod; do
+            echo "== validate $d =="
+            terraform -chdir="$d" init -backend=false -input=false >/dev/null
+            terraform -chdir="$d" validate
+          done
