@@ -1,37 +1,46 @@
-# Build + sign the image ONCE, then promote the SAME digest up the dev -> staging -> prod ladder
-# (Phase 0.6d). Since ADR 0002 phase 4 this is PULL-based GitOps: the pipeline builds + signs and
-# bumps a committed image pointer (overlays/<env>/kustomization.yaml newTag); each cluster's Argo CD
-# reconciles its own overlay. CI never runs kubectl and holds no cluster credential.
+# GATED promotion pipeline (Phase 0.6d + gated-promotion). Build ONCE, promote the SAME digest up the
+# dev -> staging -> prod ladder, with a gate before every environment above dev. PULL-based GitOps
+# (ADR 0002): the pipeline only bumps a committed image pointer (overlays/<env>/kustomization.yaml
+# newTag); each cluster's Argo CD reconciles its own overlay. CI never runs kubectl / holds no cluster
+# credential.
 #
-# THE PROMOTION LADDER (build once, promote the SAME digest by COPY -- the shared ACR makes every env
-# able to pull it, so there is NO az acr import on promotion):
-#   * push to main        -> BUILD + sign vX.Y.Z (also tag sha-<gitsha> + OCI labels); record the digest
-#                            and bump overlays/dev newTag = vX.Y.Z@<digest>. dev is digest-PINNED, so it
-#                            can't drift on a repointed tag.                      GitHub env: dev
-#   * push tag vX.Y.Z      -> NO rebuild, NO re-resolution; COPY dev's pinned vX.Y.Z@<digest> into
-#                            overlays/staging (guard: dev must be on vX.Y.Z).     GitHub env: staging
-#   * publish a release    -> NO rebuild; COPY staging's pinned vX.Y.Z@<digest> into overlays/prod.
-#                                                                                 GitHub env: production
+# THE LADDER + THE GATES
+#   * push to main     -> BUILD+sign vX.Y.Z (also tag sha-<gitsha> + OCI labels); bump overlays/dev
+#                         newTag = vX.Y.Z@<digest> (digest-PINNED). dev is the ONE auto env — no gate.
+#   * push tag vX.Y.Z  -> PROMOTE to staging, GATED by:
+#                          (1) verify-prev: dev must be HEALTHY (automated /healthz soak), and
+#                          (2) HITL: a human chose to cut tag vX.Y.Z (+ required-reviewers if enabled).
+#                         Then COPY dev's pinned vX.Y.Z@<digest> into overlays/staging (no rebuild).
+#   * publish release  -> PROMOTE to prod, GATED by verify-prev (staging healthy) + the human release
+#                         act. COPY staging's pinned vX.Y.Z@<digest> into overlays/prod.
 #
-# Each GitHub Environment is federated to its OWN driftscope-<env>-gh-deploy identity (OIDC subject
-# environment:<env>), so the promotion job for one env can never authenticate to another env's Azure
-# -- vars.AZURE_CLIENT_ID resolves to the environment-scoped value. A version can only be promoted
-# after the previous env is digest-pinned on it (dev builds it first), which enforces build-once.
+# THE HUMAN-IN-THE-LOOP (HITL). The gate before each env is two-part: an automated check that the
+# PREVIOUS env is healthy (`verify-prev`), and a human decision. On THIS repo (private, free plan)
+# GitHub Environment *required-reviewers* are unavailable, so the HITL is the explicit human act of
+# tagging (staging) / publishing a release (prod) — nothing promotes itself. Each promote job still
+# targets a GitHub `environment:`, so making the repo public or upgrading to Pro/Team and adding
+# required-reviewers on `staging`/`production` adds an explicit approve-click pause AFTER verify-prev,
+# with no workflow change.
 #
-# ── Prerequisites (all reproducible -- no manual GitHub-UI setup) ────────────────────────────
-#   `make repo-config ENV=<env>` (scripts/bootstrap/repo-config.sh) sets, per GitHub Environment,
-#   AZURE_CLIENT_ID + the TFVARS secret; and repo-level ACR_NAME / AZURE_TENANT_ID /
-#   AZURE_SUBSCRIPTION_ID. Each env's driftscope-<env>-gh-deploy UAMI + its AcrPush/Contributor
-#   grants + the federated credential trusting environment:<env> are Terraform (the driftscope
-#   module's gh-deploy-identity.tf). `contents: write` lets the job push the pointer-bump commit.
+# ISOLATION. Each GitHub Environment is federated to its own driftscope-<env>-gh-deploy identity
+# (`vars.AZURE_CLIENT_ID` resolves environment-scoped), so one env's job can't authenticate to
+# another's Azure. Promotion is pure git (copy the pinned digest) — it needs NO Azure at all, so a
+# promote job can never touch a registry. A version can only be promoted after the previous env is
+# digest-pinned on it (dev builds it first), which enforces build-once.
+#
+# ── Prerequisites (all reproducible — no manual GitHub-UI setup) ──────────────────────────────
+#   `make repo-config ENV=<env>` sets, per GitHub Environment, AZURE_CLIENT_ID + the TFVARS secret,
+#   and (to arm the automated gate) APP_URL = that env's public base URL. Repo-level: ACR_NAME /
+#   AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID. If APP_URL is unset the automated gate no-ops with a
+#   warning (the human tag/release act still gates). `contents: write` pushes the pointer-bump commit.
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 name: deploy
 
 on:
   # dev: every merge to main builds the next patch version and bumps overlays/dev (Argo reconciles).
   # staging: pushing a version tag vX.Y.Z promotes an ALREADY-built image.
-  # NOTE: no `paths-ignore` here -- combining it with `tags:` can silently suppress tag pushes (a
-  # GitHub path-filter gotcha). Doc-only main merges are skipped deterministically in the plan step.
+  # NOTE: no `paths-ignore` here — combining it with `tags:` can silently suppress tag pushes (a
+  # GitHub path-filter gotcha). Doc-only main merges are skipped deterministically in the plan job.
   push:
     branches: [main]
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
@@ -52,30 +61,24 @@ permissions:
 
 concurrency:
   # ONE group for the whole workflow: dev merges and staging/prod promotions all push a pointer bump
-  # to main, so serialize them -- otherwise two concurrent runs race a non-fast-forward push.
+  # to main, so serialize them — otherwise two concurrent runs race a non-fast-forward push.
   group: deploy-driftscope
   cancel-in-progress: false   # never cancel a deploy mid-rollout
 
 jobs:
-  build-and-deploy:
+  # ── PLAN: one place decides mode/env/overlay/version; the jobs below consume it via `needs`. Pure
+  #    git + logic (no Azure), so it can run without an environment. ──────────────────────────────
+  plan:
     runs-on: ubuntu-latest
-    # The target GitHub Environment is the trigger: release -> production, a version tag -> staging,
-    # a push to main (or dispatch) -> dev. This selects the env-scoped AZURE_CLIENT_ID + TFVARS and
-    # applies that environment's protection rules (e.g. required reviewers on production).
-    environment: ${{ github.event_name == 'release' && 'production' || (github.ref_type == 'tag' && 'staging' || 'dev') }}
-    timeout-minutes: 30
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      env: ${{ steps.plan.outputs.env }}
+      overlay: ${{ steps.plan.outputs.overlay }}
+      tag: ${{ steps.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2   # need HEAD~1 to detect a doc-only main merge (deterministic skip)
-
-      - name: Azure login (OIDC, keyless)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}       # environment-scoped: this env's gh-deploy UAMI
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
       - name: Resolve mode + version + target overlay
         id: plan
         run: |
@@ -87,7 +90,7 @@ jobs:
             MODE=promote; ENVN=staging;    OVERLAY=staging; TAG="${GITHUB_REF_NAME}"
           elif [ "${{ github.event_name }}" = "push" ]; then
             # dev: auto-bump the PATCH from overlays/dev's committed newTag (continuous deployment).
-            # Skip doc-only merges deterministically (no image change) -- replaces the paths-ignore
+            # Skip doc-only merges deterministically (no image change) — replaces the paths-ignore
             # filter we dropped so it can't interfere with tag pushes.
             if git rev-parse HEAD~1 >/dev/null 2>&1 \
                && [ -z "$(git diff --name-only HEAD~1 HEAD | grep -Ev '(\.md$|^docs/)')" ]; then
@@ -109,75 +112,162 @@ jobs:
           else
             MODE=test; ENVN=dev; OVERLAY=""; TAG="sha-$(git rev-parse --short HEAD)"
           fi
-          ACR="${{ vars.ACR_NAME }}"
           {
             echo "mode=${MODE}"
             echo "env=${ENVN}"
             echo "overlay=${OVERLAY}"
             echo "tag=${TAG}"
-            echo "image=${ACR}.azurecr.io/driftscope:${TAG}"
           } >> "$GITHUB_OUTPUT"
           echo "::notice::mode=${MODE} env=${ENVN} version=${TAG}"
 
-      # BUILD (dev + dispatch-test only): server-side build in the SHARED ACR, then sign keyless.
-      - name: Build & sign (mode=build|test)
+  # ── BUILD (dev, on merge to main) + dispatch-test. dev is the ONE auto env — NO gate. Server-side
+  #    build in the SHARED ACR, sign keyless, and (build only) digest-PIN overlays/dev. ────────────
+  build:
+    needs: plan
+    if: ${{ needs.plan.outputs.mode == 'build' || needs.plan.outputs.mode == 'test' }}
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure login (OIDC, keyless)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}       # environment-scoped: dev's gh-deploy UAMI
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build & sign
         id: build
-        if: ${{ steps.plan.outputs.mode == 'build' || steps.plan.outputs.mode == 'test' }}
         run: |
           # az acr build uses the classic (non-BuildKit) builder, which does NOT auto-populate
-          # TARGETARCH (the Dockerfile's gh-CLI stage keys off it) -- pass it + --platform explicitly
+          # TARGETARCH (the Dockerfile's gh-CLI stage keys off it) — pass it + --platform explicitly
           # for the amd64 AKS nodes. (See .claude/skills/build-driftscope-image.)
           # Tag with BOTH the version AND sha-<gitsha> (traceability), and stamp the source commit +
-          # version as OCI labels -- so any running digest traces back to its exact commit.
+          # version as OCI labels — so any running digest traces back to its exact commit.
           GITSHA="$(git rev-parse HEAD)"
           SHATAG="sha-$(git rev-parse --short HEAD)"
           az acr build \
             --registry "${{ vars.ACR_NAME }}" \
-            --image "driftscope:${{ steps.plan.outputs.tag }}" \
+            --image "driftscope:${{ needs.plan.outputs.tag }}" \
             --image "driftscope:${SHATAG}" \
             --platform linux/amd64 \
             --build-arg TARGETARCH=amd64 \
             --build-arg GIT_SHA="${GITSHA}" \
-            --build-arg IMAGE_VERSION="${{ steps.plan.outputs.tag }}" \
+            --build-arg IMAGE_VERSION="${{ needs.plan.outputs.tag }}" \
             --file Dockerfile .
           DIGEST=$(az acr repository show \
             --name "${{ vars.ACR_NAME }}" \
-            --image "driftscope:${{ steps.plan.outputs.tag }}" \
+            --image "driftscope:${{ needs.plan.outputs.tag }}" \
             --query digest -o tsv)
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
-          echo "::notice::built ${{ steps.plan.outputs.tag }} (+ ${SHATAG}) @ ${DIGEST}"
+          echo "::notice::built ${{ needs.plan.outputs.tag }} (+ ${SHATAG}) @ ${DIGEST}"
 
       - name: Install cosign
-        if: ${{ steps.plan.outputs.mode == 'build' || steps.plan.outputs.mode == 'test' }}
         uses: sigstore/cosign-installer@v4.1.2
         with:
           cosign-release: v3.1.2
 
       - name: Sign the image (keyless)
-        if: ${{ steps.plan.outputs.mode == 'build' || steps.plan.outputs.mode == 'test' }}
         run: |
           az acr login --name "${{ vars.ACR_NAME }}"
           cosign sign --yes "${{ vars.ACR_NAME }}.azurecr.io/driftscope@${{ steps.build.outputs.digest }}"
 
-      # PROMOTE (staging + prod): NO rebuild, and NO re-resolution from a mutable tag. COPY the exact
-      # digest-pinned reference the PREVIOUS environment is running (dev->staging, staging->prod). The
-      # version->digest binding was recorded when dev built it; promotion carries that pinned reference
-      # forward verbatim, so every env provably runs ONE artifact (closes red-team R3). A version guard
-      # fails closed if the previous env isn't on the version you're promoting.
+      - name: Bump overlays/dev on main (digest-PINNED; Argo reconciles)
+        if: ${{ needs.plan.outputs.mode == 'build' }}
+        run: |
+          NEWTAG="${{ needs.plan.outputs.tag }}@${{ steps.build.outputs.digest }}"   # dev pinned at build (no drift)
+          git fetch origin main
+          git checkout -B main origin/main
+          sed -i "s|^\( *newTag:\).*|\1 ${NEWTAG}|" deploy/overlays/dev/kustomization.yaml
+          git config user.name  "driftscope-deploy[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/overlays/dev/kustomization.yaml
+          if git diff --cached --quiet; then
+            echo "::notice::dev already on ${NEWTAG}; nothing to bump"
+          else
+            # [skip ci]: a pointer-only commit. A GITHUB_TOKEN push does not retrigger workflows.
+            git commit -m "chore(deploy): dev -> ${NEWTAG} [skip ci]"
+            git push origin main
+            echo "::notice::bumped dev to ${NEWTAG} on main; dev's Argo CD will reconcile it"
+          fi
+
+      - name: Test image (not promoted)
+        if: ${{ needs.plan.outputs.mode == 'test' }}
+        run: echo "::notice::built + signed driftscope:${{ needs.plan.outputs.tag }} for testing; not promoted (merge to main to deploy to dev, then tag/release to promote)"
+
+  # ── GATE part 1 (automated): the PREVIOUS env must be HEALTHY before we promote. Because CD is
+  #    decoupled from the cluster (CI holds no cluster credential), verify from the OUTSIDE: poll the
+  #    previous env's public /healthz and require a short healthy soak. `environment:` = the PREVIOUS
+  #    env, so `vars.APP_URL` resolves to that env's URL. Blocks `promote` on failure. ─────────────
+  verify-prev:
+    needs: plan
+    if: ${{ needs.plan.outputs.mode == 'promote' }}
+    runs-on: ubuntu-latest
+    # staging promotion verifies dev; prod promotion verifies staging.
+    environment: ${{ github.event_name == 'release' && 'staging' || 'dev' }}
+    steps:
+      - name: Verify the previous environment is healthy
+        run: |
+          PREV="${{ github.event_name == 'release' && 'staging' || 'dev' }}"
+          URL="${{ vars.APP_URL }}"
+          if [ -z "$URL" ]; then
+            echo "::warning::APP_URL is not set on the '${PREV}' GitHub Environment — the automated health"
+            echo "::warning::gate is SKIPPED (the human tag/release act still gates this promotion). Set"
+            echo "::warning::APP_URL=<${PREV} base url> (via 'make repo-config ENV=${PREV}') to arm it."
+            exit 0
+          fi
+          base="${URL%/}"
+          echo "::notice::gate: polling ${base}/healthz — need 3 consecutive 200s (soak) within ~5 min"
+          soak=0
+          for i in $(seq 1 30); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "${base}/healthz" 2>/dev/null || echo 000)
+            echo "  [$i] ${base}/healthz -> ${code}"
+            if [ "$code" = "200" ]; then soak=$((soak+1)); else soak=0; fi
+            if [ "$soak" -ge 3 ]; then
+              echo "::notice::${PREV} healthy + soaked (${soak} consecutive 200s) — gate PASSED"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::${PREV} never reached a stable healthy state at ${base}/healthz — BLOCKING the"
+          echo "::error::promotion. (Fix ${PREV}, or if it is genuinely healthy check APP_URL / the FD probe.)"
+          exit 1
+      # UPGRADE PATH: confirming the previous env runs the EXACT promoted @sha256 (not just "healthy")
+      # needs an in-cluster signal — either an app /version endpoint to assert against, or Argo CD
+      # Notifications emitting a `Healthy on revision <sha>` webhook to wait on (no cluster credential
+      # in CI either way). Health + soak is the reliable external signal until that is wired.
+
+  # ── GATE part 2 (HITL) + the PROMOTION. `environment:` = the TARGET env: the approval anchor (arms
+  #    required-reviewers if the plan supports it) and the human tag/release act is the gate. Promotion
+  #    is PURE GIT — copy the previous env's pinned digest — so this job needs NO Azure. ────────────
+  promote:
+    needs: [plan, verify-prev]
+    if: ${{ needs.plan.outputs.mode == 'promote' }}
+    runs-on: ubuntu-latest
+    # staging on a tag, production on a release. Required-reviewers on these (public/paid repos) pause
+    # the job here AFTER verify-prev — an explicit approve-click before the bump.
+    environment: ${{ github.event_name == 'release' && 'production' || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # NO rebuild, NO re-resolution from a mutable tag. COPY the exact digest-pinned reference the
+      # PREVIOUS env is running (dev->staging, staging->prod). The version->digest binding was recorded
+      # when dev built it; promotion carries it forward verbatim, so every env provably runs ONE
+      # artifact (closes red-team R3). A version guard fails closed on a version mismatch.
       - name: Resolve pinned reference to promote (copy from the previous env)
         id: promote
-        if: ${{ steps.plan.outputs.mode == 'promote' }}
         run: |
-          TAG="${{ steps.plan.outputs.tag }}"
-          case "${{ steps.plan.outputs.overlay }}" in
+          TAG="${{ needs.plan.outputs.tag }}"
+          case "${{ needs.plan.outputs.overlay }}" in
             staging) PREV=dev ;;
             prod)    PREV=staging ;;
-            *) echo "::error::unexpected overlay '${{ steps.plan.outputs.overlay }}'"; exit 1 ;;
+            *) echo "::error::unexpected overlay '${{ needs.plan.outputs.overlay }}'"; exit 1 ;;
           esac
           PINNED=$(awk '/name: driftscope$/{f=1} f&&/newTag:/{print $2; exit}' "deploy/overlays/${PREV}/kustomization.yaml")
           case "$PINNED" in
             *@sha256:*) : ;;
-            *) echo "::error::${PREV} is not digest-pinned (newTag='${PINNED}') -- it must be built by the dev pipeline before it can be promoted."; exit 1 ;;
+            *) echo "::error::${PREV} is not digest-pinned (newTag='${PINNED}') — it must be built by the dev pipeline before it can be promoted."; exit 1 ;;
           esac
           PREV_VERSION="${PINNED%@*}"
           if [ "$PREV_VERSION" != "$TAG" ]; then
@@ -185,22 +275,13 @@ jobs:
             exit 1
           fi
           echo "pinned=${PINNED}" >> "$GITHUB_OUTPUT"
-          echo "::notice::promoting ${PINNED} (copied from ${PREV}) to ${{ steps.plan.outputs.env }}"
+          echo "::notice::promoting ${PINNED} (copied from ${PREV}) to ${{ needs.plan.outputs.env }}"
 
-      # Bump this env's overlay pointer on main; Argo CD (auto-sync + selfHeal) reconciles it. EVERY env
-      # is pinned by digest (dev at build; staging/prod by copying dev's pinned ref), so all envs
-      # provably run one artifact. The single concurrency group above serializes this push across triggers.
-      - name: Bump env pointer on main (GitOps -- Argo reconciles)
-        if: ${{ steps.plan.outputs.mode == 'build' || steps.plan.outputs.mode == 'promote' }}
+      - name: Bump env pointer on main (GitOps — Argo reconciles)
         run: |
-          ENVN="${{ steps.plan.outputs.env }}"
-          OVERLAY="${{ steps.plan.outputs.overlay }}"
-          TAG="${{ steps.plan.outputs.tag }}"
-          if [ "${{ steps.plan.outputs.mode }}" = "promote" ]; then
-            NEWTAG="${{ steps.promote.outputs.pinned }}"          # copied verbatim from the previous env
-          else
-            NEWTAG="${TAG}@${{ steps.build.outputs.digest }}"     # dev: digest-PINNED at build (no drift)
-          fi
+          ENVN="${{ needs.plan.outputs.env }}"
+          OVERLAY="${{ needs.plan.outputs.overlay }}"
+          NEWTAG="${{ steps.promote.outputs.pinned }}"          # copied verbatim from the previous env
           # The bump belongs on main (Argo tracks it), regardless of the triggering ref (a tag/release).
           git fetch origin main
           git checkout -B main origin/main
@@ -212,12 +293,8 @@ jobs:
             echo "::notice::${ENVN} already on ${NEWTAG}; nothing to bump"
           else
             # [skip ci]: a pointer-only commit. A GITHUB_TOKEN push does not retrigger workflows, so a
-            # staging/prod promotion never re-triggers the dev build -- no deploy loop.
+            # staging/prod promotion never re-triggers the dev build — no deploy loop.
             git commit -m "chore(deploy): ${ENVN} -> ${NEWTAG} [skip ci]"
             git push origin main
             echo "::notice::bumped ${ENVN} to ${NEWTAG} on main; ${ENVN}'s Argo CD will reconcile it"
           fi
-
-      - name: Test image (not promoted)
-        if: ${{ steps.plan.outputs.mode == 'test' }}
-        run: echo "::notice::built + signed ${{ steps.plan.outputs.image }} for testing; not promoted (merge to main to deploy to dev, then tag/release to promote)"

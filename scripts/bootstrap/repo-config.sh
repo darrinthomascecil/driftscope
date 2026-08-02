@@ -39,6 +39,12 @@ ENVUP="$(printf '%s' "$ENV" | tr '[:lower:]' '[:upper:]')"   # DEV | STAGING | P
 # as its OWN gh-deploy UAMI, and production's environment protection (required reviewers) gates it.
 set_env_var AZURE_CLIENT_ID "$(tf_out gh_deploy_client_id)"
 
+# APP_URL arms the automated promotion gate: deploy.yml's verify-prev job polls <APP_URL>/healthz to
+# confirm the PREVIOUS env is healthy before promoting into the next. Env-scoped, so dev's URL gates
+# the staging promotion and staging's gates prod. Unset => the gate no-ops (the human tag/release act
+# still gates); set here so a rebuild re-arms it with no GitHub-UI editing.
+set_env_var APP_URL "$(tf_out app_url)"
+
 # REPO-LEVEL (shared across envs): tenant, subscription, the ONE shared ACR, and the shared state
 # account coordinates (the per-env KEY is built in terraform.yml's matrix, not stored here).
 ACR_LOGIN="$(tf_out acr_login_server)"          # <name>.azurecr.io  (shared)
