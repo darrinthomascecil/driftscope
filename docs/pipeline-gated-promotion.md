@@ -1,7 +1,19 @@
 # Design: gated promotion pipeline (human-in-the-loop before each environment)
 
-Status: **proposed**. Builds on Phase 0.6d (`docs/design-multi-env-0.6d.md`): 3 isolated environments,
-**build once / promote the same digest**, GitHub Actions bumps a git pointer, Argo CD pulls.
+Status: **implemented** (Option B — tag/release-driven). Builds on Phase 0.6d
+(`docs/design-multi-env-0.6d.md`): 3 isolated environments, **build once / promote the same digest**,
+GitHub Actions bumps a git pointer, Argo CD pulls.
+
+> **As-built note.** `deploy.yml` is now four jobs — `plan → build` (dev, no gate) and
+> `plan → verify-prev → promote` (staging/prod). The gate before each env above dev is two-part:
+> **`verify-prev`** (automated: poll the previous env's `/healthz` + a healthy soak) blocks the
+> promotion, and a **human decision** authorizes it. On this repo (**private, free plan**) GitHub
+> Environment *required-reviewers are unavailable* — so the human gate is the **explicit act of
+> `git tag vX.Y.Z` (staging) / publishing a release (prod)**; nothing self-promotes. Each `promote`
+> job still targets a GitHub `environment:`, so going public / upgrading and enabling required-reviewers
+> adds an approve-click pause **after** `verify-prev` with **no workflow change**. `verify-prev` polls
+> `vars.APP_URL` (env-scoped; wired by `make repo-config ENV=<env>`); unset ⇒ the automated check
+> no-ops with a warning and the human tag/release act still gates.
 
 ## Why
 
@@ -84,13 +96,14 @@ human is always the last word before a new environment receives the build.
 0.6d already does the hard parts: build+sign once, per-env GitHub Environments, digest promotion,
 Argo pull. The additions are small:
 
-| Add | What it is |
+| Job (as built) | What it is |
 |---|---|
-| `verify-dev` job | the automated smoke/soak check against dev; `promote-staging` `needs: [verify-dev]` |
-| `promote-staging` job | `environment: staging`; on approval, bump `overlays/staging/newTag = vX.Y.Z@sha256` |
-| `verify-staging` job | same automated check against staging; `promote-prod` `needs: [verify-staging]` |
-| `promote-prod` job | `environment: production`; on approval, bump `overlays/prod/newTag = vX.Y.Z@sha256` |
-| **repo setting** | **required reviewers** on the `staging` and `production` Environments (the HITL gate — a setting, not code) |
+| `plan` | decides mode/env/overlay/version once; the jobs below consume it via `needs` |
+| `build` | `environment: dev`; on merge to main, build+sign + digest-pin `overlays/dev`. dev = the one auto env |
+| `verify-prev` | `environment:` the **previous** env (dev for staging, staging for prod); polls `<vars.APP_URL>/healthz` + soak. `promote` `needs: [verify-prev]` |
+| `promote` | `environment:` the **target** (staging on a tag, production on a release); copies the previous env's pinned digest into `overlays/<target>` |
+| **HITL (this repo)** | the **human tag/release act** — nothing promotes itself (required-reviewers need a public/paid repo) |
+| **HITL (upgrade)** | on a public/paid repo, add **required reviewers** on `staging`/`production` → an approve-click pauses `promote` after `verify-prev`, no code change |
 
 The digest is resolved from the **shared ACR** (reachable by every env's kubelet), so promotion is a
 pointer change, never a rebuild or a cross-registry copy.
