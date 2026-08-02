@@ -23,7 +23,7 @@ images:
   # not by hand.
   - name: driftscope
     newName: REPLACE-IMAGE-REPO
-    newTag: v0.1.2
+    newTag: v0.1.3
 
 # Inject the public HOST (from driftscope-params) into the Istio Gateway + VirtualService, so the
 # routing isn't hardcoded to a domain. The literals in istio-routing.yaml are overwritten here.
