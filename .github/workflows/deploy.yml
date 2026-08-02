@@ -4,8 +4,13 @@
 # builds the image the CLUSTER actually pulls (ACR, via kubelet AcrPull). Since ADR 0002 phase 4 it
 # is PULL-based GitOps: the pipeline builds + signs, then bumps the committed image tag
 # (kustomization.yaml newTag) on main -- it does NOT apply manifests. Argo CD reconciles the bump
-# onto the cluster (auto-sync + selfHeal), so CI holds no cluster-admin credential. First-time
-# cluster infra (Istio, mesh/, edge/, gateway, Argo itself) is stood up by the bootstrap.
+# onto the cluster (auto-sync + selfHeal), so CI holds no cluster-admin credential.
+#
+# CONTINUOUS DEPLOYMENT: every merge to main auto-bumps the patch version and deploys it (code
+# changes only -- doc-only merges are path-ignored). A published release deploys a marked vX.Y.Z.
+# Merges are pre-tested by the PR's CI (ci.yml on pull_request); enable branch protection on main so
+# a direct, un-reviewed push can't ship untested. First-time cluster infra (Istio, mesh/, edge/,
+# gateway, Argo itself) is stood up by the bootstrap.
 #
 # Auth is Azure OIDC -- the same keyless, secretless pattern terraform.yml uses. No stored
 # credentials: a federated credential on the Azure identity trusts this repo's Actions subject.
@@ -21,16 +26,21 @@
 name: deploy
 
 on:
-  # Deliberate, gated deploys. `environment: production` allows a manual approval + protection.
+  # Continuous deployment: every merge to main builds the next patch version and deploys it
+  # (Argo reconciles the bumped newTag). Doc-only merges are skipped -- they don't change the image.
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  # A published GitHub release deploys that exact vX.Y.Z (a marked minor/major release).
+  release:
+    types: [published]
+  # Manual: an explicit vX.Y.Z promotes+deploys it; no tag builds a throwaway sha test image.
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Image tag to build & deploy (default: short SHA)."
+        description: "vX.Y.Z to build & deploy (blank = throwaway sha test image, not promoted)."
         required: false
         default: ""
-  # Auto-deploy a published GitHub release (release-cadence, per the design).
-  release:
-    types: [published]
 
 permissions:
   contents: write          # push the image-tag bump commit to main (Argo then reconciles)
@@ -58,16 +68,28 @@ jobs:
       - name: Resolve image tag + promote flag
         id: tag
         run: |
-          # The deployed version is a SEMANTIC VERSION in git (ADR 0002 phase 4). A release (a
-          # vX.Y.Z tag) -- or a dispatch with an explicit vX.Y.Z -- is a real version we PROMOTE:
-          # build it and bump kustomization.yaml newTag. A plain dispatch builds a throwaway sha
-          # image for testing and does NOT touch git (no sha tags on main).
-          if [ "${{ github.event_name }}" = "release" ]; then TAG="${GITHUB_REF_NAME}"
-          elif [ -n "${{ inputs.image_tag }}" ];        then TAG="${{ inputs.image_tag }}"
-          else TAG="sha-$(git rev-parse --short HEAD)"; fi
-          # Promote only real semver versions (vMAJOR.MINOR.PATCH, optional -prerelease).
-          if printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
-            PROMOTE=true; else PROMOTE=false; fi
+          # The deployed version is a SEMANTIC VERSION in git (ADR 0002 phase 4). PROMOTE = build it
+          # and bump kustomization.yaml newTag (Argo deploys). Cases:
+          #   * merge to main -> auto-bump the PATCH from the committed newTag (continuous deployment)
+          #   * a release / a dispatch vX.Y.Z -> that exact version (marked minor/major release)
+          #   * a plain dispatch -> throwaway sha test image, NOT promoted (no sha tags on main)
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${GITHUB_REF_NAME}"; PROMOTE=true
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            CUR=$(awk '/name: driftscope$/{f=1} f&&/newTag:/{print $2; exit}' deploy/overlays/cloud/kustomization.yaml)
+            if printf '%s' "$CUR" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              base="${CUR#v}"; ma="${base%%.*}"; rest="${base#*.}"; mi="${rest%%.*}"; pa="${rest##*.}"
+              TAG="v${ma}.${mi}.$((pa+1))"
+            else
+              TAG="v0.0.1"   # committed tag wasn't plain semver -> seed the patch line
+            fi
+            PROMOTE=true
+          elif [ -n "${{ inputs.image_tag }}" ]; then
+            TAG="${{ inputs.image_tag }}"
+            printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' && PROMOTE=true || PROMOTE=false
+          else
+            TAG="sha-$(git rev-parse --short HEAD)"; PROMOTE=false
+          fi
           ACR="${{ vars.ACR_NAME }}"
           {
             echo "tag=${TAG}"
@@ -127,7 +149,7 @@ jobs:
           else
             # [skip ci]: this commit only moves a version tag. A GITHUB_TOKEN push does not retrigger
             # workflows regardless, so there is no deploy loop.
-            git commit -m "chore(deploy): release ${TAG} [skip ci]"
+            git commit -m "chore(deploy): ${TAG} [skip ci]"
             git push origin main
             echo "::notice::promoted ${TAG} on main; Argo CD will reconcile it"
           fi
