@@ -23,7 +23,7 @@ images:
   # artifact. newName (REPLACE-IMAGE-REPO) is the shared ACR, bound here by render-overlay.sh.
   - name: driftscope
     newName: REPLACE-IMAGE-REPO
-    newTag: v0.1.2
+    newTag: v0.1.3@sha256:134d06a18cdb8e1ac2ae0fd94b5d106ac0fc22201a22145499dfda3488fb7fed
 replicas:
   - name: driftscope
     count: 1
