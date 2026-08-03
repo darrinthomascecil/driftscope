@@ -182,6 +182,12 @@ TREND_STEADY = "steady"
 TREND_DETERIORATING = "deteriorating"
 TREND_UNKNOWN = "unknown"
 
+# Issue-category-mix direction: a count trajectory, not a health verdict (rising security is
+# bad, rising features may be fine), so it stays neutral -- the reader interprets it.
+CAT_RISING = "rising"
+CAT_FALLING = "falling"
+CAT_FLAT = "flat"
+
 
 @dataclass
 class Window:
@@ -198,6 +204,8 @@ class Window:
     # window. An undercounted old window makes the latest one look like it is
     # accelerating, so incomplete windows are excluded from the trend baseline.
     complete: bool = True
+    # Opened-issue count per category (security/bug/performance/...) raised in this window.
+    by_category: dict[str, int] = field(default_factory=dict)
 
     @property
     def label(self) -> str:
@@ -247,10 +255,27 @@ class ReleaseIssueStat:
 
 
 @dataclass
+class CategoryTrend:
+    """One issue category's opened-count trajectory across the velocity windows.
+
+    `direction` is a count trajectory (CAT_RISING/FALLING/FLAT), not a health verdict:
+    rising security/bug volume is the signal to watch, but rising feature requests is
+    ordinary. The report leads with the concerning categories; the model stays neutral.
+    """
+
+    category: str
+    per_window: list[int] = field(default_factory=list)  # aligned to Velocity.windows
+    total: int = 0
+    direction: str = TREND_UNKNOWN                        # CAT_RISING | CAT_FALLING | CAT_FLAT | unknown
+    change_abs: float | None = None                      # latest complete window vs mean of prior
+
+
+@dataclass
 class Velocity:
     repo: str
     windows: list[Window] = field(default_factory=list)
     by_release: list[ReleaseIssueStat] = field(default_factory=list)
+    by_category: list[CategoryTrend] = field(default_factory=list)
     window_days: int = 90
     issue_trend: str = TREND_UNKNOWN
     sentiment_trend: str = TREND_UNKNOWN
