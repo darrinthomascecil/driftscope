@@ -176,6 +176,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[SEV_CRITICAL, SEV_HIGH, SEV_MEDIUM, SEV_LOW],
         help="exit 1 if any finding is at or above this severity (for CI gating)",
     )
+    s.add_argument("--source-repo", metavar="REPO",
+                   help="record this repo id in the report so `aggregate` can group by repo. "
+                        "For a local scan, else read $GITHUB_REPOSITORY or the git remote.")
+    s.add_argument("--source-ref", metavar="REF",
+                   help="record this branch/ref in the report. Else $GITHUB_REF_NAME or the local branch.")
 
     g = s.add_argument_group("upstream lookups")
     g.add_argument("--offline", action="store_true", help="serve from cache only, never open a socket")
@@ -238,6 +243,22 @@ def build_parser() -> argparse.ArgumentParser:
     tr.add_argument("--json", metavar="FILE", help="write the diff as JSON (- for stdout)")
     tr.add_argument("--list", action="store_true", help="list stored runs and exit")
 
+    ag = sub.add_parser(
+        "aggregate",
+        help="roll up many scan reports into a cross-repo estate view",
+        description=(
+            "Aggregate the JSON reports many `scan` runs produce (one per repo/branch, "
+            "collected as CI artifacts or a --history directory) into an estate-wide view: "
+            "how many repos use each package, which repos/branches run which version (the "
+            "fragmentation), and the unique Azure/K8s api-versions in use. Offline, stdlib only."
+        ),
+    )
+    ag.add_argument("directory", help="directory of scan JSON reports (one per repo/branch)")
+    ag.add_argument("--json", nargs="?", const="-", metavar="FILE",
+                    help="write the rollup as JSON (- or omit value for stdout)")
+    ag.add_argument("--markdown", nargs="?", const="-", metavar="FILE",
+                    help="write the rollup as Markdown (- or omit value for stdout)")
+
     sub.add_parser(
         "ecosystems",
         help="list the names accepted by --ecosystem",
@@ -299,6 +320,41 @@ def _resolve_identity(args: argparse.Namespace):
     remote = normalize_remote(args.path, ado_org=args.ado_org)
     host, owner, forge = target_selector(remote)
     return registry.resolve(host, owner, name=name, forge=forge)
+
+
+def _local_provenance(root, args) -> dict | None:
+    """Repo/branch/commit for a LOCAL scan, so the report self-identifies for `aggregate`.
+
+    Precedence: explicit --source-* flags, then CI env (GITHUB_*), then the checkout's own
+    read-only git metadata. Returns None when nothing identifies the repo (a bare directory).
+    Reads git metadata only via `git -C` -- it never executes repository code.
+    """
+    import os
+    import subprocess
+
+    def git(*a: str) -> str | None:
+        try:
+            out = subprocess.run(
+                ["git", "-C", str(root), *a], capture_output=True, text=True, timeout=5
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return out.stdout.strip() if out.returncode == 0 else None
+
+    repo = (
+        getattr(args, "source_repo", None)
+        or os.environ.get("GITHUB_REPOSITORY")
+        or git("config", "--get", "remote.origin.url")
+    )
+    if not repo:
+        return None
+    ref = (
+        getattr(args, "source_ref", None)
+        or os.environ.get("GITHUB_REF_NAME")
+        or git("rev-parse", "--abbrev-ref", "HEAD")
+    )
+    commit = os.environ.get("GITHUB_SHA") or git("rev-parse", "HEAD")
+    return {"remote": repo, "ref": ref, "commit": commit}
 
 
 def cmd_scan(args: argparse.Namespace) -> int:
@@ -368,6 +424,10 @@ def _scan_source(args: argparse.Namespace, src, identity=None) -> int:
         report.source = {
             "remote": src.remote, "ref": src.ref, "commit": src.commit,
         }
+    else:
+        # Local scan (e.g. a CI checkout, `scan .`): stamp repo/branch provenance so the report
+        # self-identifies for `aggregate`. Explicit flags win, then CI env, then the local .git.
+        report.source = _local_provenance(root, args)
 
     # ---- history: save this run, then report movement since the previous one
     if args.history:
@@ -477,12 +537,55 @@ def cmd_trend(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_aggregate(args: argparse.Namespace) -> int:
+    # Thin CLI over the fleet package: reuse its ingest (store.project) + model to roll a directory
+    # of per-repo scan reports into the estate view. No parallel aggregation logic lives in the CLI.
+    from .fleet import rollup as fr
+
+    directory = Path(args.directory).expanduser()
+    if not directory.is_dir():
+        print(f"driftscope: not a directory: {directory}", file=sys.stderr)
+        return 2
+    records, skipped = fr.records_from_dir(directory)
+    if not records:
+        print(
+            f"no scan reports with a repo identity in {directory} "
+            f"(run `scan` with provenance, e.g. --source-repo OWNER/REPO)",
+            file=sys.stderr,
+        )
+        return 2
+    r = fr.rollup(records, skipped=skipped)
+
+    wrote = False
+    if args.json is not None:
+        text = fr.to_json(r)
+        if args.json == "-":
+            print(text)
+        else:
+            Path(args.json).expanduser().write_text(text)
+            print(f"wrote {args.json}", file=sys.stderr)
+        wrote = True
+    if args.markdown is not None:
+        text = fr.to_markdown(r)
+        if args.markdown == "-":
+            print(text)
+        else:
+            Path(args.markdown).expanduser().write_text(text)
+            print(f"wrote {args.markdown}", file=sys.stderr)
+        wrote = True
+    if not wrote:
+        sys.stdout.write(fr.to_text(r))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "ecosystems":
         return cmd_ecosystems()
     if args.command == "trend":
         return cmd_trend(args)
+    if args.command == "aggregate":
+        return cmd_aggregate(args)
     if args.command == "scan":
         try:
             return cmd_scan(args)

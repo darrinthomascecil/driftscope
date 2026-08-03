@@ -18,7 +18,7 @@ from typing import Any
 from .models import ComponentUse, InventoryRecord, Verdict
 
 
-def _project(report: dict, tenant: str, repo: str | None = None) -> InventoryRecord:
+def project(report: dict, tenant: str, repo: str | None = None) -> InventoryRecord:
     """Project a full report.json down to the governance inventory record.
 
     Uses only fields the scan already produced -- no re-resolution. `component.current`
@@ -77,7 +77,7 @@ class Store:
     def ingest(self, tenant: str, report: dict, *, repo: str | None = None) -> InventoryRecord:
         """Store a report's projection as this repo's latest -- unless an equal-or-newer
         record already exists (latest-wins keeps the store to one record per repo)."""
-        rec = _project(report, tenant, repo)
+        rec = project(report, tenant, repo)
         d = self._inv_dir(tenant)
         d.mkdir(parents=True, exist_ok=True)
         path = d / f"{self._hash(rec.repo)}.json"
