@@ -35,6 +35,10 @@ from datetime import date, datetime, timedelta, timezone
 
 from ..forge import Forge
 from ..models import (
+    CAT_FALLING,
+    CAT_FLAT,
+    CAT_RISING,
+    CategoryTrend,
     TREND_DETERIORATING,
     TREND_IMPROVING,
     TREND_STEADY,
@@ -49,6 +53,35 @@ from ..models import (
 # sampling noise does not read as a mood swing.
 SENTIMENT_PTS = 5.0
 _EPS = 1e-6
+
+# Issue taxonomy: (category, keywords). Order is PRIORITY -- a "security" bug lands in
+# security, not bug. Labels (curated by the project) are matched before the title (free
+# text), and anything unmatched is "other". Deliberately coarse: the value is the shape of
+# the trajectory over time, not a precise triage.
+_CATEGORY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("security", ("security", "vuln", "cve", "xss", "csrf", "injection", "exploit", "rce", "auth")),
+    ("regression", ("regression", "regressed", "broke", "broken", "no longer", "used to work")),
+    ("performance", ("performance", "perf", "slow", "memory", "leak", "latency", "cpu", "throughput")),
+    ("bug", ("bug", "defect", "crash", "error", "exception", "fault", "incorrect", "broken", "fails")),
+    ("feature", ("feature", "enhancement", "request", "proposal", "rfc", "wishlist")),
+    ("docs", ("docs", "documentation", "typo", "readme", "example")),
+)
+CATEGORY_OTHER = "other"
+
+
+def _categorize(labels: tuple[str, ...], title: str) -> str:
+    """Bucket one issue by its labels (preferred) then its title, into a coarse category."""
+    label_hay = " ".join(labels).lower()
+    for cat, kws in _CATEGORY_RULES:  # labels first -- curated, high signal
+        for kw in kws:
+            if kw in label_hay:
+                return cat
+    title_hay = (title or "").lower()
+    for cat, kws in _CATEGORY_RULES:  # fall back to the title
+        for kw in kws:
+            if kw in title_hay:
+                return cat
+    return CATEGORY_OTHER
 
 
 def _mean(xs: list[float]) -> float | None:
@@ -116,6 +149,8 @@ def measure(
         for w in v.windows:
             if it.created and w.start <= it.created <= w.end:
                 w.opened += 1
+                cat = _categorize(it.labels, it.title)
+                w.by_category[cat] = w.by_category.get(cat, 0) + 1
                 # Sentiment is attributed to the window the issue was raised in,
                 # so a mood shift lands where the frustration was expressed.
                 w.sampled_issues += 1
@@ -173,7 +208,40 @@ def measure(
         return v
 
     _derive_trends(v)
+    _derive_category_trends(v)
     return v
+
+
+def _derive_category_trends(v: Velocity) -> None:
+    """Per-category opened-count trajectory across the windows, with a rising/falling/flat
+    direction. Same latest-vs-prior-mean method as the backlog trend, restricted to complete
+    windows so an undercounted old window can't invent a rise."""
+    cats: set[str] = set()
+    for w in v.windows:
+        cats |= set(w.by_category)
+    complete = [w for w in v.windows if w.complete]
+    out: list[CategoryTrend] = []
+    for cat in cats:
+        per_window = [w.by_category.get(cat, 0) for w in v.windows]
+        total = sum(per_window)
+        if total == 0:
+            continue
+        ct = CategoryTrend(category=cat, per_window=per_window, total=total)
+        comp = [w.by_category.get(cat, 0) for w in complete]
+        if len(comp) >= 2:
+            latest = float(comp[-1])
+            prior = _mean([float(c) for c in comp[:-1]])
+            if prior is not None:
+                ct.change_abs = latest - prior
+                if latest > prior * 1.5 and (latest - prior) >= 2:
+                    ct.direction = CAT_RISING
+                elif latest < prior * 0.5:
+                    ct.direction = CAT_FALLING
+                else:
+                    ct.direction = CAT_FLAT
+        out.append(ct)
+    out.sort(key=lambda c: (-c.total, c.category))
+    v.by_category = out
 
 
 def _derive_trends(v: Velocity) -> None:

@@ -9,6 +9,8 @@ import pytest
 from driftscope.forge.github import GitHubForge
 from driftscope.ghub import velocity as vel
 from driftscope.models import (
+    CAT_FALLING,
+    CAT_RISING,
     TREND_DETERIORATING,
     TREND_IMPROVING,
     TREND_STEADY,
@@ -368,3 +370,52 @@ def test_velocity_buckets_open_issues_by_release():
     assert got["v2.1.0"] == (1, 1)   # #3 filed after v2.1.0
     # newest release first
     assert v.by_release[0].version == "v2.1.0"
+
+
+# ---- issue category decomposition over time --------------------------------
+
+
+def _lab(*names):
+    return {"labels": [{"name": n} for n in names]}
+
+
+def test_categorize_labels_then_title():
+    assert vel._categorize(("security",), "anything") == "security"
+    assert vel._categorize(("enhancement",), "x") == "feature"
+    assert vel._categorize((), "app crashes with an exception") == "bug"
+    assert vel._categorize((), "slow response, high memory usage") == "performance"
+    assert vel._categorize((), "a general question about usage") == "other"
+    assert vel._categorize(("bug", "security"), "x") == "security"  # priority: security > bug
+
+
+def test_category_counts_are_bucketed_per_window():
+    counts = {W[3]: (4, 0)}
+    issues = {W[3]: [
+        _lab("security"),
+        _lab("bug"),
+        {"title": "please add a new export feature"},  # -> feature (via title)
+        {"title": "a general question about usage"},    # -> other
+    ]}
+    v = vel.measure(forge_of(GH(counts=counts, issues=issues)), "o/r", now=TODAY)
+    totals = {c.category: c.total for c in v.by_category}
+    assert totals == {"security": 1, "bug": 1, "feature": 1, "other": 1}
+    # sorted by total desc then name; all tie at 1 -> alphabetical
+    assert [c.category for c in v.by_category] == ["bug", "feature", "other", "security"]
+
+
+def test_category_rising_is_detected():
+    counts = {W[0]: (1, 0), W[1]: (1, 0), W[2]: (2, 0), W[3]: (5, 0)}
+    issues = {w: [_lab("security")] * n for w, (n, _) in counts.items()}
+    v = vel.measure(forge_of(GH(counts=counts, issues=issues)), "o/r", now=TODAY)
+    sec = next(c for c in v.by_category if c.category == "security")
+    assert sec.per_window == [1, 1, 2, 5]
+    assert sec.direction == CAT_RISING
+
+
+def test_category_falling_is_detected():
+    counts = {W[0]: (6, 0), W[1]: (6, 0), W[2]: (6, 0), W[3]: (1, 0)}
+    issues = {w: [_lab("bug")] * n for w, (n, _) in counts.items()}
+    v = vel.measure(forge_of(GH(counts=counts, issues=issues)), "o/r", now=TODAY)
+    bug = next(c for c in v.by_category if c.category == "bug")
+    assert bug.per_window == [6, 6, 6, 1]
+    assert bug.direction == CAT_FALLING

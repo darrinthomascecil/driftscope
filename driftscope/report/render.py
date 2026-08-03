@@ -327,6 +327,18 @@ def _md_velocity(v) -> list[str]:
             f"{latest.sampled_issues} sampled issues, {latest.releases} release(s)._"
         )
         out.append("")
+    if getattr(v, "by_category", None):
+        out.append("**Issue mix over time** — opened per window, by category. Rising "
+                   "security/bug/regression volume is the signal to watch:")
+        out.append("")
+        out.append("| Category | Per window | Total | Direction |")
+        out.append("|---|---|---:|---|")
+        _dir = {"rising": "▲ rising", "falling": "▼ falling", "flat": "→ flat"}
+        for ct in v.by_category[:6]:
+            spark = _sparkline([float(n) for n in ct.per_window])
+            out.append(f"| {ct.category} | `{spark}` {' '.join(str(n) for n in ct.per_window)} "
+                       f"| {ct.total} | {_dir.get(ct.direction, ct.direction)} |")
+        out.append("")
     if getattr(v, "by_release", None):
         out.append("**Open issues by release** — opened while each version was "
                    "latest (a proxy, not a version tag):")
