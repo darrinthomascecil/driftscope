@@ -54,7 +54,7 @@ path carried in `state`.
 **Why:** the addon (`az aks mesh enable`) gives an Azure-supported, auto-upgraded istiod with the CVE
 patching and revision lifecycle handled by the platform. For a small team that wants to look and
 operate like an enterprise, "the control plane is someone else's on-call" is the whole point.
-**Runner-up — self-managed upstream Istio (istioctl/Helm):** more knobs (any mesh-config field, any
+**Runner-up — self-managed upstream Istio (Helm):** more knobs (any mesh-config field, any
 revision the day it ships). Rejected because you inherit istiod upgrades, cert-rotation, and CVE
 response yourself; that is exactly the operational tax we were trying not to pay. **Linkerd** was the
 other candidate — lighter and simpler mTLS — but it has no first-class AKS-managed offering and no

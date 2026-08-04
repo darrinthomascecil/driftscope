@@ -1,0 +1,89 @@
+# Kind-adapted mirror of deploy/overlays/cloud (istio-routing.yaml + mesh/hardening.yaml),
+# retargeted from the AKS managed addon to UPSTREAM Istio:
+#   aks-istio-system   -> istio-system         (root config ns)
+#   aks-istio-ingress  -> istio-system         (upstream gateway runs here)
+#   istio: aks-istio-ingressgateway-external -> istio: ingressgateway
+#   ingress principal  -> cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account
+# App selector is `app: driftscope` (the WI-reference deployment's label), not app.kubernetes.io/name.
+---
+# The app Service the VirtualService routes to (absent until now). port 80 -> container 8080.
+apiVersion: v1
+kind: Service
+metadata: { name: driftscope, namespace: driftscope, labels: { app: driftscope } }
+spec:
+  type: ClusterIP
+  selector: { app: driftscope }
+  ports: [ { name: http, port: 80, targetPort: 8080 } ]
+---
+# Assume-breach: every sidecar refuses non-mTLS. Mesh-wide (root ns).
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata: { name: default, namespace: istio-system }
+spec: { mtls: { mode: STRICT } }
+---
+# Mesh-wide default-DENY (empty spec in root ns). Every real flow needs an explicit ALLOW below.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: deny-all, namespace: istio-system }
+spec: {}
+---
+# The ingress gateway fronts anonymous users, so it must accept inbound (SSO enforced at L7 later).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: gateway-allow-ingress, namespace: istio-system }
+spec:
+  selector: { matchLabels: { istio: ingressgateway } }
+  action: ALLOW
+  rules: [ {} ]
+---
+# The app accepts inbound ONLY from the ingress gateway's identity: the sole path in is the gateway
+# (so, later, the sole path in is through oauth2-proxy). An in-mesh pod cannot reach the app directly.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: driftscope-allow-gateway-only, namespace: driftscope }
+spec:
+  selector: { matchLabels: { app: driftscope } }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: [ "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account" ]
+---
+# Mesh entry. Upstream ingressgateway selector; hosts ["*"] so a localhost port-forward Host matches.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata: { name: driftscope, namespace: driftscope }
+spec:
+  selector: { istio: ingressgateway }
+  servers:
+    - port: { number: 80, name: http, protocol: HTTP }
+      hosts: [ "*" ]
+      # Auto-upgrade plain HTTP to HTTPS (308), so a bare hostname (which the browser tries over
+      # http:// first) lands on the secure listener instead of a "Not Secure" HTTP page.
+      tls: { httpsRedirect: true }
+    # HTTPS listener -- mirrors deploy/overlays/cloud/istio-routing.yaml's :443 SIMPLE server, the
+    # exact cloud pattern (only the cert issuer differs: local self-signed CA here, Let's Encrypt there).
+    # credentialName reads secret driftscope-tls from istio-system (the upstream gateway's own ns),
+    # issued by cert-manager (deploy/overlays/kind/edge/gateway-certificate.yaml).
+    - port: { number: 443, name: https, protocol: HTTPS }
+      hosts: [ "*" ]
+      tls: { mode: SIMPLE, credentialName: driftscope-tls }
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: { name: driftscope, namespace: driftscope }
+spec:
+  hosts: [ "*" ]
+  gateways: [ "driftscope" ]
+  http:
+    # oauth2-proxy owns its own login/callback endpoints -- these bypass the ext_authz gate
+    # (see require-sso notPaths in sso.yaml) and MUST route to oauth2-proxy, not the app, or the
+    # OAuth callback fails. The oauth2-proxy Deployment/Service are defined in sso.yaml.
+    # NOTE: this is the SOLE VirtualService for driftscope -- sso.yaml must NOT redefine it (a second
+    # object of the same name silently clobbers this one; that broke the /oauth2 route once).
+    - match: [ { uri: { prefix: /oauth2/ } } ]
+      route:
+        - destination: { host: oauth2-proxy.driftscope.svc.cluster.local, port: { number: 4180 } }
+    # everything else -> the app (gated by the CUSTOM ext_authz on the gateway, see sso.yaml)
+    - route:
+        - destination: { host: driftscope.driftscope.svc.cluster.local, port: { number: 80 } }

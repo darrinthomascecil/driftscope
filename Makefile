@@ -23,7 +23,7 @@ AUTO ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up shared-up down shared-down preflight state shared kv-recover infra repo-config image cluster secret deploy url state-backend verify-image
+.PHONY: help up shared-up down shared-down preflight state shared kv-recover infra repo-config image cluster secret deploy url state-backend verify-image kind-up
 
 # Keyless cosign verification of a published image. No secrets, no key files: it checks the
 # signature chains to a Fulcio cert whose identity is THIS repo's release workflow, issued by
@@ -88,6 +88,9 @@ verify-image: ## Verify a published image's cosign signature + SBOM (IMAGE=... ;
 	@echo "verifying SBOM attestation: $(IMAGE)"
 	@cosign verify-attestation --type spdxjson --certificate-identity-regexp '$(IDENTITY)' --certificate-oidc-issuer '$(ISSUER)' '$(IMAGE)' >/dev/null
 	@echo "OK: signature + SBOM verified, signed by $(IMAGE) release workflow"
+
+kind-up: ## LOCAL: bootstrap an existing kind cluster -> running mesh (Istio via Helm + cert-manager TLS + MetalLB + Entra SSO). Config: deploy/overlays/kind/kind.env (see .example). Not Azure.
+	$(B)/kind-up.sh
 
 down: ## Tear down ONE env: make down ENV=dev (destroys that env's AKS/KV/FD/Entra + its DNS records; NOT the shared ACR/zone)
 	@echo "This destroys the '$(ENV)' environment (AKS, KV, Front Door, Entra app+group, this env's DNS records)."

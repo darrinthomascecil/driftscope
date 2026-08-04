@@ -35,3 +35,6 @@ uv.lock
 # once by a `git add -A`; ignore them by name so it can't recur). Add new personal docs here.
 docs/code-critique.md
 docs/frontdoor-ssl-lessons.md
+
+# local kind bootstrap config (real values, never committed)
+deploy/overlays/kind/kind.env

@@ -142,15 +142,14 @@ oauth2-proxy for every non-`/oauth2` path.
 **Breaks as:** everything returns `302`-loops (ext_authz can't reach oauth2-proxy → fail-closed), or
 a path 404s (VirtualService match wrong), or auth silently doesn't apply (policy selector wrong).
 
-**Tool → command → read:** managed Istio may not ship `istioctl` locally — every check below has an
-**istioctl-free** form via the sidecar's `pilot-agent`, which is what you'll actually use:
+**Tool → command → read:** every check below runs through the sidecar's `pilot-agent` (no extra mesh
+CLI needed — works even where one isn't installed):
 ```sh
 GW=$(kubectl -n aks-istio-ingress get pod -l istio=aks-istio-ingressgateway-internal -o name | head -1)
 
-# routes the gateway actually has (istioctl-free):
+# routes the gateway actually has:
 kubectl -n aks-istio-ingress exec $GW -c istio-proxy -- pilot-agent request GET config_dump \
   | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps(d,indent=1))' | grep -A3 driftscope
-#   istioctl form: istioctl proxy-config route $GW.aks-istio-ingress
 
 # is ext_authz allowing/denying/erroring? (the smoking gun for SSO problems)
 kubectl -n aks-istio-ingress exec $GW -c istio-proxy -- pilot-agent request GET stats \
@@ -159,7 +158,7 @@ kubectl -n aks-istio-ingress exec $GW -c istio-proxy -- pilot-agent request GET 
 
 # live access logs while you curl from the throwaway pod:
 kubectl -n aks-istio-ingress logs $GW -c istio-proxy -f
-kubectl analyze  # or: istioctl analyze -n driftscope   -- validates Gateway/VirtualService wiring
+kubectl get gateway,virtualservice,authorizationpolicy -n driftscope  # confirm the wiring objects exist & select correctly
 ```
 Confirm the objects exist and select correctly:
 ```sh
@@ -254,8 +253,8 @@ mesh entirely out of the picture — the fastest way to confirm "it's the app, n
 | Edge / TLS | `curl -v`, `openssl s_client` | look for `cf-ray`, cert, `5xx` meaning |
 | Tunnel | `cloudflared` logs + CF dashboard/API | `logs deploy/cloudflared \| grep Registered` |
 | In-cluster reach | ephemeral `curlimages/curl` pod | `exec … curl -H Host: … <svc>` |
-| Envoy (gw & app) | `pilot-agent request GET stats/config_dump` (istioctl-free) | ext_authz + rbac + mTLS stats |
-| Mesh wiring | `istioctl analyze`, `kubectl get gateway,vs,ap` | validate selectors/routes |
+| Envoy (gw & app) | `pilot-agent request GET stats/config_dump` (via the sidecar) | ext_authz + rbac + mTLS stats |
+| Mesh wiring | `kubectl get gateway,vs,ap` | validate selectors/routes |
 | App | `kubectl logs -c driftscope`, `describe`, `top` | app-local `healthz` over localhost |
 
 ## Worked triage: a browser 502
