@@ -46,7 +46,8 @@ helm repo add istio https://istio-release.storage.googleapis.com/charts && helm 
 helm --kube-context $CTX upgrade --install istio-base istio/base -n istio-system --create-namespace --version 1.29.5
 helm --kube-context $CTX upgrade --install istiod istio/istiod -n istio-system --version 1.29.5 \
   -f deploy/overlays/kind/istiod-values.yaml --wait
-helm --kube-context $CTX upgrade --install istio-ingressgateway istio/gateway -n istio-system --version 1.29.5 --wait
+helm --kube-context $CTX upgrade --install istio-ingressgateway istio/gateway -n istio-system --version 1.29.5 \
+  --set serviceAccount.name=istio-ingressgateway-service-account --wait   # SA must match the authz-policy principal
 
 # 2. mesh: inject the app namespace, then apply + re-roll for the sidecar
 kubectl --context $CTX label ns driftscope istio-injection=enabled --overwrite

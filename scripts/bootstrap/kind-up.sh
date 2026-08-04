@@ -47,7 +47,10 @@ $H repo update istio >/dev/null
 $H upgrade --install istio-base istio/base -n istio-system --create-namespace --version "$ISTIO_VERSION" --wait
 $H upgrade --install istiod istio/istiod -n istio-system --version "$ISTIO_VERSION" \
    -f deploy/overlays/kind/istiod-values.yaml --wait
-$H upgrade --install istio-ingressgateway istio/gateway -n istio-system --version "$ISTIO_VERSION" --wait
+# SA name must match the principal the mesh authz policies allow
+# (cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account), else ext_authz fails closed (403).
+$H upgrade --install istio-ingressgateway istio/gateway -n istio-system --version "$ISTIO_VERSION" \
+   --set serviceAccount.name=istio-ingressgateway-service-account --wait
 $K get ns driftscope >/dev/null 2>&1 || $K create ns driftscope
 $K label ns driftscope istio-injection=enabled --overwrite >/dev/null
 
