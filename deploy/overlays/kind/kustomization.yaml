@@ -21,6 +21,6 @@ resources:
 
 # Prerequisites applied OUTSIDE this kustomization (like cloud's mesh/ + edge/), because they install
 # CRDs / cluster-scoped infra that must exist first -- see edge/README.md:
-#   - istioctl install -f istio-operator.yaml      (upstream Istio)
+#   - Istio via Helm: istio/base + istio/istiod (-f istiod-values.yaml) + istio/gateway
 #   - cert-manager (helm) + edge/                  (local CA -> gateway TLS secret driftscope-tls)
 #   - MetalLB + metallb.yaml                       (LoadBalancer EXTERNAL-IP for the gateway)

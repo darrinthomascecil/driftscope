@@ -26,13 +26,13 @@ Kind runs **upstream Istio**, so this overlay mirrors the cloud's *intent* with 
 | file | what |
 |---|---|
 | `mesh.yaml` | Service + STRICT `PeerAuthentication` + deny-all + gateway/app allows + `Gateway` + `VirtualService` |
-| `istio-operator.yaml` | registers oauth2-proxy as the ext_authz `extensionProvider` in istiod's meshConfig |
+| `istiod-values.yaml` | Helm values that register oauth2-proxy as the ext_authz `extensionProvider` in istiod's meshConfig |
 | `sso.yaml` | oauth2-proxy (Entra OIDC) + `/oauth2` route + `require-sso` CUSTOM authz. `REPLACE-*` per ADR 0001 |
 
 ## Prerequisites
 - a kind cluster with the app deployed (`app: driftscope` in namespace `driftscope`) — see the
   `deploy-driftscope-kind` skill
-- `istioctl` 1.29.x (match the AKS addon revision, currently `asm-1-29`)
+- `helm` + the Istio chart repo (`istio-release.storage.googleapis.com/charts`), charts pinned to 1.29.x
 - `az` logged in to the tenant that owns the SSO Entra app
 
 ## Setup
@@ -41,8 +41,12 @@ Kind runs **upstream Istio**, so this overlay mirrors the cloud's *intent* with 
 CTX=kind-<cluster>            # e.g. kind-driftscope-wi
 PORT=8443                     # local gateway port-forward
 
-# 1. Istio + the ext_authz provider
-istioctl install --context $CTX -f deploy/overlays/kind/istio-operator.yaml -y
+# 1. Istio via Helm + the ext_authz provider (istiod-values.yaml)
+helm repo add istio https://istio-release.storage.googleapis.com/charts && helm repo update istio
+helm --kube-context $CTX upgrade --install istio-base istio/base -n istio-system --create-namespace --version 1.29.5
+helm --kube-context $CTX upgrade --install istiod istio/istiod -n istio-system --version 1.29.5 \
+  -f deploy/overlays/kind/istiod-values.yaml --wait
+helm --kube-context $CTX upgrade --install istio-ingressgateway istio/gateway -n istio-system --version 1.29.5 --wait
 
 # 2. mesh: inject the app namespace, then apply + re-roll for the sidecar
 kubectl --context $CTX label ns driftscope istio-injection=enabled --overwrite
