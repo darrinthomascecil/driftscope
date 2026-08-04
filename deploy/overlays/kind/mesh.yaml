@@ -58,6 +58,16 @@ spec:
   servers:
     - port: { number: 80, name: http, protocol: HTTP }
       hosts: [ "*" ]
+      # Auto-upgrade plain HTTP to HTTPS (308), so a bare hostname (which the browser tries over
+      # http:// first) lands on the secure listener instead of a "Not Secure" HTTP page.
+      tls: { httpsRedirect: true }
+    # HTTPS listener -- mirrors deploy/overlays/cloud/istio-routing.yaml's :443 SIMPLE server, the
+    # exact cloud pattern (only the cert issuer differs: local self-signed CA here, Let's Encrypt there).
+    # credentialName reads secret driftscope-tls from istio-system (the upstream gateway's own ns),
+    # issued by cert-manager (deploy/overlays/kind/edge/gateway-certificate.yaml).
+    - port: { number: 443, name: https, protocol: HTTPS }
+      hosts: [ "*" ]
+      tls: { mode: SIMPLE, credentialName: driftscope-tls }
 ---
 apiVersion: networking.istio.io/v1
 kind: VirtualService
@@ -66,6 +76,14 @@ spec:
   hosts: [ "*" ]
   gateways: [ "driftscope" ]
   http:
-    # everything -> the app (SSO ext_authz added on the gateway in the next phase)
+    # oauth2-proxy owns its own login/callback endpoints -- these bypass the ext_authz gate
+    # (see require-sso notPaths in sso.yaml) and MUST route to oauth2-proxy, not the app, or the
+    # OAuth callback fails. The oauth2-proxy Deployment/Service are defined in sso.yaml.
+    # NOTE: this is the SOLE VirtualService for driftscope -- sso.yaml must NOT redefine it (a second
+    # object of the same name silently clobbers this one; that broke the /oauth2 route once).
+    - match: [ { uri: { prefix: /oauth2/ } } ]
+      route:
+        - destination: { host: oauth2-proxy.driftscope.svc.cluster.local, port: { number: 4180 } }
+    # everything else -> the app (gated by the CUSTOM ext_authz on the gateway, see sso.yaml)
     - route:
         - destination: { host: driftscope.driftscope.svc.cluster.local, port: { number: 80 } }

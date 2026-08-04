@@ -1,0 +1,26 @@
+# Local kind overlay -- applies the mesh + SSO + routing as ONE atomic set:
+#   kubectl apply -k deploy/overlays/kind
+#
+# Why this exists: the kind overlay used to be applied file-by-file, and mesh.yaml + sso.yaml each
+# defined a VirtualService/driftscope -- a re-apply of one silently clobbered the other's routes
+# (it dropped the /oauth2 route once). kustomize builds the whole set and ERRORS on duplicate
+# resource IDs, so that class of bug can't recur.
+#
+# NO global `namespace:` transformer: kind's mesh.yaml deliberately spans istio-system (mesh-wide
+# STRICT mTLS + default-deny, the root-config ns) AND driftscope. Every resource declares its own
+# namespace, so aggregating preserves them; a global transformer would wrongly relocate the
+# security policies into driftscope and break the mesh posture.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - params.yaml   # driftscope-params ConfigMap (HOST/tenant/client/group; fill identifiers locally)
+  - mesh.yaml     # app Service, Gateway (:80 httpsRedirect + :443 TLS), the SOLE VirtualService,
+                  # mesh-wide STRICT mTLS + default-deny + gateway/app authz (istio-system + driftscope)
+  - sso.yaml      # oauth2-proxy (Entra OIDC ext_authz provider) + require-sso enforcement
+
+# Prerequisites applied OUTSIDE this kustomization (like cloud's mesh/ + edge/), because they install
+# CRDs / cluster-scoped infra that must exist first -- see edge/README.md:
+#   - istioctl install -f istio-operator.yaml      (upstream Istio)
+#   - cert-manager (helm) + edge/                  (local CA -> gateway TLS secret driftscope-tls)
+#   - MetalLB + metallb.yaml                       (LoadBalancer EXTERNAL-IP for the gateway)

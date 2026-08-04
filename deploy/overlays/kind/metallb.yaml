@@ -1,0 +1,24 @@
+# MetalLB address pool for the local kind cluster -- gives the Istio ingressgateway a real
+# LoadBalancer EXTERNAL-IP (like an AKS cloud LB), so no port-forward is needed to reach the mesh.
+# Implements Option 5 of docs/design-kind-local-tls.md.
+#
+# The pool must sit INSIDE the kind Docker subnet (172.18.0.0/16) and clear of node/container IPs
+# (nodes occupy 172.18.0.2-4), so a high range is used. L2 (ARP) advertisement -- no BGP peer needed.
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: kind
+  namespace: metallb-system
+spec:
+  addresses:
+    - 172.18.255.200-172.18.255.250
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: kind
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - kind

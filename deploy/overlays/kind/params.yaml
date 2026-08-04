@@ -1,0 +1,19 @@
+# DEPLOYMENT PARAMETERS for the local kind overlay -- mirrors deploy/overlays/cloud/params.yaml.
+# oauth2-proxy composes the OIDC issuer / redirect / cookie / whitelist strings from these ATOMIC
+# values at runtime via Kubernetes $(VAR) env expansion (sso.yaml) -- nothing hardcodes a tenant.
+#
+# ALL values are REPLACE-* placeholders (ADR 0001): bind them LOCALLY before `kubectl apply -k`; never
+# commit real values -- they are specific to your machine/tenant. HOST is whatever local hostname you
+# resolve to the gateway on YOUR box (e.g. driftscope.local.test via dnsmasq, or a port-forward host);
+# the rest are your Entra tenant/app/group identifiers. (The client SECRET lives only in the
+# oauth2-proxy-creds Secret, never here.)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: driftscope-params
+  namespace: driftscope
+data:
+  HOST: "REPLACE-HOST"                    # the local host you reach the gateway at (your setup's choice)
+  TENANT_ID: "REPLACE-TENANT-ID"
+  CLIENT_ID: "REPLACE-CLIENT-ID"
+  ALLOWED_GROUP_ID: "REPLACE-ALLOWED-GROUP-ID"

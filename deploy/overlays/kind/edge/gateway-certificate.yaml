@@ -1,0 +1,24 @@
+# LOCAL analogue of deploy/overlays/cloud/edge/origin-certificate.yaml. cert-manager issues a leaf cert
+# for the gateway host from the local CA ClusterIssuer and stores it in secret `driftscope-tls` IN THE
+# GATEWAY'S NAMESPACE (istio-system) -- where UPSTREAM Istio reads `credentialName` secrets from,
+# regardless of where the Gateway resource lives. The Gateway :443 server serves it (see ../mesh.yaml).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: driftscope-tls
+  namespace: istio-system
+spec:
+  secretName: driftscope-tls
+  duration: 2160h    # 90d
+  renewBefore: 720h  # renew 30d out -- unattended, issued off the local CA
+  privateKey:
+    rotationPolicy: Always
+  # NAMES ONLY (no IP SAN) -- nothing here is bound to the runtime-assigned LB IP. dnsNames is a
+  # REPLACE-HOST placeholder (ADR 0001): bind it at deploy to whatever local host you resolve to the
+  # gateway on your box (e.g. driftscope.local.test via dnsmasq). Mirrors the cloud origin cert's
+  # REPLACE-ORIGIN-HOST. The dnsmasq/resolver mapping is host-side config and is NOT committed here.
+  dnsNames:
+    - "REPLACE-HOST"
+  issuerRef:
+    name: driftscope-local-ca
+    kind: ClusterIssuer

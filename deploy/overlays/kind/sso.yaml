@@ -1,7 +1,10 @@
 # Kind SSO layer: oauth2-proxy (Entra OIDC relying party) as the gateway ext_authz, mirroring
-# deploy/overlays/cloud/oauth2-proxy.yaml + require-sso.authorizationpolicy.yaml. Client secret +
-# cookie secret come from the oauth2-proxy-creds Secret (created out-of-band, not committed).
-# Redirect is http://localhost:8443 (the gateway port-forward), registered on the driftscope-kind-sso app.
+# deploy/overlays/cloud/oauth2-proxy.yaml + require-sso.authorizationpolicy.yaml. Deployment-specific
+# values (HOST, tenant, client, group) come from the driftscope-params ConfigMap (params.yaml); the
+# OIDC issuer / redirect / cookie / whitelist strings are composed at runtime via $(VAR) expansion, so
+# nothing here hardcodes a domain or tenant. Client + cookie secrets come from the oauth2-proxy-creds
+# Secret (created out-of-band, not committed). The composed redirect https://$(HOST)/oauth2/callback
+# must be registered on the driftscope-kind-sso Entra app. Applied as part of kustomization.yaml.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -25,7 +28,7 @@ spec:
             - --oidc-email-claim=preferred_username
             - --insecure-oidc-allow-unverified-email=true
             - --scope=openid profile email
-            - --cookie-secure=false            # localhost is http (no TLS on the port-forward)
+            - --cookie-secure=true             # https at the gateway (cert-manager TLS on :443)
             - --set-xauthrequest=true
             - --pass-access-token=true
             - --set-authorization-header=true
@@ -33,12 +36,28 @@ spec:
             - --cookie-csrf-per-request=true
             - --cookie-csrf-expire=5m
           env:
-            - { name: OAUTH2_PROXY_OIDC_ISSUER_URL, value: "https://login.microsoftonline.com/REPLACE-TENANT-ID/v2.0" }
-            - { name: OAUTH2_PROXY_REDIRECT_URL, value: "http://localhost:8443/oauth2/callback" }
-            - { name: OAUTH2_PROXY_WHITELIST_DOMAINS, value: "localhost:8443" }
-            - { name: OAUTH2_PROXY_CLIENT_ID, value: "REPLACE-CLIENT-ID" }
-            - { name: OAUTH2_PROXY_OIDC_GROUPS_CLAIM, value: "groups" }
-            - { name: OAUTH2_PROXY_ALLOWED_GROUPS, value: "REPLACE-ALLOWED-GROUP-ID" }
+            # --- atomic params (from driftscope-params, params.yaml); FIRST so $(VAR) can expand them ---
+            - name: HOST
+              valueFrom: { configMapKeyRef: { name: driftscope-params, key: HOST } }
+            - name: TENANT_ID
+              valueFrom: { configMapKeyRef: { name: driftscope-params, key: TENANT_ID } }
+            # --- composed at runtime via $(VAR) -- nothing hardcodes a domain or tenant ---
+            - name: OAUTH2_PROXY_OIDC_ISSUER_URL
+              value: "https://login.microsoftonline.com/$(TENANT_ID)/v2.0"
+            - name: OAUTH2_PROXY_REDIRECT_URL
+              value: "https://$(HOST)/oauth2/callback"
+            - name: OAUTH2_PROXY_COOKIE_DOMAINS
+              value: "$(HOST)"
+            - name: OAUTH2_PROXY_WHITELIST_DOMAINS
+              value: "$(HOST)"
+            # --- Entra group gate + client id (identifiers from driftscope-params) ---
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom: { configMapKeyRef: { name: driftscope-params, key: CLIENT_ID } }
+            - name: OAUTH2_PROXY_ALLOWED_GROUPS
+              valueFrom: { configMapKeyRef: { name: driftscope-params, key: ALLOWED_GROUP_ID } }
+            - name: OAUTH2_PROXY_OIDC_GROUPS_CLAIM
+              value: "groups"
+            # --- secrets (out of git; oauth2-proxy-creds Secret) ---
             - name: OAUTH2_PROXY_CLIENT_SECRET
               valueFrom: { secretKeyRef: { name: oauth2-proxy-creds, key: client-secret } }
             - name: OAUTH2_PROXY_COOKIE_SECRET
@@ -65,19 +84,10 @@ spec:
         - source:
             principals: [ "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account" ]
 ---
-# Routing: oauth2-proxy owns /oauth2/*; everything else -> the app (behind the SSO gate below).
-apiVersion: networking.istio.io/v1
-kind: VirtualService
-metadata: { name: driftscope, namespace: driftscope }
-spec:
-  hosts: [ "*" ]
-  gateways: [ "driftscope" ]
-  http:
-    - match: [ { uri: { prefix: /oauth2/ } } ]
-      route:
-        - destination: { host: oauth2-proxy.driftscope.svc.cluster.local, port: { number: 4180 } }
-    - route:
-        - destination: { host: driftscope.driftscope.svc.cluster.local, port: { number: 80 } }
+# NOTE: the VirtualService (routing) lives SOLELY in mesh.yaml, which already includes the /oauth2
+# route to oauth2-proxy. It is deliberately NOT redefined here -- a second VirtualService of the same
+# name silently clobbers the other (last apply wins), which is what broke the /oauth2 route. Keep
+# routing in one place. This file owns only the oauth2-proxy workload + the SSO enforcement policy.
 ---
 # Force the ext_authz (oauth2-proxy) check on the gateway for every request except oauth2-proxy's
 # own endpoints and the health probe. Mirrors require-sso.authorizationpolicy.yaml.
